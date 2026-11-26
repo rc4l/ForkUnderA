@@ -11,6 +11,22 @@ import { crashedError } from "./play.mjs";
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
 
+// [Doruk-Aksoy] The game port a netgame on bridge port `port` hosts on, 3000 above it as the defaults are, so sets on different bridge ports never share one.
+export function gamePortFor(port) {
+  return port + 3000;
+}
+
+// [Doruk-Aksoy] An engine's log as far as it has written it, or nothing before it has one.
+export function readEngineLog(inst) {
+  return inst?.log && fs.existsSync(inst.log) ? fs.readFileSync(inst.log, "utf8") : "";
+}
+
+// [Doruk-Aksoy] Throws when a server's log says it bound another game port than gamePort, which the engine does when another engine holds it, since its clients would then join that engine.
+export function assertGamePort(logText, gamePort) {
+  const m = /Couldn't bind to (\d+)\. Binding to (\d+) instead/.exec(String(logText ?? ""));
+  if (m && Number(m[1]) === gamePort) throw new Error(`game port ${gamePort} is held by another engine (this server bound ${m[2]} instead), so its clients would join that one: run on another --port`);
+}
+
 // [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing to the registry and none on the LAN unless broadcast (then left to its cvar), sv_cheats from launch, on unless cheats is false (a latched change reaches its clients only with the next map), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
 export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT, broadcast = false, cheats = true } = {}) {
   return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), ...(broadcast ? [] : ["+sv_broadcast", "0"]), "+sv_fua_serverregistry_announce", "0",
@@ -93,7 +109,7 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, jitte
   const connectArg = via === "launch" || args.includes("-record");
   const inst = client.inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: [...clientArgs({ ...set, files }), ...args], ...(fromBrowser ? {} : { connect: address, connectArg }),
     cvars: clientCvars({ lag, loss, jitter, cvars }), allowOsInput: forUser });
-  const readLog = deps.readLog || ((i) => (i.log && fs.existsSync(i.log) ? fs.readFileSync(i.log, "utf8") : ""));
+  const readLog = deps.readLog || readEngineLog;
   try {
     client.c = await connect(inst);
     if (fromBrowser) await joinThroughBrowser(client.c, address, { exec, sleep, timeoutMs }, { lan: via === "lan" });
@@ -203,7 +219,7 @@ export async function closeNetplay(set, stop = stopInstance) {
 
 // [rc4l] The set: a server in the map, then each client of clientRoles joined in turn (the late joiner left to the caller's addClient).
 export async function launchNetplay(opts = {}, deps = {}) {
-  const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, stop = stopInstance, timeoutMs = scaled(60000) } = deps;
+  const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, stop = stopInstance, readLog = readEngineLog, timeoutMs = scaled(60000) } = deps;
   const { iwad, map, files = [], players = 1, observers = 0, lag = "", loss = "", jitter = "", basePort = NETPLAY_BRIDGE_PORT, gamePort = NETPLAY_GAME_PORT,
     forUser = false, cvars = {}, clientCvars: perClientCvars = {}, clientExtraArgs = [], broadcast = false, cheats = true } = opts;
   const roles = clientRoles({ players, observers });
@@ -215,6 +231,7 @@ export async function launchNetplay(opts = {}, deps = {}) {
     set.server = { inst, c: null, role: "server" };
     set.server.c = await connect(inst);
     await waitInLevel(set.server.c, timeoutMs);
+    assertGamePort(readLog(inst), gamePort);
     for (let i = 0; i < roles.length; i++) {
       await addClient(set, { role: roles[i], lag: lags[i], loss: losses[i], jitter: jitters[i], cvars: perClientCvars, forUser: forUser && i === 0, args: clientExtraArgs[i] || [] }, deps);
     }
@@ -244,7 +261,7 @@ export function netplayOptionsFromFlags(flags = {}, parseCvars = () => ({})) {
     loss: flags.loss ?? "",
     jitter: flags.jitter ?? "",
     basePort: count(flags.port, NETPLAY_BRIDGE_PORT),
-    gamePort: count(flags["game-port"], NETPLAY_GAME_PORT),
+    gamePort: count(flags["game-port"], gamePortFor(count(flags.port, NETPLAY_BRIDGE_PORT))),
     forUser: !!flags["for-user"],
     clientCvars: parseCvars(flags.cvar) || {},
   };
