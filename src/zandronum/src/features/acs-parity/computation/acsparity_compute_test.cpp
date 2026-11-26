@@ -140,6 +140,15 @@ TEST(AcsParity, NetIdsAreUnsignedShortsAboveZero)
 	EXPECT_FALSE(ComputeNetIdValid(-1));
 }
 
+// [Doruk-Aksoy] A CLIENTSIDE script's DamageActor hurts only the client's own actors, the server holding every synced actor's health.
+TEST(AcsParity, ClientDamagesOnlyItsOwnActors)
+{
+	EXPECT_TRUE(ComputeClientMayDamage(false, false));
+	EXPECT_TRUE(ComputeClientMayDamage(false, true));
+	EXPECT_TRUE(ComputeClientMayDamage(true, true));
+	EXPECT_FALSE(ComputeClientMayDamage(true, false));
+}
+
 // [Doruk-Aksoy] UZDoom's SelectActorFromTID: the index'th actor of a tid, none past the last.
 TEST(AcsParity, NthPicksByIndex)
 {

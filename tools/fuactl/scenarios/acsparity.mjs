@@ -105,7 +105,8 @@ export function buildNullDamageScript() {
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, S["damagenull "], PCD.PRINTSTRING, ...call("DamageActor", 999, 0, 0, 0, 10, S.Fire), PCD.PRINTNUMBER, PCD.ENDLOG, PCD.TERMINATE];
 }
 
-export function buildAcsParityPk3() {
+// [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsparity's CLIENTSIDE copies and player starts do.
+export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
   m.room(0, 0, 512, 512, ROOM, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
   const first = m.lines.length;
@@ -115,9 +116,10 @@ export function buildAcsParityPk3() {
   m.thing({ x: 256, y: 128, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.near });
   m.thing({ x: 160, y: 330, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.mud });
   m.thing({ x: 420, y: 64, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.far });
+  withMap(m);
   const scripts = [{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: buildNullDamageScript(), type: SCRIPT.CLOSED, number: 2 },
     { code: [PCD.PUSHNUMBER, 1, PCD.ASSIGNMAPVAR, 0, PCD.TERMINATE], type: SCRIPT.CLOSED, name: "zxstrarg" }];
-  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) },
+  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(withScripts(scripts), STRINGS) })) },
     { name: "terrain.txt", data: Buffer.from(TERRAIN, "latin1") }]);
 }
 

@@ -61,6 +61,11 @@ bool ComputeNetIdValid(int32_t id)
 	return id > 0 && id <= 0xFFFF;
 }
 
+bool ComputeClientMayDamage(bool inClientMode, bool clientSideOnly)
+{
+	return !inClientMode || clientSideOnly;
+}
+
 bool ComputeProximityInRange(const ProximityPoint& ref, const ProximityPoint& mo, double distance, int flags)
 {
 	if (std::hypot(mo.x - ref.x, mo.y - ref.y) >= distance)
