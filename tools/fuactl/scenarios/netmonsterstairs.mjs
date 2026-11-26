@@ -5,7 +5,7 @@ import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { addClient } from "../src/netplay.mjs";
 import { clientAgreement, netdiff } from "../src/netdiff.mjs";
 import * as cap from "../src/capture.mjs";
-import { buildMonsterStairsPk3, COUNTER_CVAR, MAPS as STAIR_MAPS, WAVE_SCRIPT } from "./monsterstairs.mjs";
+import { buildMonsterStairsPk3, COUNTER_CVAR, MAPS as STAIR_MAPS, WAVE_SCRIPT, startOf } from "./monsterstairs.mjs";
 
 // [Doruk-Aksoy] The enemies climbing, lifted off a teleport, and walking a flat floor as the control any offset is set against.
 export const MAPS = ["MAP05", "MAP06", "MAP07"];
@@ -87,6 +87,20 @@ export function climbVerdict(label, rounds, classes) {
   return { line: `PASS ${label}: ${rounds.length} comparisons during the climb, every enemy present at its health; worst offsets ${report}`, failed: 0 };
 }
 
+// [Doruk-Aksoy] Every player alive on its own start, on the server: the players never move, so one elsewhere was spawned off a blocked start, and one dead was telefragged by a joiner sent onto its start.
+export function startVerdict(label, actors, players) {
+  const faults = [];
+  for (const n of players) {
+    const body = actors.find((a) => a.c === "DoomPlayer" && a.player === n);
+    const start = startOf(n);
+    if (!body) faults.push(`player ${n} has no body`);
+    else if (body.health <= 0) faults.push(`player ${n} died (health ${body.health})`);
+    else if (start && Math.hypot(body.x - start.x, body.y - start.y) > 1) faults.push(`player ${n} is at ${Math.round(body.x)},${Math.round(body.y)}, not its start ${start.x},${start.y}`);
+  }
+  return faults.length ? { line: `FAIL ${label}: ${faults.join("; ")}`, failed: 1 }
+    : { line: `PASS ${label}: every player alive on its own start`, failed: 0 };
+}
+
 // [Doruk-Aksoy] Each client that does not hold the cvar on, named.
 export function cvarVerdict(label, answers) {
   const off = answers.filter((a) => !cvarOn(a.text)).map((a) => a.who);
@@ -147,6 +161,7 @@ export async function judgeNetplay(set, label, { map }) {
   // [Doruk-Aksoy] A joiner after the change gets the cvar at connect (SendSyncedCVarsTo).
   await addClient(set, { role: "latejoin" });
   await cap.waitTics(sc, 35);
+  add(startVerdict(`${label} with the late joiner`, (await sc.rpc("world.actors", { limit: 100000 }))?.actors || [], set.clients.map((c) => c.player)));
   add(cvarVerdict(`${label} with the late joiner`, await readCvarSettled(set)));
   await checkFloors();
   // [Doruk-Aksoy] At rest: a death goes out with where it died, so every client, the late joiner too, must then hold each enemy exactly; alive, a client keeps the step it walked past the server's stop.
@@ -168,6 +183,7 @@ export async function judgeNetplay(set, label, { map }) {
   if (stairs && !onSteps.length) add({ line: `FAIL ${label}: on the server no enemy of the second wave died on the steps`, failed: 1 });
   await addClient(set, { role: "latejoin" });
   await cap.waitTics(sc, 35 * 2);
+  add(startVerdict(`${label} with the second late joiner`, (await sc.rpc("world.actors", { limit: 100000 }))?.actors || [], set.clients.map((c) => c.player)));
   const wave = await clientAgreement(sc, set.clients, `${label} after ${onSteps.length} died on the steps`);
   return { lines: [...lines, ...wave.lines], failed: failed + wave.failed };
 }

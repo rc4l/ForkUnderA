@@ -33,6 +33,15 @@ test("actors agree within tolerance and every kind of difference is named", () =
   assert.deepEqual(diffActors([actor(5, { health: -4 })], [actor(5, { health: -4, x: 9 })]).map((x) => x.what), ["DoomImp 5 (dead) 9.00 units apart"]);
 });
 
+// [Doruk-Aksoy] Seen in netmonsterstairs: a telefragged player's -999900 read -32768 on the clients (16-bit player health) and 0 on a late joiner.
+test("an actor dead on both sides agrees whatever its health, and dead on one side only does not", () => {
+  const player = (health) => actor(2, { c: "DoomPlayer", player: 1, health });
+  assert.deepEqual(diffActors([player(-999900)], [player(-32768)]), []);
+  assert.deepEqual(diffActors([player(-999900)], [player(0)]), []);
+  assert.deepEqual(diffActors([player(-999900)], [player(100)]).map((x) => x.what), ["DoomPlayer 2 (dead) health -999900 on the server, 100 on the client"]);
+  assert.deepEqual(diffActors([player(40)], [player(0)]).map((x) => x.what), ["DoomPlayer 2 health 40 on the server, 0 on the client"]);
+});
+
 test("a skipped actor and positions switched off compare only presence, class and health", () => {
   assert.deepEqual(diffActors([actor(1)], [actor(1, { x: 50 })], { skip: new Set([1]) }), []);
   assert.deepEqual(diffActors([actor(1)], [actor(1, { x: 50 })], { positions: false }), []);

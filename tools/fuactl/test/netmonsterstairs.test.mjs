@@ -1,7 +1,7 @@
 // [Doruk-Aksoy] The hosted monster stairs scenario's verdicts: the cvar reaching each client, the counter, and each client's enemies during the climb.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stairCorpses, stairWalkers, WAVE_ON_STEPS, WAVE_WAIT_MS, readCvarSettled, cvarOn, counterValue, climbVerdict, cvarVerdict, boxFloor, sunkEnemies, sunkVerdict, RADIUS, CONFIGS, MAPS } from "../scenarios/netmonsterstairs.mjs";
+import { stairCorpses, stairWalkers, WAVE_ON_STEPS, WAVE_WAIT_MS, readCvarSettled, cvarOn, counterValue, climbVerdict, cvarVerdict, boxFloor, sunkEnemies, sunkVerdict, startVerdict, RADIUS, CONFIGS, MAPS } from "../scenarios/netmonsterstairs.mjs";
 import { MAPS as STAIR_MAPS } from "../scenarios/monsterstairs.mjs";
 
 const CLASSES = ["DoomImp", "Fatso", "Arachnotron"];
@@ -18,6 +18,18 @@ test("a client without the cvar is named, and all with it pass", () => {
   const off = { who: "observer player 2", text: '"sv_fua_monsterstairs" is "false"' };
   assert.deepEqual(cvarVerdict("MAP05 lan", [on, off]), { line: "FAIL MAP05 lan: sv_fua_monsterstairs never reached observer player 2", failed: 1 });
   assert.equal(cvarVerdict("MAP05 lan", [on]).failed, 0);
+});
+
+// [Doruk-Aksoy] Seen 2026-11-26: a late joiner sent off its blocked start telefragged a player, whose -999900 health then read -32768 on every client.
+test("after a join every player must stand alive on its own start, one dead or moved failing it", () => {
+  const body = (player, x, y, health = 100) => ({ c: "DoomPlayer", netid: 1 + player, player, x, y, health });
+  const home = [body(0, 448, 896), body(1, 352, 896), body(2, 160, 896)];
+  assert.deepEqual(startVerdict("MAP06 ping100", home, [0, 1, 2]), { line: "PASS MAP06 ping100: every player alive on its own start", failed: 0 });
+  const fragged = [body(0, 448, 896, -999900), body(1, 352, 896), body(2, 448, 896)];
+  assert.deepEqual(startVerdict("MAP06 ping100", fragged, [0, 1, 2]),
+    { line: "FAIL MAP06 ping100: player 0 died (health -999900); player 2 is at 448,896, not its start 160,896", failed: 1 });
+  assert.match(startVerdict("x", home, [0, 3]).line, /player 3 has no body/);
+  assert.equal(startVerdict("x", [...home, { c: "Arachnotron", player: -1, x: 160, y: 896, health: 500 }], [0, 1, 2]).failed, 0, "only players' bodies are judged");
 });
 
 test("the counter is read as a number, negative included, or null when absent", () => {
