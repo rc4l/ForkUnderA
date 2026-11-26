@@ -33,4 +33,9 @@ bool ComputeSkipsPuffFor(bool isShooter, bool noNetId, bool clientSidePuffs)
 	return isShooter && noNetId && clientSidePuffs;
 }
 
+bool ComputeJoinSendsTranslation(uint32_t translation, uint32_t classTranslation)
+{
+	return translation != classTranslation;
+}
+
 }} // namespace zx::netreplication

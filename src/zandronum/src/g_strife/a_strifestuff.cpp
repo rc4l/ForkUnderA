@@ -1,3 +1,4 @@
+#include "features/decorate-uzdoom/classprops.h"
 #include "actor.h"
 #include "g_level.h"
 #include "gi.h"

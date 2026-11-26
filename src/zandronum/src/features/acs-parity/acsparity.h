@@ -9,6 +9,7 @@
 #include "features/acs-parity/computation/acsparity_compute.h"
 
 class AActor;
+struct PClass;
 
 namespace zx { namespace acsparity {
 
@@ -17,6 +18,9 @@ int InventoryAmount(AActor* actor, const char* type, bool max);
 
 // [Doruk-Aksoy] CheckProximity: whether `count` actors of `className` stand within `distance` (16.16) of the actor `ptr` selects from `self`, by CPXF_ `flags`.
 int CheckProximity(AActor* self, const char* className, int32_t distance, int count, int flags, int ptr);
+
+// [Doruk-Aksoy] The same scan for DECORATE's A_CheckProximity and CountProximity, distance in map units, counting answering how many counted.
+int Proximity(AActor* self, const PClass* cls, double distance, int count, int flags, int ptr, bool counting);
 
 // [Doruk-Aksoy] GetLineX (axis 0) or GetLineY (axis 1) of the first line with `lineId`, as 16.16, or 0 when no line has it.
 int32_t LineCoord(int lineId, int axis, int32_t along, int32_t offset);

@@ -1,4 +1,4 @@
-// [Doruk-Aksoy] TRNSLATE's named translations against the same tables written inline: exit 0 when every named, based, palette-lump and A_SetTranslation actor draws as its inline twin.
+// [Doruk-Aksoy] TRNSLATE's named translations against the same tables written inline: exit 0 when every named, based, palette-lump, A_SetTranslation and A_fua_ResetTranslation actor draws as its inline twin.
 //
 // usage:  node scenarios/trnslate.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -24,8 +24,11 @@ export const ACTORS = [
   { name: "ZxRawPal", body: 'Translation "ZxRaw"', twin: '"0:255=[255,0,255]:[255,0,255]"' },
   { name: "ZxPngPal", body: 'Translation "ZxPng"', twin: '"112:127=[255,128,0]:[255,128,0]"' },
   { name: "ZxSetNamed", states: ['PLAY A 1 A_SetTranslation("ZxRed")'], twin: '"0:255=[255,0,0]:[255,0,0]"' },
-  { name: "ZxSetReset", body: 'Translation "ZxRed"', states: ['PLAY A 1 A_SetTranslation("ZxBlueTop")', 'PLAY A 1 A_SetTranslation("")'],
+  { name: "ZxSetReset", body: 'Translation "ZxRed"', states: ['PLAY A 1 A_SetTranslation("ZxBlueTop")', "PLAY A 1 A_fua_ResetTranslation"],
     twin: '"0:255=[255,0,0]:[255,0,0]"' },
+  // [Doruk-Aksoy] None clears the translation as UZDoom's does, and "" too, since DECORATE hands it over as None; each twin has none.
+  { name: "ZxSetNone", body: 'Translation "ZxRed"', states: ['PLAY A 1 A_SetTranslation("None")'], twin: null },
+  { name: "ZxSetEmpty", body: 'Translation "ZxRed"', states: ['PLAY A 1 A_SetTranslation("")'], twin: null },
   { name: "ZxSetUnknown", body: 'Translation "ZxRed"', states: ['PLAY A 1 A_SetTranslation("ZxNope")'], twin: '"0:255=[255,0,0]:[255,0,0]"' },
 ];
 
@@ -38,7 +41,7 @@ function actorDecorate(name, num, body, states = []) {
 
 export function buildDecorate() {
   return ACTORS.map((a, i) => actorDecorate(a.name, NAMED_NUM + i, a.body, a.states)
-    + actorDecorate(`${a.name}Twin`, TWIN_NUM + i, `Translation ${a.twin}`)).join("");
+    + actorDecorate(`${a.name}Twin`, TWIN_NUM + i, a.twin ? `Translation ${a.twin}` : "")).join("");
 }
 
 // [Doruk-Aksoy] count copies of one RGB triplet.

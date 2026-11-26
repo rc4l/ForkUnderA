@@ -29,6 +29,8 @@
 
 
 // Data.
+#include "features/decorate-uzdoom/classprops.h"
+#include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "doomdef.h"
 #include "gstrings.h"
 
@@ -1260,6 +1262,9 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		}
 		return -1;
 	}
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: SelfDamageFactor scales an actor's damage to itself (features/decorate-uzdoom).
+	if (target == source)
+		damage = zx::decorateuzdoom::ComputeSelfDamage(damage, FIXED2DBL(zx::decorateuzdoom::SelfDamageFactor(target)), damage >= TELEFRAG_DAMAGE);
 	if ((target->flags2 & MF2_INVULNERABLE) && damage < TELEFRAG_DAMAGE && !(flags & DMG_FORCED))
 	{ // actor is invulnerable
 		if (target->player == NULL)
@@ -2016,7 +2021,7 @@ dopain:
 	{
 		if (source == target->target)
 		{
-			target->threshold = BASETHRESHOLD;
+			target->threshold = zx::decorateuzdoom::DefThreshold(target);	// [Doruk-Aksoy] uzdoom@62afe5f0a9
 			if (target->state == target->SpawnState && target->SeeState != NULL)
 			{
 				// [BB] If we are the server, tell clients about the state change.
@@ -2041,7 +2046,7 @@ dopain:
 				target->lastenemy = target->target; // remember last enemy - killough
 			}
 			target->target = source;
-			target->threshold = BASETHRESHOLD;
+			target->threshold = zx::decorateuzdoom::DefThreshold(target);	// [Doruk-Aksoy] uzdoom@62afe5f0a9
 			if (target->state == target->SpawnState && target->SeeState != NULL)
 			{
 				// If we are the server, tell clients about the state change.

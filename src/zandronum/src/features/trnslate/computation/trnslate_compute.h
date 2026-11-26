@@ -81,8 +81,8 @@ enum SetTranslationOutcome
 	kSetTranslationKeep,
 };
 
-// [Doruk-Aksoy] An empty name resets to the class's translation, a known one applies and an unknown one is ignored.
-SetTranslationOutcome ComputeSetTranslationOutcome(bool nameEmpty, bool found);
+// [Doruk-Aksoy] A_fua_ResetTranslation restores the class's translation, A_SetTranslation applies a known name (None clearing it) and ignores an unknown one.
+SetTranslationOutcome ComputeSetTranslationOutcome(bool resetToDefault, bool found);
 
 }} // namespace zx::trnslate
 

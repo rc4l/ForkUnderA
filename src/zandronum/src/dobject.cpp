@@ -33,6 +33,7 @@
 */
 
 #include <stdlib.h>
+#include "features/decorate-uzdoom/uservars.h"
 #include "features/handoff/seam.h"   // [rc4l] gc seams
 #include <string.h>
 
@@ -667,13 +668,16 @@ void DObject::ResetUserVars()
 				PSymbolVariable *var = static_cast<PSymbolVariable *>(sym);
 				if (var->bUserVar)
 				{
-					count = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+					count = zx::decorateuzdoom::UserVarCount(var);
+					int *savedValue = static_cast<AActor *>(this)->savedUserVars.CheckKey(var);
 					for (DWORD j = 0; j < count; j++)
 					{
-						int *savedValue = static_cast<AActor *>(this)->savedUserVars.CheckKey(var);
-
 						// [BOF] Restore original value if it exists; set to 0 otherwise.
-						((int *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
+						// [Doruk-Aksoy] A float variable's elements are doubles, which only a map's int value restores.
+						if (zx::decorateuzdoom::IsFloatUserVar(var))
+							((double *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
+						else
+							((int *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
 					}
 				}
 			}
@@ -703,14 +707,18 @@ void DObject::SerializeUserVars(FArchive &arc)
 					PSymbolVariable *var = static_cast<PSymbolVariable *>(sym);
 					if (var->bUserVar)
 					{
-						count = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+						count = zx::decorateuzdoom::UserVarCount(var);
 						varloc = (int *)(reinterpret_cast<BYTE *>(this) + var->offset);
 
 						arc << var->SymbolName;
 						arc.WriteCount(count);
+						// [Doruk-Aksoy] A float variable writes its doubles, which only a float variable of that name reads back.
 						for (j = 0; j < count; ++j)
 						{
-							arc << varloc[j];
+							if (zx::decorateuzdoom::IsFloatUserVar(var))
+								arc << ((double *)varloc)[j];
+							else
+								arc << varloc[j];
 						}
 					}
 				}
@@ -728,6 +736,7 @@ void DObject::SerializeUserVars(FArchive &arc)
 		{
 			PSymbol *sym = symt->FindSymbol(varname, true);
 			DWORD wanted = 0;
+			bool isFloat = false;
 
 			if (sym != NULL && sym->SymbolType == SYM_Variable)
 			{
@@ -735,22 +744,34 @@ void DObject::SerializeUserVars(FArchive &arc)
 
 				if (var->bUserVar)
 				{
-					wanted = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+					wanted = zx::decorateuzdoom::UserVarCount(var);
+					isFloat = zx::decorateuzdoom::IsFloatUserVar(var);
 					varloc = (int *)(reinterpret_cast<BYTE *>(this) + var->offset);
 				}
 			}
 			count = arc.ReadCount();
 			for (j = 0; j < MIN(wanted, count); ++j)
 			{
-				arc << varloc[j];
+				if (isFloat)
+					arc << ((double *)varloc)[j];
+				else
+					arc << varloc[j];
 			}
 			if (wanted < count)
 			{
 				// Ignore remaining values from archive.
 				for (; j < count; ++j)
 				{
-					int foo;
-					arc << foo;
+					if (isFloat)
+					{
+						double foo;
+						arc << foo;
+					}
+					else
+					{
+						int foo;
+						arc << foo;
+					}
 				}
 			}
 			arc << varname;

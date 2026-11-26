@@ -18,9 +18,10 @@ FromPal = "MYPAL", 16                            // a palette lump's colours fro
 - `trnslate.cpp`: reads every `TRNSLATE` lump in load order, builds each table on its base and stores it in
   `TRANSLATION_Custom`; a later definition of a name replaces the earlier one. Parse errors and a missing base are
   fatal, as UZDoom's are; a bad range prints and is skipped.
-- `A_SetTranslation(name)`: an empty name restores the class's translation and an unknown one is ignored. DECORATE
-  hands `""` over as `None`, so `"None"` restores the class's translation too, where UZDoom's clears it. Clearing needs an identity entry such as `"1:1=1:1"` (`docs/modding/lumps/TRNSLATE.md`). The
-  server sets it and sends it through `features/net-replication`'s `SendThingTranslation`.
+- `A_SetTranslation(name)`: a known name applies, `"None"` clears the translation as UZDoom's does (DECORATE hands `""`
+  over as `None` too, as UZDoom's DECORATE does), and an unknown name is ignored. `A_fua_ResetTranslation()` restores the
+  class's own translation, which UZDoom's DECORATE has no way to ask for. The server sets it and sends it through
+  `features/net-replication`'s `SendThingTranslation`.
 - Not ported: `RainPillar1..8` (we have no rain pillar tables), and the ZScript-only users (particles, `A_OverlayTranslation`).
 
 ## In-engine hooks

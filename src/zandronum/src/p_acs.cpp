@@ -119,6 +119,7 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
 #include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
+#include "features/decorate-uzdoom/uservars.h"
 #include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
 #include <cstddef>
 
@@ -5496,6 +5497,12 @@ int DLevelScript::GetPlayerInput(int playernum, int inputnum)
 	{
 		p = &players[playernum];
 	}
+	return P_PlayerInputValue(p, inputnum);
+}
+
+// [Doruk-Aksoy] One of a player's INPUT_ or MODINPUT_ values, shared by ACS GetPlayerInput and DECORATE's (uzdoom@62afe5f0a9).
+int P_PlayerInputValue(player_t *p, int inputnum)
+{
 	if (p == NULL)
 	{
 		return 0;
@@ -5942,65 +5949,25 @@ int DLevelScript::LineFromID(int id)
 	}
 }
 
+// [Doruk-Aksoy] A float user variable reads and writes as 16.16, as UZDoom's (features/decorate-uzdoom).
 static void SetUserVariable(AActor *self, FName varname, int index, int value)
 {
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	int max;
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar)
-	{
+	const zx::decorateuzdoom::UserVarSlot slot = zx::decorateuzdoom::FindUserVar(self, varname, zx::decorateuzdoom::kUserVarEither, index);
+	if (slot.miss != zx::decorateuzdoom::kUserVarFound)
 		return;
-	}
-	if (var->ValueType.Type == VAL_Int)
-	{
-		max = 1;
-	}
-	else if (var->ValueType.Type == VAL_Array && var->ValueType.BaseType == VAL_Int)
-	{
-		max = var->ValueType.size;
-	}
+	if (slot.isFloat)
+		zx::decorateuzdoom::StoreUserVar(slot, zx::decorateuzdoom::ComputeUserVarFromAcs(value));
 	else
-	{
-		return;
-	}
-	// Set the value of the specified user variable.
-	if (index >= 0 && index < max)
-	{
-		((int *)(reinterpret_cast<BYTE *>(self) + var->offset))[index] = value;
-	}
+		zx::decorateuzdoom::StoreUserVar(slot, value);
 }
 
 static int GetUserVariable(AActor *self, FName varname, int index)
 {
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	int max;
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar)
-	{
+	const zx::decorateuzdoom::UserVarSlot slot = zx::decorateuzdoom::FindUserVar(self, varname, zx::decorateuzdoom::kUserVarEither, index);
+	if (slot.miss != zx::decorateuzdoom::kUserVarFound)
 		return 0;
-	}
-	if (var->ValueType.Type == VAL_Int)
-	{
-		max = 1;
-	}
-	else if (var->ValueType.Type == VAL_Array && var->ValueType.BaseType == VAL_Int)
-	{
-		max = var->ValueType.size;
-	}
-	else
-	{
-		return 0;
-	}
-	// Get the value of the specified user variable.
-	if (index >= 0 && index < max)
-	{
-		return ((int *)(reinterpret_cast<BYTE *>(self) + var->offset))[index];
-	}
-	return 0;
+	const double value = zx::decorateuzdoom::LoadUserVar(slot);
+	return slot.isFloat ? zx::decorateuzdoom::ComputeUserVarToAcs(value) : int(value);
 }
 
 // Converts fixed- to floating-point as required.
@@ -6063,47 +6030,57 @@ static int DoGetCVar(FBaseCVar *cvar, bool is_string)
 	}
 }
 
-static int GetUserCVar(int playernum, const char *cvarname, bool is_string)
+// [Doruk-Aksoy] The player's own copy of a userinfo cvar, or NULL when there is none to read.
+static FBaseCVar *FindUserCVar(int playernum, const char *cvarname)
 {
 	if ((unsigned)playernum >= MAXPLAYERS || !playeringame[playernum])
 	{
-		return 0;
+		return NULL;
 	}
 	FBaseCVar **cvar_p = players[playernum].userinfo.CheckKey(FName(cvarname, true));
-	FBaseCVar *cvar;
-	if (cvar_p == NULL || (cvar = *cvar_p) == NULL || (cvar->GetFlags() & CVAR_IGNORE))
+	if (cvar_p == NULL || *cvar_p == NULL || ((*cvar_p)->GetFlags() & CVAR_IGNORE))
 	{
-		return 0;
+		return NULL;
 	}
-	return DoGetCVar(cvar, is_string);
+	return *cvar_p;
 }
 
-static int GetCVar(AActor *activator, const char *cvarname, bool is_string)
+static int GetUserCVar(int playernum, const char *cvarname, bool is_string)
+{
+	FBaseCVar *cvar = FindUserCVar(playernum, cvarname);
+	return cvar != NULL ? DoGetCVar(cvar, is_string) : 0;
+}
+
+// [Doruk-Aksoy] The cvar ACS GetCVar reads for an activator, a userinfo one being the activator's player's, shared with DECORATE's GetCVar.
+FBaseCVar *P_FindScriptCVar(AActor *activator, const char *cvarname)
 {
 	FBaseCVar *cvar = FindCVar(cvarname, NULL);
 	// Either the cvar doesn't exist, or it's for a mod that isn't loaded, so return 0.
 	if (cvar == NULL || (cvar->GetFlags() & CVAR_IGNORE))
 	{
-		return 0;
+		return NULL;
 	}
-	else
+	// For userinfo cvars, redirect to GetUserCVar
+	if (cvar->GetFlags() & CVAR_USERINFO)
 	{
-		// For userinfo cvars, redirect to GetUserCVar
-		if (cvar->GetFlags() & CVAR_USERINFO)
+		if (activator == NULL || activator->player == NULL)
 		{
-			if (activator == NULL || activator->player == NULL)
-			{
-				// [BB] Compatibility with Zandronum 2.x: In CLIENTSIDE scripts,
-				// return the value belonging to the consoleplayer
-				if ( NETWORK_InClientMode() ) 
-					return GetUserCVar(consoleplayer, cvarname, is_string);
+			// [BB] Compatibility with Zandronum 2.x: In CLIENTSIDE scripts,
+			// return the value belonging to the consoleplayer
+			if ( NETWORK_InClientMode() ) 
+				return FindUserCVar(consoleplayer, cvarname);
 
-				return 0;
-			}
-			return GetUserCVar(int(activator->player - players), cvarname, is_string);
+			return NULL;
 		}
-		return DoGetCVar(cvar, is_string);
+		return FindUserCVar(int(activator->player - players), cvarname);
 	}
+	return cvar;
+}
+
+static int GetCVar(AActor *activator, const char *cvarname, bool is_string)
+{
+	FBaseCVar *cvar = P_FindScriptCVar(activator, cvarname);
+	return cvar != NULL ? DoGetCVar(cvar, is_string) : 0;
 }
 
 static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_string)

@@ -1234,4 +1234,11 @@ AActor	*ACS_GetScriptDamagePointers( unsigned int pointer ); // [AK]
 // [BB] Export DoGiveInv
 bool	DoGiveInv(AActor *actor, const PClass *info, int amount);
 
+class player_t;
+// [Doruk-Aksoy] One of a player's INPUT_ or MODINPUT_ values, or 0 for no player.
+int		P_PlayerInputValue(player_t *p, int inputnum);
+class FBaseCVar;
+// [Doruk-Aksoy] The cvar ACS GetCVar reads for an activator, or NULL.
+FBaseCVar *P_FindScriptCVar(AActor *activator, const char *cvarname);
+
 #endif //__P_ACS_H__

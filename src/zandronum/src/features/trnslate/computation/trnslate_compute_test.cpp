@@ -330,7 +330,7 @@ TEST(TrnslatePalette, SpanMustStayInsideTheTable)
 	EXPECT_FALSE(ComputePaletteSpanFits(0, 0));
 }
 
-TEST(TrnslateSetTranslation, EmptyResetsKnownAppliesUnknownKeeps)
+TEST(TrnslateSetTranslation, ResetRestoresKnownAppliesUnknownKeeps)
 {
 	EXPECT_EQ(ComputeSetTranslationOutcome(true, false), kSetTranslationDefault);
 	EXPECT_EQ(ComputeSetTranslationOutcome(true, true), kSetTranslationDefault);

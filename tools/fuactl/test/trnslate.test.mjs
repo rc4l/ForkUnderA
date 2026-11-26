@@ -12,9 +12,12 @@ test("the wad holds TRNSLATE, DECORATE, the three palette lumps and both maps", 
   const decorate = lumps.find((l) => l.name === "DECORATE").data.toString("latin1");
   for (const a of ACTORS) {
     assert.match(decorate, new RegExp(`actor ${a.name} \\d+`));
-    assert.match(decorate, new RegExp(`actor ${a.name}Twin \\d+\\n\\{\\n\\t\\+NOGRAVITY\\n\\tTranslation "`));
+    const twin = a.twin ? `\\tTranslation "` : `\\t\\n`;
+    assert.match(decorate, new RegExp(`actor ${a.name}Twin \\d+\\n\\{\\n\\t\\+NOGRAVITY\\n${twin}`));
   }
   assert.match(decorate, /A_SetTranslation\(""\)/);
+  assert.match(decorate, /A_SetTranslation\("None"\)/);
+  assert.match(decorate, /A_fua_ResetTranslation/);
 });
 
 test("the palette lumps are what the engine's reader takes", () => {

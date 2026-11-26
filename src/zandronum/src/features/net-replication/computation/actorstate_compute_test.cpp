@@ -73,3 +73,12 @@ TEST(ComputeSkipsPuffFor, OnlyTheShooterPredictingANoNetIdPuff)
 	EXPECT_FALSE(ComputeSkipsPuffFor(true, false, true));
 	EXPECT_FALSE(ComputeSkipsPuffFor(true, true, false));
 }
+
+// [Doruk-Aksoy] A joiner kept a translated class's translation when the server had cleared it to 0, since only a non-zero one was sent.
+TEST(ComputeJoinSendsTranslation, WhateverDiffersFromTheClass)
+{
+	EXPECT_TRUE(ComputeJoinSendsTranslation(0, 0x30007));
+	EXPECT_TRUE(ComputeJoinSendsTranslation(0x30007, 0));
+	EXPECT_FALSE(ComputeJoinSendsTranslation(0x30007, 0x30007));
+	EXPECT_FALSE(ComputeJoinSendsTranslation(0, 0));
+}

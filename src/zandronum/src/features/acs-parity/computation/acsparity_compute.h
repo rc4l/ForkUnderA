@@ -102,8 +102,10 @@ struct ProximityScan
 };
 
 // [Doruk-Aksoy] UZDoom's P_Thing_CheckProximity loop: `next(handle, point, killed)` hands out each candidate of the class until it returns false, `sight(handle)` is asked only under CPXF_CHECKSIGHT.
+// [Doruk-Aksoy] Counting, as DECORATE's CountProximity, it scans every candidate and answers how many counted.
 template <class Handle, class Next, class Sight>
-ProximityScan<Handle> ComputeProximityScan(Next next, Sight sight, const ProximityPoint& ref, double distance, int count, int flags)
+ProximityScan<Handle> ComputeProximityScan(Next next, Sight sight, const ProximityPoint& ref, double distance, int count, int flags,
+	bool counting = false)
 {
 	ProximityScan<Handle> scan = { 0, nullptr };
 	if (distance <= 0)
@@ -140,14 +142,14 @@ ProximityScan<Handle> ComputeProximityScan(Next next, Sight sight, const Proximi
 			else if (scan.chosen == nullptr)
 				scan.chosen = handle;
 		}
-		if (++counter > count)
+		if (++counter > count && !counting)
 		{
 			stopped = true;
 			if (!(setsPointer && prefers))
 				break;
 		}
 	}
-	scan.result = ComputeProximityResult(counter, count, flags, stopped);
+	scan.result = counting ? counter : ComputeProximityResult(counter, count, flags, stopped);
 	return scan;
 }
 
