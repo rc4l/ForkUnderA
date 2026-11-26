@@ -62,4 +62,4 @@ export async function judgeLanguageLumps(c, inst, label) {
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "languagelumps", wad: buildLanguageLumpsWad(), maps: ["MAP01"],
-  sides: [{ name: "vk", noGl: true }], judgeLaunch: judgeLanguageLumps }), compareEachLaunch);
+  sides: [{ name: "vk", noGl: true, offline: true }], judgeLaunch: judgeLanguageLumps }), compareEachLaunch);

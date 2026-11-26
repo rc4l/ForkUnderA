@@ -72,6 +72,16 @@ TEST(ReloadArgv, DropsOldIwadAndFileAppendsNewSetKeepingOtherArgs)
 	EXPECT_EQ(out, expect);
 }
 
+// [Doruk-Aksoy] A client launched with +connect ran it again after Continue's restart, and its restored game froze as a disconnected client.
+TEST(ReloadArgv, DropsConnectInBothFormsAndTheIwadOnlyWhenItChanges)
+{
+	const std::vector<std::string> argv = { "forkundera", "-iwad", "freedoom2.wad", "-file", "map.wad", "+set", "snd_sfxvolume", "0", "+connect", "127.0.0.1:10840", "-connect", "127.0.0.1:10840" };
+	const std::vector<std::string> kept = { "forkundera", "-iwad", "freedoom2.wad", "+set", "snd_sfxvolume", "0" };
+	EXPECT_EQ(ComputeReloadArgv(argv, ComputeReloadDroppedSwitches(false), {}), kept);
+	const std::vector<std::string> noIwad = { "forkundera", "+set", "snd_sfxvolume", "0" };
+	EXPECT_EQ(ComputeReloadArgv(argv, ComputeReloadDroppedSwitches(true), {}), noIwad);
+}
+
 TEST(ReloadArgv, RemovesFileAtTheVeryEnd_TheDArgsBugCase)
 {
 	// -file is the last switch and its values run to the end. DArgs::RemoveArgs leaves the final

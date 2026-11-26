@@ -3,7 +3,10 @@
 // usage:  node scenarios/vsyncpacing.mjs [port]
 // Needs a real display: the rhythm comes from how the presentation engine hands images back, which no virtual screen does.
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
+import { engineProcessCount } from "../src/launch.mjs";
 import { runScenarioIfMain, compareEachLaunch } from "../src/template.mjs";
 import { parseCaptureCsv } from "../src/recap.mjs";
 import * as cap from "../src/capture.mjs";
@@ -65,7 +68,19 @@ async function recordSecond(c) {
   const stopped = await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 });
   const csv = /wrote (\S+\.csv)/.exec(stopped);
   if (!csv) throw new Error(`fua_capture wrote no CSV: ${stopped.trim()}`);
-  return pacingOf(parseCaptureCsv(fs.readFileSync(csv[1], "utf8")));
+  const rows = parseCaptureCsv(fs.readFileSync(csv[1], "utf8"));
+  return { ...pacingOf(rows), ms: rows.map((r) => r["frame/ms"] || 0) };
+}
+
+// [Doruk-Aksoy] The image count of the last swapchain the engine's log reports, or null when it reports none.
+export function swapchainImages(logText) {
+  const all = [...String(logText || "").matchAll(/Diligent swapchain:.*?(\d+) images/g)];
+  return all.length ? Number(all[all.length - 1][1]) : null;
+}
+
+// [Doruk-Aksoy] What a failure leaves to read it by: the swapchain it ran on, how many other engines shared the display, and where the frames went.
+export function pacingEvidence({ images, others, file }) {
+  return `the swapchain had ${images ?? "an unreported number of"} images, ${others} other engine(s) were open; frames in ${file}`;
 }
 
 export async function judgeLaunch(c, inst, label) {
@@ -77,7 +92,13 @@ export async function judgeLaunch(c, inst, label) {
     const first = await recordSecond(c);
     trials.push({ stall, first, after: inRhythm(first) ? await recordSecond(c) : null });
   }
-  return judgePacing(label, trials);
+  const verdict = judgePacing(label, trials);
+  if (!verdict.failed) return verdict;
+  // [Doruk-Aksoy] Failures came in clusters on old and new builds alike and never reproduced afterwards, so a failure keeps what it saw.
+  const file = path.join(os.tmpdir(), `vsyncpacing-${label.replace(/\W+/g, "-")}.json`);
+  fs.writeFileSync(file, JSON.stringify(trials));
+  const images = swapchainImages(inst?.log && fs.existsSync(inst.log) ? fs.readFileSync(inst.log, "utf8") : "");
+  return { ...verdict, line: `${verdict.line}; ${pacingEvidence({ images, others: Math.max(0, engineProcessCount() - 1), file })}` };
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "vsyncpacing", wad: buildVsyncPacingWad(), maps: ["MAP01"],

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName, gamePortFor, assertGamePort, readEngineLog } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, clientSeesItselfPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName, gamePortFor, assertGamePort, readEngineLog } from "../src/netplay.mjs";
 
 // [Doruk-Aksoy] A server that found its game port taken binds the next one up, so its clients would join whichever engine holds the asked one.
 test("a server that bound another game port than it was asked for stops the set, and a game port follows its bridge port", async () => {
@@ -152,6 +152,9 @@ test("a late joiner joins a running set, and a set that fails to launch is torn 
   assert.equal(late.inst.opts.cvars.fua_copy_prescan_check, 1, "a late joiner takes the cvars the set's clients were launched with");
   const own = await addClient(set, { role: "latejoin", cvars: { cl_unlagged: 1 } }, f.deps);
   assert.equal(own.inst.opts.cvars.fua_copy_prescan_check, undefined, "unless it is given its own");
+  assert.equal("userDir" in own.inst.opts, false, "a client keeps its launch's own user folder");
+  const returner = await addClient(set, { role: "returner", userDir: "kept" }, f.deps);
+  assert.equal(returner.inst.opts.userDir, "kept", "unless it names one an earlier launch wrote");
   const g = fakes({ failOn: 1 });
   await assert.rejects(launchNetplay({ players: 1, basePort: 7900 }, g.deps), /launch failed/);
   assert.deepEqual(g.stopped, [7900]);
@@ -254,6 +257,22 @@ test("a join is waited on until the server holds the client playing, or reported
   const active = { c: { rpc: async () => ({ consoleplayer: 2, connection: "active" }) }, player: -1 };
   const again = await joinGame(active, lateServer, { exec, sleep: async () => { t += 1000; }, timeoutMs: 60000, resendMs: 3500, now: () => t });
   assert.deepEqual([again.joined, execs], [true, ["join", "join"]]);
+});
+
+// [Doruk-Aksoy] netcenterview looked down on the spectator body, then the client's own word of the join gave it a new pawn at pitch 0.
+test("a join is waited on until the client too holds itself playing, without asking again", async () => {
+  assert.equal(clientSeesItselfPlaying({ connection: "active", spectating: false }), true);
+  assert.equal(clientSeesItselfPlaying({ connection: "active" }), true, "a build with no spectating field");
+  assert.equal(clientSeesItselfPlaying({ connection: "active", spectating: true }), false);
+  assert.equal(clientSeesItselfPlaying({ connection: "attempting", spectating: false }), false);
+  assert.equal(clientSeesItselfPlaying(null), false);
+  const execs = [];
+  let polls = 0;
+  const client = { c: { rpc: async () => ({ consoleplayer: 1, connection: "active", spectating: polls++ < 3 }) }, player: -1 };
+  const server = { rpc: async () => ({ clients: [{ player: 1, state: "spawned", spectating: false }] }) };
+  let t = 0;
+  const r = await joinGame(client, server, { exec: async (c, text) => execs.push(text), sleep: async () => { t += 5000; }, timeoutMs: 60000, resendMs: 3500, now: () => t });
+  assert.deepEqual([r.joined, r.mine.spectating, polls, execs], [true, false, 4, []]);
 });
 
 test("a client the server never holds playing times out", async () => {

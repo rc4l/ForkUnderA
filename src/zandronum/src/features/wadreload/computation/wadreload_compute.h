@@ -45,6 +45,9 @@ std::vector<std::string> ComputeReloadArgv(const std::vector<std::string> &argv,
                                            const std::vector<std::string> &removeSwitches,
                                            const std::vector<std::string> &appendTokens);
 
+// [Doruk-Aksoy] The switches a reload drops: the file set, demo, save and connect switches that must not survive into a fresh WAD set (+connect too, which the restart runs again as a console command), and -iwad when the IWAD changes.
+std::vector<std::string> ComputeReloadDroppedSwitches(bool changingIwad);
+
 // The engine's FResourceFile accepts ANY existing file (its format table ends in a catch-all that
 // wraps a single unrecognized file as one lump), so it can't tell a real WAD from a truncated/garbage
 // download. For a reload/download safety gate we want the opposite: accept only recognized archive
