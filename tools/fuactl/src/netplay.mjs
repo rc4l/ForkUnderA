@@ -11,7 +11,7 @@ import { crashedError } from "./play.mjs";
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
 // [Doruk-Aksoy] The server cvars that run the snapshot netcode in place of the legacy commands, until they are the engine's defaults.
-export const SNAP_SERVER_CVARS = { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 3 };
+export const SNAP_SERVER_CVARS = { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 2 };
 
 // [Doruk-Aksoy] The game port a netgame on bridge port `port` hosts on, 3000 above it as the defaults are, so sets on different bridge ports never share one.
 export function gamePortFor(port) {
