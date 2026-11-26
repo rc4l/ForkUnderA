@@ -1,5 +1,5 @@
 // [Doruk-Aksoy] ACS actor handles across a hub (features/acs-handles): exit 0 when a handle kept from a hub map resolves each time the player comes back, reads 0
-// while away and after its actor was removed, the table holds the same counts round after round, and leaving the hub frees the parked slots.
+// while away and after its actor was removed, keeps the value set on it, the table holds the same counts round after round, and leaving the hub frees the parked slots.
 //
 // usage:  node scenarios/acshandleshub.mjs
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
@@ -14,11 +14,12 @@ export const HUB = ["MAP01", "MAP02", "MAP03"];
 export const OUTSIDE = "MAP04";
 export const ROUNDS = 8;
 export const MAPINFO = `cluster 1\n{\n\thub\n}\n\ncluster 2\n{\n}\n\n${HUB.map((m) => `map ${m} "${m}"\n{\n\tcluster = 1\n}\n`).join("\n")}\nmap ${OUTSIDE} "${OUTSIDE}"\n{\n\tcluster = 2\n}\n`;
-export const STRINGS = ["u1", "u2", "u3", " "];
+export const STRINGS = ["u1", "u2", "u3", " ", "zxkept"];
+export const KEPT_VALUE = 77;
 const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 const KEPT = 5, REMOVED = 6;
 
-const fn = (name, ...args) => callFunc(FN[name], args);
+const fn = (name, ...args) => callFunc({ ...FN, SetActorData: 24032, GetActorData: 24033 }[name], args);
 const global = (n) => [PCD.PUSHGLOBALVAR, n];
 const keep = (n, words) => [...words, PCD.ASSIGNGLOBALVAR, n];
 
@@ -30,10 +31,10 @@ function logScript(tag, values, before = []) {
 export const SCRIPTS = {
   // [Doruk-Aksoy] On MAP01's first visit: a handle to keep, and one to a barrel removed before leaving.
   1: logScript("u1", [global(0), fn("HandleValid", global(0)), fn("HandleValid", global(1))], [
-    ...keep(0, fn("GetActorHandle", KEPT)), ...keep(1, fn("GetActorHandle", REMOVED)),
+    ...keep(0, fn("GetActorHandle", KEPT)), ...keep(1, fn("GetActorHandle", REMOVED)), ...fn("SetActorData", global(0), S.zxkept, KEPT_VALUE), PCD.DROP,
     PCD.PUSHNUMBER, REMOVED, PCD.LSPEC1, SPECIAL.Thing_Remove, PCD.DELAYDIRECT, 2]),
-  // [Doruk-Aksoy] On any map: the kept and removed handles, and this map's own barrel's handle.
-  2: logScript("u2", [fn("HandleValid", global(0)), fn("HandleValid", global(1)), fn("GetActorHandle", KEPT)]),
+  // [Doruk-Aksoy] On any map: the kept and removed handles, this map's own barrel's handle, and the value set on the kept barrel.
+  2: logScript("u2", [fn("HandleValid", global(0)), fn("HandleValid", global(1)), fn("GetActorHandle", KEPT), fn("GetActorData", global(0), S.zxkept, -1)]),
   // [Doruk-Aksoy] Outside the hub: the kept handle.
   3: logScript("u3", [fn("HandleValid", global(0))]),
 };
@@ -59,9 +60,9 @@ export function judgeHub({ first, rounds, outside, outsideCounts }) {
   if (!(kept > 0 && keptValid === 1 && removedValid === 0)) faults.push(`MAP01's first visit logged ${kept} ${keptValid} ${removedValid}, not a handle, 1 and 0`);
   rounds.forEach((r, i) => {
     const away = logged(r.away, "u2") || [];
-    if (away[0] !== 0 || away[1] !== 0) faults.push(`round ${i + 1}: away on MAP02 the kept and removed handles read ${away[0]} ${away[1]}, not 0 0`);
+    if (away[0] !== 0 || away[1] !== 0 || away[3] !== -1) faults.push(`round ${i + 1}: away on MAP02 the kept and removed handles and the value read ${away[0]} ${away[1]} ${away[3]}, not 0 0 -1`);
     const back = logged(r.back, "u2") || [];
-    if (back[0] !== 1 || back[1] !== 0 || back[2] !== kept) faults.push(`round ${i + 1}: back on MAP01 they read ${back[0]} ${back[1]} and the barrel's handle is ${back[2]}, not 1 0 ${kept}`);
+    if (back[0] !== 1 || back[1] !== 0 || back[2] !== kept || back[3] !== KEPT_VALUE) faults.push(`round ${i + 1}: back on MAP01 they read ${back[0]} ${back[1]}, the barrel's handle is ${back[2]} and its value ${back[3]}, not 1 0 ${kept} ${KEPT_VALUE}`);
     const n = counts(r.counts);
     if (!n) faults.push(`round ${i + 1}: fua_handles printed nothing`);
     else if (i > 0 && JSON.stringify(n) !== JSON.stringify(counts(rounds[0].counts))) faults.push(`round ${i + 1}: the table holds ${JSON.stringify(n)}, not round 1's ${JSON.stringify(counts(rounds[0].counts))}`);
@@ -97,7 +98,7 @@ export async function judgeLaunch(c, inst, label) {
   await enter(OUTSIDE);
   const outside = await exec("puke 3");
   const faults = judgeHub({ first, rounds, outside, outsideCounts: await exec("fua_handles") });
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: a kept handle came back with MAP01 ${ROUNDS} times with the table steady at ${JSON.stringify(counts(rounds[0].counts))}, a removed one stayed stale, and leaving the hub freed every parked slot`, failed: faults.length ? 1 : 0 };
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: a kept handle and its value came back with MAP01 ${ROUNDS} times with the table steady at ${JSON.stringify(counts(rounds[0].counts))}, a removed one stayed stale, and leaving the hub freed every parked slot`, failed: faults.length ? 1 : 0 };
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "acshandleshub", wad: buildAcsHandlesHubPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);

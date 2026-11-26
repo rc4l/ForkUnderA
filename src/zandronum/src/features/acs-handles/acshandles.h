@@ -22,6 +22,11 @@ enum Function
 	kHandleValid = 24021,
 	kHandlePointer = 24022,
 	kSetActivatorHandle = 24023,
+	// [Doruk-Aksoy] The per-actor key/value store, 24032-24035.
+	kSetActorData = 24032,
+	kGetActorData = 24033,
+	kHasActorData = 24034,
+	kClearActorData = 24035,
 };
 
 // [Doruk-Aksoy] The actor's handle, given out the first time a script asks, or 0 for no actor or a full table.
@@ -54,6 +59,16 @@ void ReadTable(PNGHandle *png);
 
 // [Doruk-Aksoy] After a savegame's level is rebuilt, the live slots no actor claimed are released.
 void FinishLoad();
+
+// [Doruk-Aksoy] fua_SetActorData: the actor's value under `key`, false past its 64 keys (warned once a map) or for no actor.
+bool SetActorData(AActor *actor, const char *key, int32_t value);
+
+// [Doruk-Aksoy] fua_GetActorData and fua_HasActorData: the value under `key`, `fallback` when unset.
+int32_t GetActorData(AActor *actor, const char *key, int32_t fallback);
+bool HasActorData(AActor *actor, const char *key);
+
+// [Doruk-Aksoy] fua_ClearActorData: one key removed, or every key when `key` is null.
+void ClearActorData(AActor *actor, const char *key);
 
 }} // namespace zx::acshandles
 

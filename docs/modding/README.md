@@ -115,6 +115,8 @@ than only at class-definition time.
   instead of a TID, kept across savegames and hub maps, and how to use them in clientside scripts.
 - [Actor fields](acs/Actor_fields.md) — `fua_GetField` and `fua_SetField`: any DECORATE field read by name,
   `user_` variables written.
+- [Actor data](acs/Actor_data.md) — `fua_SetActorData` and its siblings: up to 64 named values kept on any
+  actor, gone with it, kept in savegames and hub maps.
 - [Named random streams](acs/Random_streams.md) — `fua_Random`, `fua_FRandom` and `fua_SetRandomSeed`:
   sequences of their own that never move `Random()`'s, kept in savegames and demos.
 

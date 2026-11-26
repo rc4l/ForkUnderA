@@ -5926,6 +5926,11 @@ enum EACSFunctions
 	// [Doruk-Aksoy] features/acs-fields: an actor's DECORATE fields by name.
 	ACSF_fua_GetField = 24030,			// (int h, str name [, int index])
 	ACSF_fua_SetField,					// (int h, str name, int value [, int index])
+	// [Doruk-Aksoy] features/acs-handles: named values a script attaches to an actor.
+	ACSF_fua_SetActorData = 24032,		// (int h, str key, int value)
+	ACSF_fua_GetActorData,				// (int h, str key [, int default])
+	ACSF_fua_HasActorData,				// (int h, str key)
+	ACSF_fua_ClearActorData,			// (int h [, str key])
 	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
 	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
 	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
@@ -5936,6 +5941,7 @@ static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && 
 static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
 static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
 static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
+static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
@@ -7532,6 +7538,20 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		// [Doruk-Aksoy] features/acs-fields: reads any DECORATE field, writes only user_ variables, which stay on this machine as SetUserVariable's do.
 		case ACSF_fua_GetField:
 			return zx::acsfields::GetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 2 ? args[2] : 0 );
+
+		// [Doruk-Aksoy] features/acs-handles: an actor's own named values, never sent anywhere.
+		case ACSF_fua_SetActorData:
+			return zx::acshandles::SetActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), args[2] );
+
+		case ACSF_fua_GetActorData:
+			return zx::acshandles::GetActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 2 ? args[2] : 0 );
+
+		case ACSF_fua_HasActorData:
+			return zx::acshandles::HasActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ));
+
+		case ACSF_fua_ClearActorData:
+			zx::acshandles::ClearActorData( zx::acshandles::ActorOf( args[0] ), argCount > 1 ? FBehavior::StaticLookupString( args[1] ) : NULL );
+			return 0;
 
 		case ACSF_fua_SetField:
 			return zx::acsfields::SetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 3 ? args[3] : 0, args[2] );

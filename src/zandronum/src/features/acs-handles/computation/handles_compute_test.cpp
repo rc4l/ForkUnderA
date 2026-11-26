@@ -302,7 +302,7 @@ TEST(AcsHandles, TheSaveChunkRoundTripsAndRefusesDamage)
 		EXPECT_TRUE(back.slots.empty() && backNames.empty()) << cut;
 	}
 	std::vector<uint8_t> wrongVersion = chunk;
-	wrongVersion[0] = 2;
+	wrongVersion[0] = 9;
 	EXPECT_FALSE(ComputeDecodeTable(wrongVersion.data(), wrongVersion.size(), back, backNames));
 	EXPECT_FALSE(ComputeDecodeTable(nullptr, 0, back, backNames));
 	std::vector<uint8_t> hugeCount = chunk;
@@ -333,4 +333,112 @@ TEST(AcsHandles, RemapTouchesEveryMapKeyButZero)
 	EXPECT_EQ(state.slots[0].map, 50);
 	EXPECT_EQ(state.slots[1].map, 0);
 	EXPECT_EQ(state.visitMaps, (std::vector<int>{ 50, 60 }));
+}
+
+// [Doruk-Aksoy] A live slot keeps named values: set, read, replaced, removed one at a time or all at once.
+TEST(AcsHandles, ALiveSlotKeepsNamedValues)
+{
+	HandleTable table;
+	const uint32_t slot = Take(table, A);
+	int32_t value = -1;
+	EXPECT_FALSE(table.GetData(slot, 7, value));
+	EXPECT_EQ(table.SetData(slot, 7, 3), kDataSet);
+	EXPECT_EQ(table.SetData(slot, 8, 4), kDataSet);
+	EXPECT_EQ(table.SetData(slot, 7, 5), kDataSet);
+	ASSERT_TRUE(table.GetData(slot, 7, value));
+	EXPECT_EQ(value, 5);
+	table.ClearData(slot, 7);
+	EXPECT_FALSE(table.GetData(slot, 7, value));
+	EXPECT_TRUE(table.GetData(slot, 8, value));
+	table.ClearData(slot, 99);
+	table.ClearAllData(slot);
+	EXPECT_FALSE(table.GetData(slot, 8, value));
+	EXPECT_EQ(table.SetData(0, 1, 1), kDataNoSlot);
+	EXPECT_EQ(table.SetData(40, 1, 1), kDataNoSlot);
+	EXPECT_FALSE(table.GetData(0, 1, value));
+	EXPECT_FALSE(table.GetData(40, 1, value));
+	table.ClearData(0, 1);
+	table.ClearData(40, 1);
+	table.ClearAllData(0);
+	table.ClearAllData(40);
+}
+
+TEST(AcsHandles, AnActorCarriesAtMostSixtyFourKeys)
+{
+	HandleTable table;
+	const uint32_t slot = Take(table, A);
+	for (int key = 1; key <= int(kMaxDataKeys); ++key)
+		ASSERT_EQ(table.SetData(slot, key, key), kDataSet) << key;
+	EXPECT_EQ(table.SetData(slot, 1000, 1), kDataFull);
+	EXPECT_EQ(table.SetData(slot, 1, 9), kDataSet);
+}
+
+// [Doruk-Aksoy] The values die with the actor, wait with a parked slot, and go with a reset.
+TEST(AcsHandles, ValuesFollowTheirActorsLife)
+{
+	HandleTable table;
+	const uint32_t a = Take(table, A);
+	table.SetData(a, 1, 11);
+	table.Release(a);
+	int32_t value = 0;
+	EXPECT_EQ(Take(table, B), a);
+	EXPECT_FALSE(table.GetData(a, 1, value));
+
+	const uint32_t c = Take(table, C);
+	table.SetData(c, 2, 22);
+	table.Park(c, 10);
+	EXPECT_FALSE(table.GetData(c, 2, value));
+	EXPECT_EQ(table.SetData(c, 3, 1), kDataNoSlot);
+	table.ClearData(c, 2);
+	table.ClearAllData(c);
+	ASSERT_TRUE(table.Attach(c, C));
+	ASSERT_TRUE(table.GetData(c, 2, value));
+	EXPECT_EQ(value, 22);
+
+	table.Reset();
+	const uint32_t d = Take(table, D);
+	EXPECT_FALSE(table.GetData(d, 2, value));
+}
+
+TEST(AcsHandles, SavedValuesComeBackAndTheirKeysRemap)
+{
+	HandleTable table;
+	const uint32_t a = Take(table, A);
+	table.SetData(a, 5, 50);
+	table.SetData(a, 6, -60);
+	TableState state = table.Save();
+	ComputeRemapDataKeys(state, [](int key) { return key - 4; });
+	ASSERT_EQ(state.slots[0].data.size(), 2u);
+	EXPECT_EQ(state.slots[0].data[0].key, 1);
+	const std::vector<uint8_t> chunk = ComputeEncodeTable(state, { "first", "second" });
+	TableState back;
+	std::vector<std::string> names;
+	ASSERT_TRUE(ComputeDecodeTable(chunk.data(), chunk.size(), back, names));
+	ComputeRemapDataKeys(back, [](int key) { return key + 4; });
+	HandleTable loaded;
+	loaded.Load(back);
+	ASSERT_TRUE(loaded.Attach(a, A));
+	int32_t value = 0;
+	ASSERT_TRUE(loaded.GetData(a, 6, value));
+	EXPECT_EQ(value, -60);
+
+	// [Doruk-Aksoy] A pair count past the chunk's end is refused.
+	std::vector<uint8_t> damaged = chunk;
+	damaged[20] = 0x7F;
+	EXPECT_FALSE(ComputeDecodeTable(damaged.data(), damaged.size(), back, names));
+}
+
+// [Doruk-Aksoy] A version 1 chunk, from before the store, loads with no values.
+TEST(AcsHandles, AVersionOneChunkLoadsWithoutValues)
+{
+	std::vector<uint8_t> chunk;
+	auto put = [&chunk](uint32_t v) { for (int i = 0; i < 4; ++i) chunk.push_back(uint8_t(v >> (8 * i))); };
+	put(1); put(1); put(4); put(kSlotLive); put(0);	// [Doruk-Aksoy] one slot: generation 4, live, no map
+	put(0); put(0); put(0); put(0); put(0); put(0);	// [Doruk-Aksoy] no queue, no visits, clock 0, no names
+	TableState state;
+	std::vector<std::string> names;
+	ASSERT_TRUE(ComputeDecodeTable(chunk.data(), chunk.size(), state, names));
+	ASSERT_EQ(state.slots.size(), 1u);
+	EXPECT_EQ(state.slots[0].generation, 4u);
+	EXPECT_TRUE(state.slots[0].data.empty());
 }

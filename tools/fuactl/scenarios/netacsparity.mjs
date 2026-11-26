@@ -3,7 +3,7 @@
 //
 // usage:  node scenarios/netacsparity.mjs
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
-import { withNetCopies, addPlayerStarts, netJudge, answerFor } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, answerFor, NET_CONFIGS } from "../src/netacs.mjs";
 import { CHECKS, buildAcsParityPk3, parseParity, judgeNullDamage } from "./acsparity.mjs";
 
 export const STEPS = [{ script: 1, tags: ["parity"] }, { script: 2, tags: ["damagenull"] }];
@@ -40,6 +40,6 @@ export function judgeMachine(logs, member) {
 export const judgeNetplay = netJudge({ steps: STEPS, late: STEPS, judge: judgeMachine,
   passed: `${CHECKS.length} checks give each machine its answer: the server as single player, every client from its own world, a client's copy changing nothing on the server` });
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }];
+export const CONFIGS = NET_CONFIGS;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsparity", wad: buildNetParityPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

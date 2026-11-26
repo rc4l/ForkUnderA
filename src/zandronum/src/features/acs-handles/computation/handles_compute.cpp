@@ -24,7 +24,8 @@ uint32_t ComputeHandleGeneration(int32_t handle)
 
 namespace {
 
-constexpr uint32_t kChunkVersion = 1;
+// [Doruk-Aksoy] 2 adds each slot's key/value store; 1 still loads, with none.
+constexpr uint32_t kChunkVersion = 2;
 
 void Put(std::vector<uint8_t> &out, uint32_t value)
 {
@@ -88,6 +89,12 @@ std::vector<uint8_t> ComputeEncodeTable(const TableState &state, const std::vect
 		Put(out, entry.generation);
 		Put(out, entry.state);
 		Put(out, static_cast<uint32_t>(entry.map));
+		Put(out, static_cast<uint32_t>(entry.data.size()));
+		for (const DataPair &pair : entry.data)
+		{
+			Put(out, static_cast<uint32_t>(pair.key));
+			Put(out, static_cast<uint32_t>(pair.value));
+		}
 	}
 	Put(out, static_cast<uint32_t>(state.freeQueue.size()));
 	for (uint32_t slot : state.freeQueue)
@@ -114,15 +121,22 @@ bool ComputeDecodeTable(const uint8_t *data, size_t size, TableState &state, std
 	Reader in{ data, size, 0, data != nullptr };
 	state = TableState{};
 	names.clear();
-	if (in.Get() != kChunkVersion)
+	const uint32_t version = in.Get();
+	if (version != 1 && version != kChunkVersion)
 		return false;
-	const uint32_t slots = in.Count(3);
+	const uint32_t slots = in.Count(version == 1 ? 3 : 4);
 	for (uint32_t i = 0; i < slots; ++i)
 	{
 		SlotEntry entry{ 0, kSlotFree, 0, nullptr };
 		entry.generation = in.Get();
 		entry.state = static_cast<SlotState>(in.Get());
 		entry.map = static_cast<int>(in.Get());
+		const uint32_t pairs = version == 1 ? 0 : in.Count(2);
+		for (uint32_t k = 0; k < pairs; ++k)
+		{
+			const int key = static_cast<int>(in.Get());
+			entry.data.push_back(DataPair{ key, static_cast<int32_t>(in.Get()) });
+		}
 		state.slots.push_back(entry);
 	}
 	const uint32_t queued = in.Count(1);
@@ -220,6 +234,7 @@ void HandleTable::Release(uint32_t slot)
 	SlotEntry &entry = slots_[slot];
 	entry.actor = nullptr;
 	entry.map = 0;
+	entry.data.clear();
 	// [Doruk-Aksoy] A generation is never handed out twice, so a slot past its last one retires.
 	if (entry.generation >= kMaxGeneration)
 	{
@@ -322,6 +337,61 @@ void HandleTable::Reset()
 	visitMaps_.clear();
 	visitTimes_.clear();
 	clock_ = 0;
+}
+
+DataResult HandleTable::SetData(uint32_t slot, int key, int32_t value)
+{
+	if (slot == 0 || slot >= slots_.size() || slots_[slot].state != kSlotLive)
+		return kDataNoSlot;
+	std::vector<DataPair> &data = slots_[slot].data;
+	for (DataPair &pair : data)
+	{
+		if (pair.key == key)
+		{
+			pair.value = value;
+			return kDataSet;
+		}
+	}
+	if (data.size() >= kMaxDataKeys)
+		return kDataFull;
+	data.push_back(DataPair{ key, value });
+	return kDataSet;
+}
+
+bool HandleTable::GetData(uint32_t slot, int key, int32_t &value) const
+{
+	if (slot == 0 || slot >= slots_.size() || slots_[slot].state != kSlotLive)
+		return false;
+	for (const DataPair &pair : slots_[slot].data)
+	{
+		if (pair.key == key)
+		{
+			value = pair.value;
+			return true;
+		}
+	}
+	return false;
+}
+
+void HandleTable::ClearData(uint32_t slot, int key)
+{
+	if (slot == 0 || slot >= slots_.size() || slots_[slot].state != kSlotLive)
+		return;
+	std::vector<DataPair> &data = slots_[slot].data;
+	for (size_t i = 0; i < data.size(); ++i)
+	{
+		if (data[i].key == key)
+		{
+			data.erase(data.begin() + i);
+			return;
+		}
+	}
+}
+
+void HandleTable::ClearAllData(uint32_t slot)
+{
+	if (slot != 0 && slot < slots_.size() && slots_[slot].state == kSlotLive)
+		slots_[slot].data.clear();
 }
 
 size_t HandleTable::CountState(SlotState state) const
