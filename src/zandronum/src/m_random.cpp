@@ -412,6 +412,22 @@ void FRandom::StaticReadRNGState (PNGHandle *png)
 
 //==========================================================================
 //
+// FRandom :: StaticHasCRC
+//
+//==========================================================================
+
+bool FRandom::StaticHasCRC (DWORD crc)
+{
+	for (FRandom *rng = RNGList; rng != NULL; rng = rng->Next)
+	{
+		if (rng->NameCRC == crc)
+			return true;
+	}
+	return false;
+}
+
+//==========================================================================
+//
 // FRandom :: StaticFindRNG
 //
 // This function attempts to find an RNG with the given name.

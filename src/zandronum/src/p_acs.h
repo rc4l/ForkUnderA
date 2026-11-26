@@ -1110,6 +1110,7 @@ protected:
 	int				WrapWidth;
 	FBehavior	    *activeBehavior;
 	int				InModuleScriptNumber;
+	bool			fua_clientside;	// [Doruk-Aksoy] features/acs-random: a CLIENTSIDE script, whose named streams are apart from every other script's
 	FString			activefontname; // [TP]
 
 	// [AK] Pointers to the source, inflictor, and target actors that triggered a GAMEEVENT_ACTOR_DAMAGED or

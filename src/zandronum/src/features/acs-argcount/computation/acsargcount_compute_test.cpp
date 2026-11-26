@@ -95,6 +95,8 @@ TEST(AcsArgCount, HandleFunctionsNeedTheirArguments)
 	EXPECT_EQ(Needed(24022), 2);
 	EXPECT_EQ(Needed(24023), 1);
 	EXPECT_EQ(Needed(24024), 0);
+	EXPECT_EQ(Needed(24030), 2);   // [Doruk-Aksoy] fua_GetField
+	EXPECT_EQ(Needed(24031), 3);   // [Doruk-Aksoy] fua_SetField
 }
 
 TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)
