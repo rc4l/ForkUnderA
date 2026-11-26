@@ -361,6 +361,10 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(RF, FORCEYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, FORCEXYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, ROLLSPRITE, AActor, renderflags),	// [rc4l] uzdoom
+	DEFINE_FLAG(RF, DONTFLIP, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@53837de1, read by no hardware renderer there either
+	DEFINE_FLAG(RF, XFLIP, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@c880b26d
+	DEFINE_FLAG(RF, YFLIP, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@c880b26d
+	DEFINE_FLAG(RF, SPRITEFLIP, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@89b372cb
 	DEFINE_FLAG(RF2, LIGHTMULTALPHA, AActor, renderflags2),	// [Doruk-Aksoy] uzdoom@c0d17bbd, in renderflags2 as UZDoom
 
 	// Bounce flags

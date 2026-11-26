@@ -58,8 +58,11 @@ read as 16 bits from a save before 4538.
 `renderflags` holds UZDoom's `RF_` bits exactly and `renderflags2` (UZDoom's `RF2_` word) is new, with its own
 `FLAGSET_RENDERFLAGS2`; no bit of it is a client's own, so a joiner gets a player body's too. `LIGHTMULTALPHA` moved
 to `RF2_LIGHTMULTALPHA`, since its old bit is UZDoom's `DONTFLIP`, and a save before 4539 has it moved on load by
-`ComputeRehomedSaveRenderFlags`. The other `RF_`/`RF2_` names are declared but not yet settable: each comes with its
-renderer work.
+`ComputeRehomedSaveRenderFlags`. `XFLIP`, `YFLIP` and `SPRITEFLIP` are drawn as UZDoom draws them, on GL and the
+backend alike: one actor frame pick (`gl_GetActorSpriteFrame`) serves GL, the derived sprites and the tic pieces, and
+`ComputeSpriteVFlip` swaps the texture's top and bottom. `DONTFLIP` is a name only, as in UZDoom, whose hardware
+renderer never reads it. The other `RF_`/`RF2_` names are declared but not yet settable: each comes with its renderer
+work.
 
 ## Gameplay flags
 
@@ -117,6 +120,9 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
 - Render words: `actor.h` (UZDoom's `RF_`/`RF2_`, `renderflags2`), `p_mobj.cpp` (`AActor::Serialize`'s `renderflags2` and
   its remap), `version.h` (4539), `network.h` (`FLAGSET_RENDERFLAGS2`), `cl_main.cpp`, `sv_commands.cpp`,
   `thingdef/thingdef_codeptr.cpp`, `thingdef/thingdef_data.cpp` (`LIGHTMULTALPHA`), `features/gamecopy/lights.cpp`.
+- Sprite flips: `features/materials/spriteframe.{h,cpp}` (`gl_GetActorSpriteFrame`), `gl/scene/gl_sprite.cpp`,
+  `features/sprites/spritebuild.cpp` (`DeriveSprite`, `TicPieceHolds`), `features/sprites/computation/spriteframe_compute`,
+  and their rows in `thingdef/thingdef_data.cpp`.
 - Gameplay flags: `p_interaction.cpp` (`P_DamageMobj`, `P_PoisonDamage`, `OkayToSwitchTarget`), `p_map.cpp`
   (`PIT_CheckThing`, `P_TestMobjZ`, `P_RadiusAttack`, `ProcessRailHit`), `p_mobj.cpp` (`P_XYMovement`,
   `P_ZMovement`, `AdjustReflectionAngle`, `Slam`, `CanSeek`), `p_enemy.cpp` (`P_NewChaseDir`, `P_IsVisible`,
@@ -130,10 +136,13 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
 - `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
-  log, so each expectation is UZDoom's own: 48 of 48 pass there.
+  log, so each expectation is UZDoom's own: 49 of 49 pass there.
 - `fuactl scenarios decorateflags` (`tools/fuactl/scenarios/decorateflags.mjs`): the moved flags read back at map start,
   from this build's save, from a save an older build wrote (`--old PATH` or `FUACTL_OLD_ENGINE`), and on a server, its
   player, observer and late joiner. It fails with the remap left out, and online with `SetThingFlags` dropped.
 - `tools/flag_bits_snapshot.py` (CI): every DECORATE flag's bit, refusing a moved one until SAVEVER is bumped.
-- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (48 of 48 pass there); each
+- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (49 of 49 pass there); each
   behaviour check fails with its flag taken out.
+- `node uzdoom/flipparity.mjs` (from `tools/fuactl`): a four-colour sprite plain, XFLIP, YFLIP and both, and an
+  eight-rotation sprite plain, SPRITEFLIP and SPRITEFLIP with XFLIP, each read by its quarters' colours in UZDoom's
+  picture and ours on each API.

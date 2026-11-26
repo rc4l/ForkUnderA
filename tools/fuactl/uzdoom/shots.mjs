@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { uzdoomScreenshot, ourApiFault } from "../src/uzdoom.mjs";
 import { BridgeClient } from "../src/client.mjs";
+import { FREEDOOM2 } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
 
 const CLI = fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
@@ -23,7 +24,8 @@ async function ourProbe(port, token) {
 
 // [Doruk-Aksoy] Our picture of `map` on `api` with `pk3File` loaded once the level is `minTic` tics in (FUACTL_ENGINE picks the binary); its path.
 export async function oursShot(pk3File, map, { port, minTic = 10, tag = "parity", api = "vulkan" }) {
-  const launcher = spawn("node", [CLI, "launch", "--port", String(port), "--map", map, "--no-focus", "--file", pk3File,
+  // [Doruk-Aksoy] The IWAD UZDoom runs, named, since a build folder without freedoom2.wad beside it would pick another.
+  const launcher = spawn("node", [CLI, "launch", "--port", String(port), "--map", map, "--no-focus", "--iwad", FREEDOOM2, "--file", pk3File,
     "--cvar", "crosshair=0,r_drawplayersprites=0,fua_render_in_background=1", "--arg", `-${api}`], { cwd: ROOT, env: { ...process.env, FUACTL_NO_FOCUS: "1" } });
   launcher.stderr.on("data", (d) => process.stderr.write(d));
   const token = await new Promise((resolve, reject) => {

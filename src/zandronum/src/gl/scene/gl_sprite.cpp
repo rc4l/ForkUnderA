@@ -70,6 +70,7 @@ const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/g
 #include "gamemode.h"
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
+#include "features/sprites/computation/spriteframe_compute.h"	// [Doruk-Aksoy] ComputeSpriteVFlip
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 #include "features/gamecopy/tintsubject.h"	// [rc4l] TintSubjectOf
@@ -668,7 +669,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 		angle_t ang = R_PointToAngle(thingx, thingy);
 
 		bool mirror;
-		FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, ang - thing->angle, &mirror);
+		FTextureID patch = gl_GetActorSpriteFrame(spritenum, thing->frame, ang - thing->angle, thing->renderflags, &mirror);
 		if (!patch.isValid()) return;
 		int type = thing->renderflags & RF_SPRITETYPEMASK;
 		gltexture = FMaterial::ValidateTexture(patch, (type == RF_FACESPRITE), false);
@@ -709,6 +710,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 			}
 		}
 
+		zx::sprites::ComputeSpriteVFlip((thing->renderflags & RF_YFLIP) != 0, vt, vb);
 		r.Scale(FIXED2FLOAT(spritescaleX),FIXED2FLOAT(spritescaleY));
 
 		float rightfac=-r.left;

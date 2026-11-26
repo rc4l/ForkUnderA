@@ -32,3 +32,38 @@ TEST(SpriteFrame, TheFlipMaskMirrorsItsRotations)
 	EXPECT_EQ(rot, 1);
 	EXPECT_TRUE(mirror);
 }
+
+TEST(SpriteFrame, SpriteFlipPicksTheRotationFromTheOtherWayRound)
+{
+	bool mirror = true;
+	// [Doruk-Aksoy] UZDoom's flipagain: 90 degrees one way reads as 90 the other, so slot 13 becomes slot 5.
+	EXPECT_EQ(ComputeSpriteRotation(0x40000000u, true, 0, mirror, false), 13);
+	EXPECT_EQ(ComputeSpriteRotation(0x40000000u, true, 0, mirror, true), 5);
+	EXPECT_FALSE(mirror);
+	EXPECT_EQ(ComputeSpriteRotation(0x40000000u, false, 1u << 4, mirror, true), 4);
+	EXPECT_TRUE(mirror);
+	// [Doruk-Aksoy] Straight on is the same either way.
+	EXPECT_EQ(ComputeSpriteRotation(0u, true, 0, mirror, true), ComputeSpriteRotation(0u, true, 0, mirror, false));
+}
+
+TEST(SpriteFrame, XFlipAndSpriteFlipEachTurnTheMirrorOver)
+{
+	EXPECT_FALSE(ComputeSpriteDrawnMirror(false, false, false));
+	EXPECT_TRUE(ComputeSpriteDrawnMirror(true, false, false));
+	EXPECT_TRUE(ComputeSpriteDrawnMirror(false, true, false));
+	EXPECT_TRUE(ComputeSpriteDrawnMirror(false, false, true));
+	EXPECT_FALSE(ComputeSpriteDrawnMirror(false, true, true));
+	EXPECT_FALSE(ComputeSpriteDrawnMirror(true, true, false));
+	EXPECT_TRUE(ComputeSpriteDrawnMirror(true, true, true));
+}
+
+TEST(SpriteFrame, YFlipSwapsTopAndBottom)
+{
+	float vt = 0.25f, vb = 0.75f;
+	ComputeSpriteVFlip(false, vt, vb);
+	EXPECT_EQ(vt, 0.25f);
+	EXPECT_EQ(vb, 0.75f);
+	ComputeSpriteVFlip(true, vt, vb);
+	EXPECT_EQ(vt, 0.75f);
+	EXPECT_EQ(vb, 0.25f);
+}
