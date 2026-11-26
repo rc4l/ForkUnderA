@@ -7,6 +7,7 @@
 #include "features/continue/computation/continuebutton_compute.h"
 #include "features/continue/computation/continuedepart_compute.h"
 #include "features/continue/computation/continuerehost_compute.h"
+#include "features/continue/computation/continuerestart_compute.h"
 #include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuetext_compute.h"
@@ -65,7 +66,7 @@ bool g_bJoinRehostWhenReady = false;
 // another one, which is the infinite rehost.
 bool g_bReturnInFlight = false;
 // [rc4l] Set before a reload and read on the way back up, so a rehost that needed different files
-// finishes on the other side of the restart. Survives because RequestReload unwinds in-process.
+// finishes on the other side of the restart, which happens in this same process.
 bool g_bHostAfterRestart = false;
 // [rc4l] The player's own command is mid-flight and it has a destination of its own.
 bool g_bGoingSomewhereChosen = false;
@@ -822,10 +823,12 @@ bool Continue_DebugBusy( void )
 	return ( gamestate == GS_LEVEL ) && usergame;
 }
 
-// [rc4l] Survives the reload, because RequestReload throws CRestartException and that unwinds inside
-// the SAME process -- the trick zx_joinserver already relies on to know a connect was one it started.
+// [rc4l] Survives the reload, because the restart runs inside the SAME process -- the trick
+// zx_joinserver already relies on to know a connect was one it started.
 bool g_bLoadAfterRestart = false;
 FString g_SaveAfterRestart;
+// [Doruk-Aksoy] The restart count when either after-restart step was armed, since the restart is only requested and happens a frame or more later.
+int g_ArmedAtRestart = 0;
 
 // Both defined below, beside the records they act on.
 static void RehostRecorded( void );
@@ -911,9 +914,11 @@ void Continue_Tick( void )
 
 	// [rc4l] The other side of a reload the rehost asked for. Same shape as the load below, and the
 	// same reason for waiting: there is no point starting a server before the engine can join one.
+	// [Doruk-Aksoy] Not before the restart itself: the load used to run on the old WAD set the frame after the reload was asked for, and crashed.
+	const bool bStartingUp = ( gamestate == GS_STARTUP );
 	if ( g_bHostAfterRestart )
 	{
-		if ( gamestate == GS_STARTUP )
+		if ( ComputeAfterRestartDue( true, g_ArmedAtRestart, wadreload::RestartCount( ), bStartingUp ) == false )
 			return;
 
 		g_bHostAfterRestart = false;
@@ -921,11 +926,8 @@ void Continue_Tick( void )
 		return;
 	}
 
-	if ( g_bLoadAfterRestart == false )
-		return;
-
 	// Once only, and only once the engine is actually up enough to load into.
-	if ( gamestate == GS_STARTUP )
+	if ( ComputeAfterRestartDue( g_bLoadAfterRestart, g_ArmedAtRestart, wadreload::RestartCount( ), bStartingUp ) == false )
 		return;
 
 	g_bLoadAfterRestart = false;
@@ -1003,16 +1005,13 @@ static void RehostRecorded( void )
 	}
 
 	// [rc4l] Our files are not that server's files, so joining it as we are is refused before it
-	// starts. Restart onto them first and host on the way back up: the reload throws and unwinds
-	// inside this same process, so the flag below survives it.
-	g_bHostAfterRestart = true;
-
+	// starts. Restart onto them first and host on the way back up.
 	const wadreload::ReloadResult r = wadreload::RequestReload(
 		iwad.IsEmpty( ) ? NULL : iwad.GetChars( ), pwads );
 
-	// Only reached when it did NOT restart -- the restarting case throws past here and the flag is
-	// read on the way back up.
-	g_bHostAfterRestart = false;
+	// [Doruk-Aksoy] The restart is requested rather than thrown, so the host waits for it in Continue_Tick instead of being dropped here.
+	g_bHostAfterRestart = ( r == wadreload::ReloadResult::Restarting );
+	g_ArmedAtRestart = wadreload::RestartCount( );
 
 	if ( r == wadreload::ReloadResult::AlreadyLoaded )
 		StartAndJoinRecordedHost( );
@@ -1059,12 +1058,13 @@ static void ActivateOfflineRecord( const ContinueRecord &rec )
 		return;
 	}
 
-	// Restarting: the reload throws, so this is only reached when it refused. Say so rather than
-	// leaving a button that looks like it did nothing.
+	// Say so rather than leaving a button that looks like it did nothing.
 	if ( r == wadreload::ReloadResult::InvalidWads )
 		Printf( "Continue: the files that session used are no longer loadable.\n" );
 
+	// [Doruk-Aksoy] Loaded by Continue_Tick once the requested restart has happened (ComputeAfterRestartDue).
 	g_bLoadAfterRestart = ( r == wadreload::ReloadResult::Restarting );
+	g_ArmedAtRestart = wadreload::RestartCount( );
 }
 
 // [rc4l] Go where the verdict points. One switch rather than one per entry point: leaving a server

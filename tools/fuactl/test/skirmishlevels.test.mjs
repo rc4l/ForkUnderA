@@ -5,6 +5,7 @@ import { shownLevel, judgeNext, MAPINFO, buildSkirmishLevelsPk3 } from "../scena
 test("the level row's map is read from its text", () => {
   assert.equal(shownLevel([{ text: "SKIRMISH" }, { text: "Level MAP03 - Three" }]), "MAP03");
   assert.equal(shownLevel([{ text: "SKIRMISH" }]), null);
+  assert.equal(shownLevel([{ text: "LevelMAP01 - One" }]), "MAP01");
 });
 
 test("MAP03 after MAP01 passes, MAP02 or nothing is named", () => {

@@ -9,7 +9,7 @@ import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { addClient } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
 import { FN, BARREL as HANDLES_BARREL, buildAcsHandlesPk3, judgeFirst, stepValues, logScript, global, keep } from "./acshandles.mjs";
-import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, onSnapshots } from "../src/netacs.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 // [Doruk-Aksoy] Each client's user cvars hold what its script found; the server cvar holds the server's own handle.
@@ -110,9 +110,9 @@ const judgeCopiesRun = netJudge({ steps: COPY_STEPS, late: COPY_STEPS.slice(0, 1
   passed: "every machine's handles resolve, follow pointers and set the activator from its own table, and a barrel the server removed left each client's handle stale" });
 
 // [Doruk-Aksoy] The net id configs take a handle from a server's net id; the copies configs run acshandles' steps on every machine.
-export const CONFIGS = [{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" },
+export const CONFIGS = onSnapshots([{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" },
   { name: "copies-lan", players: 1, observers: 1, copies: true, wad: buildCopiesPk3() },
-  { name: "copies-ping100", players: 1, observers: 1, lag: "100,100", copies: true, wad: buildCopiesPk3() }];
+  { name: "copies-ping100", players: 1, observers: 1, lag: "100,100", copies: true, wad: buildCopiesPk3() }]);
 
 export const judgeEither = (set, label, ctx) => (ctx?.config?.copies ? judgeCopiesRun(set, label) : judgeNetplay(set, label));
 

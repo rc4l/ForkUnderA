@@ -20,9 +20,10 @@ export function buildSkirmishLevelsPk3() {
 }
 
 // [rc4l] The map the menu's level row shows, from the text drawn on it.
+// [Doruk-Aksoy] No word boundary, since the dump joins the label to the value as "LevelMAP01" on some frames.
 export function shownLevel(lines) {
-  const row = (lines || []).find((l) => /\bMAP\d\d - /.test(l.text));
-  return row ? /\b(MAP\d\d) - /.exec(row.text)[1] : null;
+  const row = (lines || []).find((l) => /MAP\d\d - /.test(l.text));
+  return row ? /(MAP\d\d) - /.exec(row.text)[1] : null;
 }
 
 // [rc4l] What is wrong with the level after MAP01.
@@ -45,6 +46,6 @@ export async function judgeLaunch(c, inst, label) {
   return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: MAP01 then ${next}`, failed: faults.length ? 1 : 0 };
 }
 
-export const SIDES = [{ name: "vk" }];
+export const SIDES = [{ name: "vk", offline: true }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "skirmishlevels", wad: buildSkirmishLevelsPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);

@@ -134,3 +134,15 @@ test("the server's recording keeps every new tic once until it is stopped", asyn
   const history = await stopping;
   assert.deepEqual(history.map((h) => h.tic), [1, 2, 3]);
 });
+
+// [Doruk-Aksoy] Under load the server's poll lands tics late, and a reading at a bounce off the post then has no sample facing its way.
+test("netbounce.mjs: the recording's skipped tics are counted, and only a gappy recording is read again", () => {
+  assert.equal(net.missedTics([]), 0);
+  assert.equal(net.missedTics([{ tic: 1 }, { tic: 2 }, { tic: 3 }]), 0);
+  assert.equal(net.missedTics([{ tic: 1 }, { tic: 4 }, { tic: 5 }, { tic: 8 }]), 4);
+  assert.equal(net.missedTics([{ tic: 5 }, { tic: 5 }]), 0);
+  assert.equal(net.readAgain(["off"], 2, 1), true);
+  assert.equal(net.readAgain(["off"], 2, net.FOLLOW_TRIES), false, "tries run out");
+  assert.equal(net.readAgain(["off"], 0, 1), false, "a whole recording fails at once");
+  assert.equal(net.readAgain([], 2, 1), false);
+});

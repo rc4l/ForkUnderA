@@ -19,6 +19,8 @@
 #endif
 
 #include "version.h"	// for GAMENAME
+#include "m_argv.h"	// [Doruk-Aksoy] -fua_userdir
+#include "features/userdir/computation/userdir_compute.h"
 
 #if defined(_WIN32)
 
@@ -633,19 +635,9 @@ FString M_GetSavegamesPath()
 
 FString M_GetFuaUserPath()
 {
-	FString path = M_GetCachePath(false);
-	FixPathSeperator(path);
-
-	// Trim the "/zdoom/cache" every platform's M_GetCachePath appends.
-	for (int i = 0; i < 2; ++i)
-	{
-		const long slash = path.LastIndexOf('/');
-		if (slash > 0)
-			path.Truncate(slash);
-	}
-
-	path << "/" GAMENAME;
-	return path;
+	// [Doruk-Aksoy] -fua_userdir puts the folder elsewhere, which fuactl's driven launches use so they never write the player's own.
+	const char *given = ( Args != NULL ) ? Args->CheckValue( "-fua_userdir" ) : NULL;
+	return FString( zx::userdir::ComputeFuaUserPath( given, M_GetCachePath( false ).GetChars( ), GAMENAME ).c_str( ));
 }
 
 

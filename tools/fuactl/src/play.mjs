@@ -231,9 +231,10 @@ export async function fitView(c, view, cap, { tries = 20, now = null } = {}) {
 }
 
 // [rc4l] The engine arguments past the cvars: each wad as -file, then the mode's own, so the launch never rests on the engine's default or the config's vid_backend.
-export function playArgs(files, mode = MODES.vulkan) {
+// [Doruk-Aksoy] With offline, -offline too, so a launch that never needs the network sends no registry query or update check whose late console line lands in what it reads.
+export function playArgs(files, mode = MODES.vulkan, { offline = false } = {}) {
   const own = { [MODES.vulkan]: "-vulkan", [MODES.webgpu]: "-webgpu", [MODES.gl]: "-gl", [MODES.beside]: "-gl" }[mode];
-  return [...files.flatMap((f) => ["-file", f]), own];
+  return [...files.flatMap((f) => ["-file", f]), own, ...(offline ? ["-offline"] : [])];
 }
 
 // [rc4l] Whether an engine still answers on port once a closing one has had graceMs to go.
@@ -278,7 +279,7 @@ async function launchChecked(opts, port) {
     focus: opts.focus,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
-    extraArgs: playArgs(files, launchMode(opts)),
+    extraArgs: playArgs(files, launchMode(opts), { offline: opts.offline }),
     cvars: playCvars(opts),
     engine: opts.engine,
   });

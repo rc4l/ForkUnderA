@@ -3,12 +3,18 @@
 import { PCD, SCRIPT, SCRIPTF } from "./acs.mjs";
 import { SPECIAL } from "./doomnums.mjs";
 import * as cap from "./capture.mjs";
-import { addClient } from "./netplay.mjs";
+import { addClient, SNAP_SERVER_CVARS } from "./netplay.mjs";
 
 // [Doruk-Aksoy] A script's CLIENTSIDE copy is its number plus COPY; START is the server script that starts any copy, its number its argument.
 export const COPY = 1000, START = 30000;
 // [Doruk-Aksoy] How many more tics a step waits for a machine that has printed nothing yet.
 export const MORE_TICS = 105;
+
+// [Doruk-Aksoy] Each config with its server on the snapshot netcode, over any server cvars it sets itself.
+export const onSnapshots = (configs) => configs.map((c) => ({ ...c, serverCvars: { ...SNAP_SERVER_CVARS, ...(c.serverCvars || {}) } }));
+
+// [Doruk-Aksoy] The player and an observer on a LAN and at 100 ms, the pair most ACS net scenarios run.
+export const NET_CONFIGS = onSnapshots([{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }]);
 
 // [Doruk-Aksoy] START's words: ACS_ExecuteAlways(its argument) on this map, which a server sends to every client for a CLIENTSIDE script, with the activator that ran START.
 export function startWords() {

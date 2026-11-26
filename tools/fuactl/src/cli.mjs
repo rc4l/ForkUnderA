@@ -3,7 +3,7 @@
 //   fuactl <cmd>     humans / CI          fuactl mcp     agents (MCP stdio server)
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
-import { reap, readRegistry, pidAlive } from "./registry.mjs";
+import { reap, readRegistry, pidAlive, engineCheck } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed, watchFatal } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
@@ -610,7 +610,7 @@ async function main() {
       let outcome = await quitInstance(t);
       // [rc4l] A launch whose session file is gone leaves no token, so its orphan on this port is stopped as `reap --kill` stops orphans.
       if (outcome === "refused" || outcome === "running") {
-        const orphans = liveOnPort(readRegistry(), t.port, pidAlive).filter((e) => e.orphan);
+        const orphans = liveOnPort(readRegistry(), t.port, pidAlive, engineCheck()).filter((e) => e.orphan);
         for (const e of orphans) { try { process.kill(e.pid, "SIGTERM"); } catch { /* gone already */ } }
         if (orphans.length) outcome = `stopped orphan pid ${orphans.map((e) => e.pid).join(", ")}`;
       }
@@ -658,7 +658,7 @@ async function main() {
       // function-level hotspots of a running instance (by --pid, or --port -> registry lookup)
       let pid = flags.pid ? Number(flags.pid) : null;
       if (!pid && flags.port) {
-        const live = liveOnPort(readRegistry(), flags.port, pidAlive);
+        const live = liveOnPort(readRegistry(), flags.port, pidAlive, engineCheck());
         if (live.length) pid = live[0].pid;
       }
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }

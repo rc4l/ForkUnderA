@@ -73,6 +73,16 @@ test("classifyInstances: reaper is multi-session safe (only orphans, never live-
   assert.deepEqual(owned.map((e) => e.pid).sort(), [200, 400]); // another session's + untracked are spared
 });
 
+// [Doruk-Aksoy] A crashed engine's entry stays behind and its pid goes to another program; quit then killed five such programs.
+test("classifyInstances: an entry whose pid is alive but no longer an engine is dead, never an orphan to kill", () => {
+  const alive = new Set([300, 500]);
+  const engines = new Set([300]);
+  const entries = [{ pid: 300, ppid: 301 }, { pid: 500, ppid: 301 }];
+  const { dead, orphan } = classifyInstances(entries, (p) => alive.has(p), (p) => engines.has(p));
+  assert.deepEqual([dead.map((e) => e.pid), orphan.map((e) => e.pid)], [[500], [300]]);
+  assert.deepEqual(liveOnPort([{ pid: 500, ppid: 301, port: 7885 }], 7885, (p) => alive.has(p), (p) => engines.has(p)), []);
+});
+
 test("candidatePort stays in range and varies by offset", () => {
   assert.equal(candidatePort(20000, 0), 20000);
   assert.equal(candidatePort(20000, 1), 20001);
