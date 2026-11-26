@@ -49,8 +49,8 @@ test("the pk3 holds the map, the driver and every example as libraries LOADACS l
   const compiled = [];
   const pk3 = buildDocsPk3(docExamples(PAGE).slice(0, 2), (code, name) => { compiled.push(name); return Buffer.from(name); }).toString("latin1");
   assert.deepEqual(compiled, ["fuadrv", "fuaone", "fuatwo"]);
-  for (const name of ["maps/MAP01.wad", "acs/fuadrv.o", "acs/fuaone.o", "LOADACS.txt", "fuadrv\nfuaone\nfuatwo\n"]) assert.ok(pk3.includes(name), name);
-  assert.deepEqual(TIDS, { barrels: [11, 12, 13], imps: [31, 32, 33] });
+  for (const name of ["maps/MAP01.wad", "acs/fuadrv.o", "acs/fuaone.o", "LOADACS.txt", "fuadrv\nfuaone\nfuatwo\n", "decorate.txt", "user_kills"]) assert.ok(pk3.includes(name), name);
+  assert.deepEqual(TIDS, { barrels: [11, 12, 13], imps: [31, 32, 33], target: 21 });
 });
 
 test("an example's steps run in order, a changemap waiting for the level, and each miss names the page, line and output", async () => {

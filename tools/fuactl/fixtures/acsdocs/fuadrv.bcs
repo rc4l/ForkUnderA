@@ -23,3 +23,7 @@ script "Health" ( void ) {
       d: GetActorProperty( 12, APROP_Health ), s: " ", d: GetActorProperty( 13, APROP_Health ) );
 }
 
+// [Doruk-Aksoy] Removes the actors of `tid`, as a corpse cleaned up or a pickup taken would be.
+script "Remove" ( int tid ) {
+   Thing_Remove( tid );
+}

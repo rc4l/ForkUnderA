@@ -1,7 +1,8 @@
 // [Doruk-Aksoy] The ACS examples in docs/modding/acs (src/docexamples.mjs): exit 0 when every ```bcs block compiles cleanly with zt-bcc, and each one's marker
 // steps, run on a fresh map with the examples loaded as libraries, print what the marker wants. Skipped when no zt-bcc is found (FUACTL_BCC).
 //
-// The map: a 1024 square room, the player at (64, 64) facing east, barrels 11-13 at (300..500, 300), and imps 31-33 at (600..800, 680) facing east, deaf.
+// The map: a 1024 square room, the player at (64, 64) facing east, barrels 11-13 at (300..500, 300), imps 31-33 at (600..800, 680) facing east, deaf,
+// and a FuaDocTarget barrel (tid 21, with `var int user_kills;`) at (200, 500).
 //
 // usage:  node scenarios/acsdocs.mjs
 import fs from "node:fs";
@@ -16,7 +17,8 @@ import { allDocExamples, exampleFaults, bccPaths, compileBcs } from "../src/doce
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 export const DRIVER = fileURLToPath(new URL("../fixtures/acsdocs/fuadrv.bcs", import.meta.url));
-export const TIDS = { barrels: [11, 12, 13], imps: [31, 32, 33] };
+export const TIDS = { barrels: [11, 12, 13], imps: [31, 32, 33], target: 21 };
+export const DECORATE = "Actor FuaDocTarget : ExplosiveBarrel 21001\n{\n\tvar int user_kills;\n}\n";
 
 export function buildDocMap() {
   const m = new UdmfMap();
@@ -24,6 +26,7 @@ export function buildDocMap() {
   m.thing({ x: 64, y: 64, angle: 0, type: 1 });
   TIDS.barrels.forEach((id, i) => m.thing({ x: 300 + 100 * i, y: 300, angle: 0, type: THING.ExplosiveBarrel, id }));
   TIDS.imps.forEach((id, i) => m.thing({ x: 600 + 100 * i, y: 680, angle: 0, type: THING.DoomImp, id, ambush: true }));
+  m.thing({ x: 200, y: 500, angle: 0, type: 21001, id: TIDS.target });
   return m;
 }
 
@@ -32,7 +35,8 @@ export function buildDocsPk3(examples, compile = compileBcs, dir = fs.mkdtempSyn
   const libs = [{ name: "fuadrv", data: compile(fs.readFileSync(DRIVER, "utf8"), "fuadrv", dir) },
     ...examples.map((e) => ({ name: e.library, data: compile(e.code, e.library, dir) }))];
   return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", buildDocMap())) },
-    ...libs.map((l) => ({ name: `acs/${l.name}.o`, data: l.data })), { name: "LOADACS.txt", data: libs.map((l) => l.name).join("\n") + "\n" }]);
+    ...libs.map((l) => ({ name: `acs/${l.name}.o`, data: l.data })), { name: "LOADACS.txt", data: libs.map((l) => l.name).join("\n") + "\n" },
+    { name: "decorate.txt", data: Buffer.from(DECORATE, "latin1") }]);
 }
 
 // [Doruk-Aksoy] What is wrong with one example's run: each step whose output misses what it wants; `@changemap M` waits until the new level is up.

@@ -81,6 +81,113 @@ script 2 ( int netid ) clientside
 - An actor that exists only on a client (a clientside effect) has no net ID, but a clientside script
   that can reach it by TID or as its activator takes a handle to it directly.
 
+## Examples
+
+Each example is a whole library: compile it with zt-bcc, add it to `LOADACS` and run its scripts with
+`pukename`.
+
+A boss kept by handle, with no TID to hand out or clean up. The handle reads as no actor once the boss is
+removed:
+
+```bcs
+#library "fuaboss"
+#import "zcommon.bcs"
+
+int boss;
+
+// Run as the boss itself, from its spawn state with ACS_NamedExecuteWithResult, or name it by tid.
+script "TrackBoss" ( int tid ) {
+   boss = fua_GetActorHandle( tid );
+   Log( s: "tracking ", d: fua_HandleValid( boss ) );
+}
+
+script "BossStatus" ( void ) {
+   if ( !fua_HandleValid( boss ) ) {
+      Log( s: "the boss is gone" );
+      terminate;
+   }
+   Log( s: "boss health ", d: fua_GetField( boss, "health" ) );
+}
+```
+
+<!-- example
+pukename TrackBoss 31 => /tracking 1/
+pukename BossStatus => /boss health 60/
+pukename Remove 31
+pukename BossStatus => /the boss is gone/
+-->
+
+Every function that works on the activator works on a handle's actor too. Keep your own handle first, so
+the script can come back to its own activator:
+
+```bcs
+#library "fuahurt"
+#import "zcommon.bcs"
+
+void Hurt( int h, int damage ) {
+   int me = fua_GetActorHandle( 0 );
+   if ( fua_SetActivatorHandle( h ) ) {
+      Thing_Damage( 0, damage, MOD_UNKNOWN );
+      fua_SetActivatorHandle( me );
+   }
+}
+
+script "HurtImp" ( int tid ) {
+   Hurt( fua_GetActorHandle( tid ), 10 );
+   Log( s: "imp health ", d: GetActorProperty( tid, APROP_Health ), s: ", back on player ", d: PlayerNumber() );
+}
+```
+
+<!-- example
+pukename HurtImp 31 => /imp health 50, back on player 0/
+-->
+
+A server script naming an actor to every client, which then takes a handle of its own:
+
+```bcs
+#library "fuabarrl"
+#import "zcommon.bcs"
+
+int barrel;   // on each client, that client's own handle
+
+script "MarkBarrel" ( int tid ) {
+   ACS_NamedExecuteAlways( "TakeBarrel", 0, GetNetID( tid, 0 ) );
+}
+
+script "TakeBarrel" ( int netid ) clientside {
+   if ( SetActivatorByNetID( netid ) ) {
+      barrel = fua_GetActorHandle( 0 );
+      Log( s: "this machine holds a handle to a ", s: GetActorClass( 0 ) );
+   }
+}
+```
+
+<!-- example
+pukename MarkBarrel 11 => /this machine holds a handle to a ExplosiveBarrel/
+-->
+
+## Best practices
+
+- **A handle instead of a unique TID.** There's no TID to pick, clash with another mod's or clear once the
+  actor dies; keep the `int` in any variable or array.
+- **Check before acting, or let 0 do it.** A stale handle makes every function do nothing and return 0, so
+  `fua_HandleValid` is needed only when the script must know.
+- **Dead isn't gone.** A corpse keeps its handle until it is removed: read its health (or `FQ_ALIVE` in a
+  [query](Actor_queries.md)) to know whether it lives.
+- **Give the activator back.** Take `fua_GetActorHandle( 0 )` before `fua_SetActivatorHandle`, and set it
+  back after, as `Hurt` does, when later calls mean the script's own activator.
+- **Expect 0 after a map change.** A handle kept in a global variable names nothing on the next map unless
+  it's a player's pawn or the map is in the same hub.
+
+## Online
+
+- **Each machine has its own handles.** A number from the server means nothing on a client, so send the
+  actor's net id and let the clientside script take its own handle, as above.
+- **A client's handle follows the server.** When the server removes an actor, every client's handle to it
+  goes stale too, once the removal reaches it.
+- **A player who joins later** builds their own handles: run the clientside script again for them, such as
+  from an `ENTER` script.
+
 ## Implementation notes
 
 [`src/zandronum/src/features/acs-handles/`](../../../src/zandronum/src/features/acs-handles/README.md).
