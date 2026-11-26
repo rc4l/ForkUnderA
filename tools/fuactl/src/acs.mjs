@@ -67,6 +67,21 @@ export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
   return out;
 }
 
+// [Doruk-Aksoy] The numbered scripts of an ACSE or ACSe object, each { number, flags }, from its SPTR (12-byte entries in ACSE, 8 in the ACSe BCC writes) and SFLG.
+export function objectScripts(buf) {
+  const dir = buf.readUInt32LE(4);
+  const stride = [buf.toString("latin1", 0, 4), buf.toString("latin1", dir - 4, dir)].includes("ACSe") ? 8 : 12;
+  const chunk = (id) => {
+    const i = buf.indexOf(id, 8, "latin1");
+    return i < 0 ? Buffer.alloc(0) : buf.subarray(i + 8, i + 8 + buf.readUInt32LE(i + 4));
+  };
+  const sflg = chunk("SFLG"), flags = new Map();
+  for (let o = 0; o + 4 <= sflg.length; o += 4) flags.set(sflg.readInt16LE(o), sflg.readUInt16LE(o + 2));
+  const sptr = chunk("SPTR"), out = [];
+  for (let o = 0; o + stride <= sptr.length; o += stride) out.push({ number: sptr.readInt16LE(o), flags: flags.get(sptr.readInt16LE(o)) || 0 });
+  return out;
+}
+
 // [Doruk-Aksoy] The same scripts as an ACSE lump: the code, then SPTR (each script's number, type and address), SFLG (each flagged script's flags) and STRL (the strings, their offsets from the table's start), as FBehavior reads them.
 function acseScripts(scripts, strings) {
   const code = scripts.flatMap((s) => s.code);

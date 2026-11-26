@@ -39,3 +39,5 @@ position. That has two problems:
 - `fuactl scenarios acsfuncref` (`tools/fuactl/fixtures/acsfuncref/`): equality between modules,
   references kept in a global across a map whose BEHAVIOR moves every library, and a reference into
   a library the next map never loads. It fails on a build without this feature.
+- `fuactl scenarios netacsfuncref`: the same steps on a netgame, each run on the server and as a
+  CLIENTSIDE copy (190N in the fixtures) on the player's client and an observer, across two changemaps.

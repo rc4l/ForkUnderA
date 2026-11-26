@@ -1,11 +1,14 @@
 #include "zcommon.h"
 #import "frefmap.bcs"
 
-// [Doruk-Aksoy] MAP02's own BEHAVIOR: it loads before the LOADACS libraries, and keeps a reference into frefmap for MAP03.
+// [Doruk-Aksoy] MAP02's own BEHAVIOR: it loads before the LOADACS libraries, and keeps a reference into frefmap for MAP03; 1904 is the CLIENTSIDE copy.
 
 global int function( void )? 2:gMapRef;
 
-script 904 ( void ) {
+void MapStore( void ) {
    gMapRef = NinetyNine;
    Log( s: "FREF mapstored" );
 }
+
+script 904 ( void ) { MapStore(); }
+script 1904 ( void ) clientside { MapStore(); }

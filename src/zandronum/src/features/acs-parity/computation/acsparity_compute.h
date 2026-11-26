@@ -64,6 +64,9 @@ double ComputeLineCoord(int axis, double v1x, double v1y, double dx, double dy, 
 // [Doruk-Aksoy] Whether `id` can name an actor's net id, which is an unsigned short above 0.
 bool ComputeNetIdValid(int32_t id);
 
+// [Doruk-Aksoy] Whether DamageActor may hurt its target here: anywhere but a client, and there only an actor of the client's own.
+bool ComputeClientMayDamage(bool inClientMode, bool clientSideOnly);
+
 // [Doruk-Aksoy] The `index`th thing `next` hands out, or a null one past the last or for a negative index.
 template <class Next>
 auto ComputeNth(Next next, int index) -> decltype(next())

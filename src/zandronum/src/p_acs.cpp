@@ -9530,6 +9530,9 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			// [Doruk-Aksoy] (target, its pointer, inflictor, its pointer, amount, damage type), what P_DamageMobj gives back.
 			AActor *target = COPY_AAPTR(SingleActorFromTID(args[0], activator), args[1]);
 			AActor *inflictor = COPY_AAPTR(SingleActorFromTID(args[2], activator), args[3]);
+			// [Doruk-Aksoy] A client's P_DamageMobj takes the health off a synced actor and keeps it, so a CLIENTSIDE script gets its -1 without that.
+			if (target != NULL && !zx::acsparity::ComputeClientMayDamage(zx::net::InClientMode(), (target->NetworkFlags & NETFL_CLIENTSIDEONLY) != 0))
+				return -1;
 			return P_DamageMobj(target, inflictor, inflictor, args[4], FName(FBehavior::StaticLookupString(args[5])));
 		}
 

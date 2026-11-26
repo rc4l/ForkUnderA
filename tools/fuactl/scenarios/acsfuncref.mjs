@@ -15,18 +15,20 @@ export const MAPINFO = ["MAP01", "MAP02", "MAP03"].map((map) => `map ${map} "${m
 // [Doruk-Aksoy] The message PCD_CALLSTACK prints for a reference into a library the map does not load.
 export const UNLOADED = /which this map does not load/;
 
-function room() {
+function room(withMap) {
   const m = new UdmfMap();
   m.room(0, 0, 256, 256, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 128, y: 64, angle: 90, type: 1 });
+  withMap(m);
   return m;
 }
 
-export function buildAcsFuncRefPk3() {
+// [Doruk-Aksoy] `withMap` changes each map, as netacsfuncref's player starts do.
+export function buildAcsFuncRefPk3({ withMap = () => {} } = {}) {
   return pk3([
-    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", room())) },
-    { name: "maps/MAP02.wad", data: wad(mapLumps("MAP02", room(), { behavior: fixture("map02") })) },
-    { name: "maps/MAP03.wad", data: wad(mapLumps("MAP03", room())) },
+    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", room(withMap))) },
+    { name: "maps/MAP02.wad", data: wad(mapLumps("MAP02", room(withMap), { behavior: fixture("map02") })) },
+    { name: "maps/MAP03.wad", data: wad(mapLumps("MAP03", room(withMap))) },
     ...["freflib", "frefuse", "frefmap"].map((lib) => ({ name: `acs/${lib}.o`, data: fixture(lib) })),
     { name: "LOADACS.txt", data: "freflib\nfrefuse\n" },
     { name: "mapinfo.txt", data: MAPINFO },

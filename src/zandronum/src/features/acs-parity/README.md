@@ -23,6 +23,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `Ceil` keeps a whole number whole, where UZDoom's `(x & ~0xffff) + 0x10000` adds one.
 - `DamageActor` on a tid no actor holds gives -1. UZDoom's `P_DamageMobj` reads the null target's class
   and crashes, and ours read its flags in `isFakePain` before its own null check.
+- In a CLIENTSIDE script on a client, `DamageActor` hurts only the client's own actors and gives -1 for a
+  synced one, whose health the server holds; a client's `P_DamageMobj` would take the health off locally
+  and keep it (`ComputeClientMayDamage`).
 - Net ids are Zandronum's `NetID`, the same on a server and its clients; 0 names no actor, as UZDoom's
   world id does.
 - A step or drop-off height a script changes goes to clients through `SetThingProperty`, and to a
@@ -47,6 +50,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `fuactl scenarios acsparity`: every function and property in one script, and `DamageActor` on a
   missing tid; it fails on a build without this feature, and crashes on one without the
   `isFakePain` check.
+- `fuactl scenarios netacsparity`: `acsparity`'s checks run by the player on the server and as CLIENTSIDE
+  copies on the player's client, an observer and a late joiner, each machine against its own answers; it
+  fails on a build whose client `DamageActor` hurts a synced barrel.
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.

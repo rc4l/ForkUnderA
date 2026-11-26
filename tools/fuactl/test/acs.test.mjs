@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, checksCounter, checksScript, failedChecks, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, objectScripts, addToCVar, callFunc, callSpecial, checksCounter, checksScript, failedChecks, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 import { judgeCounter } from "../src/template.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
@@ -197,4 +197,15 @@ test("a checks counter passes at 1 and names the failing checks, or the puke tha
   assert.deepEqual(judgeCounter("MAP01", `"zx_c" is "1"`, counter), { line: `PASS MAP01 ${counter.label}: 1 (ceiling 1)`, failed: 0 });
   assert.match(judgeCounter("MAP01", `"zx_c" is "5"`, counter).line, /^FAIL MAP01 .*: second$/);
   assert.match(judgeCounter("MAP01", `"zx_c" is "0"`, counter).line, /: the puke never ran$/);
+});
+
+// [Doruk-Aksoy] Both object formats' script tables read back by number and flags: ours (ACSE, 12-byte entries) and BCC's (ACSe, 8-byte), from a fixture.
+test("a compiled object's scripts read back with their flags, in ACSE and BCC's ACSe", async () => {
+  const ours = acsScripts([{ code: [PCD.TERMINATE], number: 3, type: SCRIPT.CLOSED, flags: SCRIPTF.NET }, { code: [PCD.TERMINATE], number: 1003, type: SCRIPT.CLOSED, flags: SCRIPTF.CLIENTSIDE },
+    { code: [PCD.TERMINATE], number: 4, type: SCRIPT.CLOSED }], [], { enhanced: true });
+  assert.deepEqual(objectScripts(ours), [{ number: 3, flags: SCRIPTF.NET }, { number: 1003, flags: SCRIPTF.CLIENTSIDE }, { number: 4, flags: 0 }]);
+  const { readFileSync } = await import("node:fs");
+  const bcc = objectScripts(readFileSync(new URL("../fixtures/acsfuncref/frefuse.o", import.meta.url)));
+  assert.deepEqual(bcc.map((s) => s.number), [901, 902, 903, 1901, 1902, 1903, 30000]);
+  assert.deepEqual(bcc.filter((s) => s.flags & SCRIPTF.CLIENTSIDE).map((s) => s.number), [1901, 1902, 1903]);
 });
