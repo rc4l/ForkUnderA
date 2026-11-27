@@ -208,7 +208,8 @@ namespace
 	// [MobiusU9B] The renderer's own reasons for not drawing a sprite, so the sweep never names or measures something you cannot see.
 	bool IsInvisible(AActor *actor)
 	{
-		return (actor->sprite == 0) || (actor->flags & MF_NOSECTOR) || (actor->renderflags & RF_INVISIBLE)
+		// [Doruk-Aksoy] STFL_SNAPGHOSTHIDDEN: a snapshot client's hidden legacy copy, its mirror the one shown.
+		return (actor->sprite == 0) || (actor->flags & MF_NOSECTOR) || (actor->STFlags & STFL_SNAPGHOSTHIDDEN) || (actor->renderflags & RF_INVISIBLE)
 			|| !actor->RenderStyle.IsVisible(actor->alpha) || !actor->IsVisibleToPlayer();
 	}
 

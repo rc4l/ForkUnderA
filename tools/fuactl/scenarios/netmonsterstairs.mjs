@@ -138,8 +138,8 @@ export async function judgeNetplay(set, label, { map }) {
   for (const c of set.clients) for (const cheat of ["god", "notarget"]) await cap.exec(c.c, cheat, { quietMs: 120 });
   // [Doruk-Aksoy] On after they joined, so it reaches them as a change (SendSyncedCVar).
   await cap.exec(sc, "sv_fua_monsterstairs 1");
-  // [Doruk-Aksoy] A lost reliable packet is noticed only when a later one arrives (the tail loss the netcode overhaul is to fix), so a client still without it now is read again after the climb's traffic.
-  let afterChange = await readCvarSettled(set, 1500);
+  // [Doruk-Aksoy] Long enough for a lost packet's resend, which the next snapshot datagram asks for (nettailloss).
+  const afterChange = await readCvarSettled(set, 4000);
   await cap.exec(sc, "puke 1");
   const rounds = new Map(set.clients.map((c) => [c, []]));
   const start = Date.now(), until = start + 20000;
@@ -153,7 +153,6 @@ export async function judgeNetplay(set, label, { map }) {
     left = counterValue(await cap.exec(sc, COUNTER_CVAR, { quietMs: 150 }));
     if (left === 0 && Date.now() - start >= MIN_WALK_MS) break;
   }
-  if (!afterChange.every((a) => cvarOn(a.text))) afterChange = await readCvarSettled(set);
   add(cvarVerdict(`${label} after the change`, afterChange));
   // [Doruk-Aksoy] Held to the change first: agreeing on enemies that never climbed proves nothing.
   if (left !== 0) add({ line: `FAIL ${label}: on the server ${left ?? "an unknown number"} of the enemies never reached the landing`, failed: 1 });

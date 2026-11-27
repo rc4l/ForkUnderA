@@ -9,6 +9,8 @@ namespace zx { namespace netreplication {
 
 bool ComputeSendsWoundedHealth(bool isPlayer, int health) { return !isPlayer && health > 0; }
 
+bool ComputeSendsDeathHealth(bool isPlayer, bool killSuppressed) { return !isPlayer && killSuppressed; }
+
 bool ComputeAddPendingHealth(std::vector<int> &pending, int netId)
 {
 	if (netId <= 0 || std::find(pending.begin(), pending.end(), netId) != pending.end()) return false;

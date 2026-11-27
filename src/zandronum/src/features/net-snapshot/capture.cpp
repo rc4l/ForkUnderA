@@ -80,7 +80,7 @@ using namespace zx::netsnapshot;
 //*****************************************************************************
 //	CONSOLE VARIABLES
 
-CVAR(Bool, fua_snap, false, CVAR_NOSETBYACS)
+CVAR(Bool, fua_snap, true, CVAR_NOSETBYACS)	// [Doruk-Aksoy] on by default, as its author cleared
 CVAR(Int, fua_snap_stats, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 // [Kaori-Chani] The gate's two directions. Off is the fallback if the snapshot
@@ -147,7 +147,7 @@ CVAR(Int, fua_snap_zstd_level, 3, CVAR_NOSETBYACS)	// lower to 1 if CPU-bound du
 // 0 uncapped, and read only while the gate is on, so a gate-off server catches up as stock does.
 CVAR(Int, fua_snap_maxcatchuptics, 8, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 
-CVAR(Bool, fua_snap_send, false, CVAR_NOSETBYACS)	// actually transmit deltas to clients
+CVAR(Bool, fua_snap_send, true, CVAR_NOSETBYACS)	// actually transmit deltas to clients
 // The interest cull radius, past which an entity gets a bounded refresh.
 CVAR(Int, fua_snap_cull_dist, 4096, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 
@@ -4069,7 +4069,7 @@ void zx::netsnapshot::NoteUnreliablePacket(unsigned int payloadBytes, unsigned i
 
 // CVAR_SERVERINFO, but it syncs to RCON admins only, not to gameplay
 // clients, so client-side code must not gate on it.
-CVAR(Int, fua_snap_nolegacy, 0, CVAR_NOSETBYACS | CVAR_SERVERINFO)
+CVAR(Int, fua_snap_nolegacy, 2, CVAR_NOSETBYACS | CVAR_SERVERINFO)	// [Doruk-Aksoy] 2 until the snapshot carries what 3 drops
 
 
 

@@ -13,6 +13,7 @@
 
 #include "features/net-replication/computation/actorstate_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-snapshot/capture.h"   // [Doruk-Aksoy] SuppressesLegacy, for SendDeathHealth
 
 #include <vector>
 
@@ -52,6 +53,12 @@ void SendThingProperty(AActor *actor, int property)
 void SendThingTranslation(AActor *actor)
 {
 	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingTranslation(actor);
+}
+
+void SendDeathHealth(AActor *actor)
+{
+	if (actor != NULL && zx::net::IsServer() && ComputeSendsDeathHealth(actor->player != NULL, zx::netsnapshot::SuppressesLegacy(actor, SNAPLEGACY_ANIM)))
+		SERVERCOMMANDS_SetThingHealth(actor);
 }
 
 void SendThingFrame(AActor *actor, FState *state)
