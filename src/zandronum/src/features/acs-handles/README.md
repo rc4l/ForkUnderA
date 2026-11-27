@@ -17,6 +17,8 @@ the per-actor values kept with each slot, 24032-24035. Modder references:
   never name a newer actor. The table grants 2^31 handles in all.
 - The table belongs to the machine, not the level: a server's scripts and a client's `CLIENTSIDE`
   scripts each use their own, and nothing is sent. Scripts name actors across machines by net ID.
+- No handle names a client's snapshot mirror (`NETFL_MIRROR`): asked for one, `HandleFor` gives the handle of the
+  actor it draws (`netsnapshot::ActorBehindMirror`), or 0 when the client holds none.
 - Leaving a map destroys its actors, so their handles go stale and carried handles read 0; generations
   keep running across map changes. A new game, where `P_ClearACSVars(true)` clears world and global
   variables, starts the table over.
@@ -38,6 +40,7 @@ the per-actor values kept with each slot, 24032-24035. Modder references:
 - `p_mobj.cpp`: `AActor::Destroy` releases the slot, `AActor::Serialize` saves and claims it.
 - `g_level.cpp`: `ParkLevel` after a hub map's snapshot, `EnterLevel` after a level loads.
 - `g_mapinfo.cpp`: `G_ClearSnapshots` releases the parked slots.
+- `features/net-snapshot`: `ActorBehindMirror`, the actor a mirror draws.
 - `g_game.cpp`: the savegame chunk, and `FinishLoad` after the level is rebuilt.
 - `p_acs.cpp`: the eight functions, and `P_ClearACSVars(true)` resetting the table.
 - `version.h`: SAVEVER 4533.

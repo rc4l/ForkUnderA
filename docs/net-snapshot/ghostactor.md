@@ -242,6 +242,9 @@ Lookups:
 - `MirrorCount`, `MirrorAt`: the mirrors this client holds and the k-th with its snapshot id, for the
   bridge's `world.actors`, which lists them under that id: a mirror sits in `STAT_INFO`, below where a
   default `TThinkerIterator` starts.
+- `ActorBehindMirror`: the client's own actor a mirror draws (its legacy copy, or a player's pawn at the
+  reserved id), or NULL when it holds none or the actor is no mirror. ACS handles use it so no handle
+  names a mirror.
 - `SpeedForClass`: a class's default speed in units per tic, for the replay's glide census.
 
 Sounds, spawns and respawns:
@@ -388,10 +391,12 @@ ghost of one class.
 
 ## Engine hooks
 
-The stock call sites, each a `[Kaori-Chani]` line but the bridge's. Eight files call this header:
+The stock call sites, each a `[Kaori-Chani]` line but the bridge's and ACS handles'. Nine files call this header:
 - `features/gamecopy/gamecopy.cpp`: `GhostFrame` in `FillNow`, and `MirrorPlayerNum` in the sprite
   path for a player mirror's skin.
 - `mcp_rpc.cpp`: `MirrorCount`, `MirrorAt` and `MirrorPlayerNum` in `world.actors`, a `[Doruk-Aksoy]` line.
+- `features/acs-handles/acshandles.cpp`: `ActorBehindMirror` in `HandleFor`, which gives a mirror's actor
+  the handle instead (a `[Doruk-Aksoy]` line).
 - `cl_main.cpp`: `LevelUnloaded` at the connection's map load (`SVCC_MAPLOAD`), on quitting a
   network game and at a map change; `GhostsFromNetwork` when snapshot traffic starts and stops;
   `CosmeticEvents` for `SVC2_SNAPCOSMETIC`; `ResolveThroughMirror` in the client's actor lookup; and
