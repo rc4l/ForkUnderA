@@ -343,9 +343,9 @@ void DPlat::Tick ()
 		
 	case waiting:
 
-		// [Kaori-Chani] features/net-snapshot: a plat a record has reached counts its own
-		// wait down; no record has reached one with the gate off, so a client breaks here.
-		if ( zx::netsnapshot::MoverClientSkipsWait( m_SnapSeen ))
+		// [Kaori-Chani] features/net-snapshot: a plat records own on this client and that one
+		// has reached counts its own wait down; every other client breaks here.
+		if ( zx::netsnapshot::MoverClientSkipsWait( SNAPMV_PLAT, m_SnapSeen ))
 			break;
 
 		// [Kaori-Chani] features/net-snapshot: the tic spent waiting, whoever ends it. Below

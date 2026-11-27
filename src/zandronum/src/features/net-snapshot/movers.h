@@ -78,7 +78,9 @@ struct SnapMoverGateStats
 	int				floor;			// 0 when none applies
 	unsigned int	dropped[2][SNAPMV_STATCLASSES];	// [legacy-made, record-made] by class
 	unsigned int	belowFloor;		// records refused below the floor
-	unsigned int	keptApplied;	// polyobject records kept and applied at a gate-on
+	unsigned int	keptApplied;	// records kept and applied at a gate-on, sector and poly
+	unsigned int	ungated;		// sector records refused with the legacy handlers live
+	unsigned int	ungatedKept;	// of those, the newest per plane now held for a gate-on
 };
 
 namespace zx { namespace netsnapshot {
@@ -117,13 +119,13 @@ bool MoverPillarOwnsPlane( sector_t *sec );
 // server sending it, and only a mover a record has reached reaches that code on a client.
 bool MoverPlaysWaitSound( );
 
-// Whether this client works out a crusher's reversal for itself: only for a mover a record
-// has reached, so a client the records do not drive keeps taking the server's word for it.
-bool MoverClientDerivesReversal( bool bSeen );
+// Whether this client works out a crusher's reversal for itself: only where records own the
+// class and one has reached this mover, so the gate is tested here and not assumed.
+bool MoverClientDerivesReversal( BYTE cls, bool bSeen );
 
-// Whether this client leaves a door's countdown to the server: it runs its own only for a
-// door a record has reached, which with the gate off is none of them.
-bool MoverClientSkipsWait( bool bSeen );
+// Whether this client leaves a door's or plat's countdown to the server: it runs its own
+// only where records own the class and one has reached this mover.
+bool MoverClientSkipsWait( BYTE cls, bool bSeen );
 void MoverCountDoorWait( bool bExpired );
 void MoverCountDoorWaitEnded( int left );
 bool MoverOwnsPlane( sector_t *sec, bool bCeiling );

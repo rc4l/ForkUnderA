@@ -195,14 +195,26 @@ Each hook is one call from a stock file into the module, listed here as it lands
   `MoverHoldsPlane( )` (and `MoverHoldsFloor`/`MoverHoldsCeiling` for a pillar's two planes),
   `MoverPlaneStalled( )`/`MoverPlanesStalled( )`, `MoverServerStops( )` around each legacy plane
   send, the crush and plat-wait counters, and the client-side predicates:
-  `MoverClientSkipsWait( m_SnapSeen )` on a door's and a plat's countdown,
+  `MoverClientSkipsWait( cls, m_SnapSeen )` on a door's and a plat's countdown,
   `MoverPlaysWaitSound( )` on the door's and the plat's local wait-end sounds, and
-  `MoverClientDerivesReversal( m_SnapSeen )` on a crusher's turn.
-  - The two holds test the client role alone, not the gate. `snapmv_ApplyRecord` has no gate
-    test, and each class' branch ends `m_SnapLegacy = false`, so a record drives a gate-off
-    client's planes as soon as one arrives; the hold is what keeps that record and the legacy
-    tick from fighting over the same plane. A gate-off window therefore reads `blocked 1` and
-    a count of tics held, which is the hold working rather than a gate missing from it.
+  `MoverClientDerivesReversal( SNAPMV_CEILING, m_SnapSeen )` on a crusher's turn.
+  - The two holds test the client role alone, not the gate; the sink tests the gate for them.
+    `snapmv_ApplyRecord` turns a record away wherever `MoverSuppressesLegacy` is false, as
+    `PolyApplyRecord` always has, and keeps the newest refused record per plane and sector for
+    the gate turning on. Below the gate no record reaches a plane and the hold has nothing to
+    hold: three `movermap.wad` connections at `fua_snap_nolegacy 2` read 0 applied, 0 blocked
+    records, 0 tics held and 0 planes set in all 99 of their windows, with 1,732 records
+    refused with legacy live and the newest of them kept. Above the gate the hold is what
+    keeps a record and the legacy tick from fighting over the same plane.
+  - The keep mirrors `snappo_Keep` because the two channels race: `ForgetMovers` re-sends every
+    live mover at a gate change on the unreliable datagram while `SnapMoverGate( true )` goes
+    reliably, so a re-send can arrive first, be refused, and never come again. The gate floor
+    judges a keep as it would a fresh record, which is what leaves the keep for that race: a
+    gate-on carries frame 0, so a keep taken below the gate is above the floor and replays,
+    while one from before a gate-off is below it and is dropped. On a connection flipped from
+    `nolegacy 2` to 3 with no map change, the flip window read `dropped at the gate:
+    legacy-made plat 1 ceiling 1 door 1` and `3 kept records applied`, one per mover, and the
+    refusals stopped there: 282 of them before the flip and none after, over 33 windows.
   - The reference wrote the role tests into these files —
     `NETWORK_InClientMode( ) && m_SnapBlocked`, and a server test around the stall write. This
     port keeps them inside the module, as `SpecialResolveSource` does, so the stock sites stay
@@ -215,20 +227,26 @@ Each hook is one call from a stock file into the module, listed here as it lands
     separate targets and can stall on one, which `MoverCountHeldOnePlane` counts. Its stall is
     written straight after its moves rather than at the tail, which the `pastdest` branch can
     reach with the elevator already destroyed.
-  - A door's wait is the one client-side change taken here, because it is gate-off-identical by
-    construction: `MoverClientSkipsWait` answers true for every client until a record has
-    reached that door, which with the gate off never happens, so the stock break still takes
-    them all. The test lives in the module, so `p_doors.cpp` holds one fewer role crossing.
+  - A door's wait is the one client-side change taken here, and it is gate-off-identical because
+    the predicate tests the gate and not only the record: `MoverClientSkipsWait( SNAPMV_DOOR,
+    m_SnapSeen )` answers true for every client until records own doors on it and one has
+    reached this door, so below the gate the stock break takes them all -- `door waits: 0 ran
+    out, 0 ended by record within a tic, 0 early, over 0 tics counted down` in all 99 level 2
+    windows. The record alone would not have held it, since records do reach movers below the
+    gate and the sink is what refuses them. The test lives in the module, so `p_doors.cpp`
+    holds one fewer role crossing.
   - A crusher's reversal is derived on the same terms. The reference derives it on every client,
     which would have a gate-off client turn at its own top or bottom and then be snapped back by
     the server's plane set from that same moment — not legacy behaviour. Here
-    `MoverClientDerivesReversal( m_SnapSeen )` restricts it to a ceiling a record has reached, so
-    gate off derives none, which the client's own counter read as 0 with records flowing and
-    the mover gate off. It sets `m_Direction` and `m_Speed` only: at nolegacy 3 the server
-    still sends every `SVC_PLAYCEILINGSOUND`, and `SN_StartSequence` stops the sector's
-    existing ceiling sound first, so a local `PlayCeilingSound()` would restart the sound
-    rather than layer it. The call belongs here again if the sound unit later stops the server
-    sending it under the gate.
+    `MoverClientDerivesReversal( SNAPMV_CEILING, m_SnapSeen )` restricts it to a ceiling records
+    own on this client and that one of them has reached, so below the gate none is derived: 0
+    reversals derived in all 99 level 2 windows, with records flowing throughout, and above the
+    gate it fires at that client's own rate -- 8 over 33 windows on one connection and 0 over
+    34 on the next. It sets `m_Direction` and `m_Speed` only: at nolegacy 3 the server still
+    sends every `SVC_PLAYCEILINGSOUND`, and `SN_StartSequence` stops the sector's existing
+    ceiling sound first, so a local `PlayCeilingSound()` would restart the sound rather than
+    layer it. The call belongs here again if the sound unit later stops the server sending it
+    under the gate.
   - A gated client builds neither timed door: `P_SpawnDoorCloseIn30` and
     `P_SpawnDoorRaiseIn5Mins` return at `MoverSuppressesLegacy( SNAPMV_DOOR )`, clearing
     `special` as the spawn would have, and the records bring the doors instead. Off the gate
@@ -266,11 +284,11 @@ Each hook is one call from a stock file into the module, listed here as it lands
     door, so a survival window catches the reset rather than the mover.
   - A plat's wait is the door's case again. The reference drops the stock
     `NETWORK_InClientMode( )` break from the `waiting` case outright, which would change
-    gate-off client behaviour, so here `MoverClientSkipsWait( m_SnapSeen )` takes the break for
-    every client until a record has reached that plat. `MoverPlaysWaitSound( )` guards both
-    local sound calls in the countdown block, since the server replicates them. The waiting-tic
-    counter sits below the break, as the door's is, so it counts only a plat whose record set
-    `m_Count`.
+    gate-off client behaviour, so here `MoverClientSkipsWait( SNAPMV_PLAT, m_SnapSeen )` takes
+    the break for every client until records own plats on it and one has reached that plat.
+    `MoverPlaysWaitSound( )` guards both local sound calls in the countdown block, since the
+    server replicates them. The waiting-tic counter sits below the break, as the door's is, so
+    it counts only a plat whose record set `m_Count`.
   - `DPlat::DPlat( sector_t * )` initialises `m_Count` and `m_OldStatus`, which nothing else
     sets before they are read. `DPlat::Tick` assigns `m_Count` from `m_Wait` on reaching an end,
     and neither `EV_DoPlat` nor `client_DoPlat` sets it: `client_DoPlat`'s `SetDelay( 0 )` writes
@@ -279,26 +297,28 @@ Each hook is one call from a stock file into the module, listed here as it lands
     capture's `oldStatus` byte all read memory nobody set. Stock behaviour is unchanged, stock
     code writing both fields before reading them, and the deserialising `DPlat::DPlat( )` taking
     them straight from the archive.
-  - While the legacy plat handlers are live the client-run wait is inert, and deliberately so:
-    the client's countdown starts at or below the server's count, `m_Count` being left out of
-    the compare but riding every record as the floor's countdowns do, so on a clean link
-    `SVC_CHANGEPLATSTATUS` ends the wait first and `plat waits: ... ran out` read 0 on the one
-    client it was read on, whose rate decides which counter fires at all. A delayed status
-    command lets the client end the wait itself, which the plat suppression will rely on. What
-    the countdown does run is visible in that client's `m_Count`: against HEAD it sits on a
-    plateau between records, here it falls every tic.
+  - While the legacy plat handlers are live the client runs no wait at all: the predicate takes
+    the stock break, and the record that would have set `m_Count` is refused at the sink, so
+    level 2 read 0 plat waits ended by record, 0 run out and 0 tics counted down over its 99
+    windows. Above the gate the countdown is the client's: `m_Count` is left out of the compare
+    but rides every record as the floor's countdowns do, and `SVC_CHANGEPLATSTATUS` usually
+    ends the wait first, which is why two level 3 connections read 165 plat waits ended by
+    record against 13 run out, over 1,228 tics counted down in 67 windows. Which of the two
+    fires is that client's rate rather than a property of the path, and a delayed status
+    command lets the client end the wait itself, which the plat suppression will rely on.
 - `cl_main.cpp`, `client_DoDoor`, `client_DestroyDoor`, `client_ChangeDoorDirection`:
   `MoverLegacyStandsAside( SNAPMV_DOOR )`, which is `MoverSuppressesLegacy` counting the call it
   turns away, each after that handler's last read so the stream is consumed either way. The first
   of the handler classes; the sounds are not among them, `SVC2_DOORSOUND` carrying them to
   `OnDoorSound`, which plays them only while these three are suppressed. Suppression is
   client-side alone, so the server's sends are unchanged. What ends a client's wait moves from
-  the command to the record, counted as one `door waits` where the same window at HEAD counts
-  none: the door's dirty compare leaves `topCountdown` out, so no record goes out merely
-  because it ticked, but the countdown rides every record that does go out: `MoverSlotRead`
-  serialises the slot's body as `MoverCaptureDoor` last refreshed it, which is every tic.
-  Which counter takes that one, `early` or `ran out`, and how early it reads are the client's
-  own rate: the same clean link here gave each of them once.
+  the command to the record: two level 3 connections on `movermap.wad` counted 2 door waits
+  ended by record within a tic and 28 early, worst 63 tics, with none run out, over 67 windows
+  and 1,020 tics counted down. The door's dirty compare leaves `topCountdown` out, so no record
+  goes out merely because it ticked, but the countdown rides every record that does go out:
+  `MoverSlotRead` serialises the slot's body as `MoverCaptureDoor` last refreshed it, which is
+  every tic. Which counter takes a wait, `early` or `ran out`, and how early it reads are the
+  client's own rate.
   - That sound had no sender here. The enum, `OnDoorSound` and `P_DoorSoundSector` were ported,
     but nothing sent `SVC2_DOORSOUND`, measured as none of them on the wire in six windows.
     Suppressing `client_ChangeDoorDirection` takes away the client's only wait-end sound, and it

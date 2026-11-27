@@ -72,9 +72,11 @@ questions its own state used to answer, one call a site:
   was and what the record says.
 - `MoverPlaysWaitSound`, `MoverClientSkipsWait`, `MoverCountDoorWait`, `MoverCountDoorWaitEnded`:
   whether a wait's sound is this client's to play, whether the wait itself is the server's to time,
-  and the counts behind the line that reports it.
+  and the counts behind the line that reports it. `MoverClientSkipsWait` takes the class and leaves
+  the wait to the server wherever `MoverSuppressesLegacy` is false, so a client below the gate times
+  none of its own.
 - `MoverClientDerivesReversal`: whether the client turns a ceiling around itself rather than waiting
-  to be told.
+  to be told, which takes the class for the same reason.
 - `MoverSkipsPlaneWrite`, `MoverSkipsMidtexY`: whether a legacy plane or midtexture write must stand
   aside for what a record owns, counted apart (`MoverCountPlaneSuppressed`,
   `MoverCountLinkSuppressed`, `MoverCountMidtexSuppressed`).
@@ -115,7 +117,9 @@ The gate, client side:
 - `MoverSetServerGate`, `MoverForgetServerGate`: `SnapMoverGate`'s state and record floor, and their
   reset at disconnect.
 - `MoverSuppressesLegacy`: the server's gate is on and the class is tracked. It decides the legacy
-  handlers, ownership, eviction on a GONE and timed doors.
+  handlers, ownership, eviction on a GONE, timed doors and the sector sink's own refusal: below the
+  gate a record is not applied, the newest per plane and sector being kept for the gate turning on
+  as the polyobject sink's is ([polyobj.md](polyobj.md)).
 - `ServerGatesLegacy`: the server's latch alone, for the mover code that needs it without a class in
   hand; the latch itself is `capture.cpp`'s ([capture.md](capture.md)).
 - `ClientMoverGateStats`.
@@ -226,4 +230,7 @@ first snapshot and while its ghost is out of view), `again` a new mirror, `gone`
 because another class holds its id, and `replaced` is nonzero only after a repeated full update or
 for a scroller a CLIENTSIDE script made before the first. Scrollers arrive at join, so their counts
 show in the first report only. On the gate line, `refused` needs a reordered frame landing after the
-gate turned off.
+gate turned off, `refused with legacy live` counts the sector records the sink turned away below the
+gate, and `kept for a gate-on` the newest of those per plane. A keep from before a gate-off is below
+the floor and is dropped at the next gate-on rather than applied, which leaves the keep for what it
+is there for: a re-send that beat the reliable `SnapMoverGate(true)`.

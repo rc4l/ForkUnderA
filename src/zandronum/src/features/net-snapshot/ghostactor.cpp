@@ -3970,10 +3970,11 @@ static void ghost_Report()
 				mysnprintf(szDrop[k], sizeof(szDrop[k]), " none");
 		}
 		ghost_Print("[snap] mover gate: legacy off %d | dropped at the gate: legacy-made%s,"
-			" record-made%s | %u kept poly records applied | %u records refused"
-			" below the gate floor (floor %d)\n",
+			" record-made%s | %u kept records applied | %u records refused"
+			" below the gate floor (floor %d)"
+			" | %u sector records refused with legacy live, %u kept for a gate-on\n",
 			gt.bGate ? 1 : 0, szDrop[0], szDrop[1], gt.keptApplied, gt.belowFloor,
-			gt.floor);
+			gt.floor, gt.ungated, gt.ungatedKept);
 
 		// Polyobjects (7.1), read as polyobj.md says.
 		SnapPolyClientStats po;
