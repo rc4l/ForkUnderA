@@ -1392,6 +1392,18 @@ static void ghost_FollowLegacy(unsigned int id, const AActor* pMirror, unsigned 
 	++g_legacyFollowed;
 }
 
+// [Doruk-Aksoy] Below level 3 the flag commands (A_ChangeFlag's SetThingFlags) still reach the hidden legacy copy, so the mirror the client draws takes its render words each frame, before the snapshot's own bits, keeping the RF_INVISIBLE the snapshot and the trail-smoke rule drive.
+static void ghost_FollowRenderFlags(unsigned int id, AActor* pMirror)
+{
+	if ((g_hidLegacy == NULL) || (g_hidLegacy[id] == 0))
+		return;
+	const AActor* pReal = g_ActorNetIDList.findPointerByID((unsigned short)id);
+	if ((pReal == NULL) || (pReal == pMirror) || (pReal->player != NULL))
+		return;
+	pMirror->renderflags = ActorRenderFlags::FromInt(ComputeMirrorRenderWord(pMirror->renderflags, pReal->renderflags, RF_INVISIBLE));
+	pMirror->renderflags2 = ActorRenderFlags2::FromInt(ComputeMirrorRenderWord(pMirror->renderflags2, pReal->renderflags2, 0));
+}
+
 // Mirror actor for a NetID, or NULL.
 unsigned int g_mirrorLookupNoTable = 0, g_mirrorLookupBadId = 0;
 unsigned int g_mirrorLookupEmpty = 0, g_mirrorLookupOk = 0;
@@ -2900,6 +2912,7 @@ void zx::netsnapshot::GhostFrame()
 
 		// The client's own copy hidden, catching any the packet path missed.
 		ghost_HideLegacy(id, pActor, true);
+		ghost_FollowRenderFlags(id, pActor);
 
 		// Particle effects, which only P_RunEffects reads.
 		pActor->effects = UnpackEffects(pose.effects);

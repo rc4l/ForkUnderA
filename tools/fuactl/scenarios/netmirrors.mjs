@@ -6,6 +6,7 @@ import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 import { THING } from "../src/doomnums.mjs";
 import * as cap from "../src/capture.mjs";
+import { actorRows as rowsOf } from "../src/netacs.mjs";
 
 const BARREL = 2035;
 
@@ -40,8 +41,6 @@ export function mirrorVerdict(label, { missing, duplicates, what }) {
   if (duplicates.length) faults.push(`ids listed twice by default (${duplicates.slice(0, 6).join(", ")})`);
   return faults.length ? { line: `FAIL ${label}: ${faults.join("; ")}`, failed: 1 } : { line: `PASS ${label}: every server actor listed ${what}`, failed: 0 };
 }
-
-const rowsOf = async (c, extra = {}) => (await c.rpc("world.actors", { limit: 100000, ...extra }))?.actors || [];
 
 export async function judgeNetplay(set, label, { config }) {
   const sc = set.server.c;

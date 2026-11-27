@@ -1,7 +1,7 @@
 // [Doruk-Aksoy] The flag-word scenario: its actors, script 1's checks, the log judge, and the offline flow's order.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ACTORS, CHECKS, STRINGS, buildDecorate, buildMap, checkWords, judgeFlags, compareOffline, oldEngine, FIRST_TID } from "../scenarios/decorateflags.mjs";
+import { ACTORS, CHECKS, STRINGS, buildDecorate, buildMap, checkWords, judgeFlags, compareOffline, oldEngine, FIRST_TID, judgeMirrorFlags, judgeNetplay } from "../scenarios/decorateflags.mjs";
 import { PCD } from "../src/acs.mjs";
 
 test("every actor's flags and changes are written, and every check names a string", () => {
@@ -81,4 +81,26 @@ test("offline: wrong flags after a load, and a save never written, are faults", 
   const none = await runOffline({ old: "old.exe", logOf: () => PASS_LOG, noSave: ["new.exe", "old.exe"] });
   assert.match(none.lines[0], /own save: this build wrote no save/);
   assert.match(none.lines[1], /^FAIL older save: the older build wrote no save/);
+});
+
+test("judgeMirrorFlags names a check actor whose mirror draws other render words, or has none", () => {
+  const server = [{ netid: 5, c: ACTORS[0].cls, rf: 1, rf2: 0 }, { netid: 6, c: ACTORS[1].cls, rf: 0, rf2: 1024 }, { netid: 7, c: "DoomPlayer", rf: 0, rf2: 0 }];
+  assert.deepEqual(judgeMirrorFlags(server, [{ netid: 5, rf: 1, rf2: 0, mirror: 1 }, { netid: 6, rf: 0, rf2: 1024, mirror: 1 }]), []);
+  assert.deepEqual(judgeMirrorFlags(server, [{ netid: 5, rf: 0, rf2: 0, mirror: 1 }, { netid: 6, rf: 0, rf2: 1024 }]),
+    [`${ACTORS[0].cls}'s mirror draws rf 0 rf2 0, the server's actor 1 0`, `${ACTORS[1].cls} has no mirror`]);
+});
+
+test("judgeNetplay adds the mirrors only under the snapshot netcode, on every client", async () => {
+  const flags = async (set, label) => ({ line: `PASS ${label}: flags`, failed: 0 });
+  const server = [{ netid: 5, c: ACTORS[0].cls, rf: 1, rf2: 0 }];
+  const good = [{ netid: 5, rf: 1, rf2: 0, mirror: 1 }], bad = [{ netid: 5, rf: 0, rf2: 0, mirror: 1 }];
+  const set = (rowsByClient) => ({ server: { c: "s" }, clients: rowsByClient.map((r, i) => ({ c: r, role: i ? "observer" : "player", player: i })) });
+  const rows = async (c) => (c === "s" ? server : c);
+  assert.deepEqual(await judgeNetplay(set([bad]), "lan", { config: {} }, { flags, rows }), { line: "PASS lan: flags", failed: 0 });
+  assert.equal((await judgeNetplay(set([good, good]), "snap", { config: { serverCvars: { fua_snap: 1 } } }, { flags, rows })).failed, 0);
+  const r = await judgeNetplay(set([good, bad]), "snap", { config: { serverCvars: { fua_snap: 1 } } }, { flags, rows });
+  assert.equal(r.failed, 1);
+  assert.match(r.line, /^FAIL snap: mirrors: observer player 1: /);
+  const both = await judgeNetplay(set([bad]), "snap", { config: { serverCvars: { fua_snap: 1 } } }, { flags: async () => ({ line: "FAIL snap: flags", failed: 1 }), rows });
+  assert.match(both.line, /^FAIL snap: flags; mirrors: player player 0: /);
 });
