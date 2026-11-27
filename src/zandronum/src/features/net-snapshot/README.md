@@ -59,7 +59,12 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   cuts, the catch-up clamp, the clock model, the interest tiers, the join's frame and map stamp, the
   gravity law and run steps, the mover write order, the replay's histogram, the ghost sampler, the
   smoothing, the snapshot sound's body, the wall sweep and how a hidden legacy copy follows its
-  mirror's life — each with its colocated `*_test.cpp`.
+  mirror's life, and its mirror its render words — each with its colocated `*_test.cpp`.
+  - Below level 3 the flag commands still reach the hidden legacy copy, so each frame the mirror a
+    client draws takes the copy's `renderflags` and `renderflags2` (`ghost_FollowRenderFlags`,
+    `ComputeMirrorRenderWord`), all but `RF_INVISIBLE`, which `SNAPMISC_INVISIBLE` and the trail-smoke
+    rule set just after. `decorateflags`' snapshot config compares each client's mirrors with the
+    server's render words and fails without it. Level 3 needs the record to carry the words.
   - `ComputeAnchorStart`, in the smoothing unit, is the mirror interpolation rule's start pose, and
     both the live frame and the replay's analysis call it so that `fua_csnap_analyze ... anchor`
     measures what a client actually draws. Two things about it are deliberate and easy to undo by

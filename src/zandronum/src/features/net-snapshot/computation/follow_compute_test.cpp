@@ -66,3 +66,13 @@ TEST(SnapshotFollow, ARaiseRestoresOnlyTheClearedBitsTheClassHas)
 	EXPECT_EQ(other | shootable | solid, ComputeLegacyRaisedFlags(other | corpse, shootable | solid | other, corpse, shootable | solid));
 	EXPECT_EQ(other | shootable, ComputeLegacyRaisedFlags(other | corpse, shootable, corpse, shootable | solid));
 }
+
+// [Doruk-Aksoy] Seen 2026-11-27 at level 2: A_ChangeFlag("XFLIP") reached the hidden legacy copy, and the mirror a client draws kept the class's render flags.
+TEST(SnapshotFollow, AMirrorTakesItsCopysRenderBitsButTheKeptOnes)
+{
+	const uint32_t invisible = 0x8000, xflip = 0x1, yflip = 0x2;
+	EXPECT_EQ(xflip, ComputeMirrorRenderWord(0, xflip, invisible));
+	EXPECT_EQ(xflip | invisible, ComputeMirrorRenderWord(invisible, xflip, invisible));
+	EXPECT_EQ(0u, ComputeMirrorRenderWord(yflip, invisible, invisible));
+	EXPECT_EQ(yflip, ComputeMirrorRenderWord(xflip, yflip, 0));
+}

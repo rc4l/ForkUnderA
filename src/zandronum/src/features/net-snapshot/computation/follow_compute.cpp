@@ -24,4 +24,9 @@ uint32_t ComputeLegacyRaisedFlags(uint32_t flags, uint32_t classFlags, uint32_t 
 	return (flags & ~corpse & ~restored) | (classFlags & restored);
 }
 
+uint32_t ComputeMirrorRenderWord(uint32_t mirrorWord, uint32_t legacyWord, uint32_t kept)
+{
+	return (legacyWord & ~kept) | (mirrorWord & kept);
+}
+
 }} // namespace zx::netsnapshot
