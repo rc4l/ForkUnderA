@@ -3836,32 +3836,9 @@ static void ghost_Report()
 		unsigned int fh[CLENT_FIRE_BUCKETS], fs = 0, fw = 0, fu = 0;
 		unsigned int jn[4];
 		double ja[4], jw[4];
+		// Read, not printed: on a client the missile's enter lands before the stamp, so the
+		// figure was the gap between shots rather than fire to draw (entities.md).
 		LocalFireStats(fh, fs, fw, fu, ja, jn, jw);
-		if ((fs != 0) || (fu != 0))
-		{
-			char jbuf[160];
-			unsigned int jat = 0;
-			jbuf[0] = '\0';
-			for (unsigned int k = 0; k < 4; ++k)
-			{
-				if (jat >= sizeof(jbuf) - 1)
-					break;
-				// The SAMPLE COUNT is printed, so an ordinal's figure says
-				// whether it came from two shots or fifty.
-				const int w = mysnprintf(jbuf + jat, sizeof(jbuf) - jat,
-					" #%u %.0f/%.0f u/t x%u", k + 1,
-					(jn[k] > 0) ? (ja[k] / (double)jn[k]) : 0.0,
-					jw[k], jn[k]);
-				if (w > 0)
-					jat += (unsigned int)w;
-			}
-			const double finv = (fs > 0) ? (100.0 / (double)fs) : 0.0;
-			ghost_Print("[snap] own fire: %u shots | to first draw <35ms %.0f%% "
-				"<70 %.0f%% <105 %.0f%% <175 %.0f%% 175+ %.0f%% (worst %u ms)"
-				" | speed by record (mean/worst)%s | %u unmatched\n",
-				fs, fh[0] * finv, fh[1] * finv, fh[2] * finv,
-				fh[3] * finv, fh[4] * finv, fw, jbuf, fu);
-		}
 	}
 
 	// Reported whether or not it is on, so "off" and "on but reaching
