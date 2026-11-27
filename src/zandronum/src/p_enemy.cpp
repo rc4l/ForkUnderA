@@ -62,6 +62,7 @@
 
 #include "gi.h"
 #include "features/alert-reuse/computation/alertreuse_compute.h"
+#include "features/look-players/computation/lookorder_compute.h"
 #include "features/telemetry/telemetry.h"
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] LiftOntoStairs
 #include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
@@ -1775,15 +1776,21 @@ bool P_LookForEnemies (AActor *actor, INTBOOL allaround, FLookExParams *params)
 ================
 */
 
+// [Doruk-Aksoy] The look order's draw, from the stream the player pick always drew from.
+static int LookDraw( int range )
+{
+	return M_Random( range );
+}
+
+static_assert( kZxLookSlots == MAXPLAYERS, "the look order holds one slot per player" );
+
 bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 {
 	int			pnum;
 	player_t*	player;
 	bool chasegoal = params? (!(params->flags & LOF_DONTCHASEGOAL)) : true;
-	// [BC] Could new variables.
-	ULONG		ulIdx;
-	bool		abSearched[MAXPLAYERS];
-	bool		bAllDone;
+	// [Doruk-Aksoy] features/look-players: the players in the game, tried in a random order.
+	ZxLookOrder	order;
 
 	// [BC] This is handled server-side.
 	if ( NETWORK_InClientMode() )
@@ -1873,39 +1880,18 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 		return P_LookForMonsters (actor);
 	}
 
-	bAllDone = false;
-	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
-		abSearched[ulIdx] = false;
+	// [Doruk-Aksoy] One draw per player tried, where drawing from all MAXPLAYERS slots until each came up took ~300 draws a look that found nobody.
+	ComputeLookOrderStart( order, playeringame, MAXPLAYERS );
 
 	// Begin searching for players.
 	while ( 1 )
 	{
-		if ( bAllDone )
+		pnum = ComputeLookOrderNext( order, LookDraw );
+		if ( pnum < 0 )
 		{
 			pnum = MAXPLAYERS;
 			break;
 		}
-
-		// [BB] We have to make sure that P_Random (the old RNG from Doom) is not used here
-		// (it is called by M_Random() if ZACOMPATF_OLD_RANDOM_GENERATOR) since it never
-		// returns a few of the integers in [0,255] causing this while loop to never terminate.
-		pnum = M_Random( MAXPLAYERS );
-		if ( abSearched[pnum] == true )
-			continue;
-
-		abSearched[pnum] = true;
-		bAllDone = true;
-		for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
-		{
-			if ( abSearched[ulIdx] == false )
-			{
-				bAllDone = false;
-				break;
-			}
-		}
-
-		if (!playeringame[pnum])
-			continue;
 
 		if (actor->TIDtoHate == 0)
 		{
