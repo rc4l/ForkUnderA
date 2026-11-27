@@ -79,8 +79,34 @@ TEST(ComputeWorldActorJson, PositionsToAThousandthAndEveryField)
 	r.health = 60;
 	r.sprite = "TROOA";
 	r.translation = (9u << 16) | 2;
-	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"px\":1.000,\"py\":-2.000,\"pz\":0.000,\"fz\":-64.000,\"clip\":10.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sx\":1.000,\"sy\":1.000,\"dsx\":1.000,\"dsy\":1.000,\"sprite\":\"TROOA\",\"tr\":589826}",
+	r.renderFlags = 0x8000;
+	r.renderFlags2 = 3;
+	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"px\":1.000,\"py\":-2.000,\"pz\":0.000,\"fz\":-64.000,\"clip\":10.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sx\":1.000,\"sy\":1.000,\"dsx\":1.000,\"dsy\":1.000,\"sprite\":\"TROOA\",\"tr\":589826,\"rf\":32768,\"rf2\":3}",
 		ComputeWorldActorJson(r));
+}
+
+// [Doruk-Aksoy] A snapshot client's mirror is marked, so a reader can tell it from the legacy copy that holds the same id.
+TEST(ComputeWorldActorJson, AMirrorIsMarked)
+{
+	WorldActorRow r;
+	r.netId = 7;
+	r.mirror = true;
+	const std::string json = ComputeWorldActorJson(r);
+	EXPECT_NE(std::string::npos, json.find(",\"mirror\":1}"));
+}
+
+// [Doruk-Aksoy] Seen 2026-11-26: at legacy suppression 3 a client's 163 mirrors listed none, its world.actors walking only the thinking stat lists.
+TEST(ComputeListsMirror, AMirrorWithNoLegacyActorIsListed)
+{
+	EXPECT_TRUE(ComputeListsMirror(false, false));
+}
+
+// [Doruk-Aksoy] Where a legacy copy holds the id (levels 1-2) only a request for every mirror lists it too, so an id lists once by default.
+TEST(ComputeListsMirror, BesideALegacyCopyOnlyWhenEveryMirrorIsAskedFor)
+{
+	EXPECT_FALSE(ComputeListsMirror(true, false));
+	EXPECT_TRUE(ComputeListsMirror(true, true));
+	EXPECT_TRUE(ComputeListsMirror(false, true));
 }
 
 TEST(ComputeSectorStateJson, HeightsLightColoursWithoutAlphaAndFlats)

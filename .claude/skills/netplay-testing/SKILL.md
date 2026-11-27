@@ -51,7 +51,9 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   `sv_minfov` and `sv_maxfov` bound.
 - `rpc world.actors` lists synced actors by network id, each with its `fz` floor, `clip` floorclip and
   `px`/`py`/`pz`, where it was when its tic began, which the renderer interpolates from
-  (carried inventory left out, `owned: 1` keeps it);
+  (carried inventory left out, `owned: 1` keeps it), and its `rf`/`rf2` render words. On a snapshot
+  client an id held by a mirror alone (level 3) lists that mirror, marked `mirror: 1`, and `mirrors: 1`
+  lists every mirror beside the legacy copy that shares its id (levels 1-2), which is what the client draws;
   `world.sectorstate` and `world.sidestate` page through the map's look. `sim.hash` is not comparable
   between a server and a client.
 - `netdiff` compares the map once and the actors against the server's history at the tic each client last
