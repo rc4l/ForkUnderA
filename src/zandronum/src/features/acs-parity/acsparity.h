@@ -34,6 +34,9 @@ AActor* ActorFromNetID(int32_t id);
 // [Doruk-Aksoy] The name of the terrain under `actor`'s feet.
 const char* FloorTerrainName(AActor* actor);
 
+// [Doruk-Aksoy] SetSectorDamage: `amount` of damage of `type` to players in sectors with `tag`, as Sector_SetDamage gives it; a type sectors can't hold is normal damage, warned once, and a negative amount none.
+void SetSectorDamage(int tag, int32_t amount, const char* type);
+
 // [Doruk-Aksoy] Whether `name` is an actor class.
 bool IsActorClass(const char* name);
 

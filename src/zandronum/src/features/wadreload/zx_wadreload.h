@@ -43,6 +43,9 @@ bool WadLoadable(const char *path, FString &outWhy);
 // the previous game then bleeds into the new one.
 void ResetStartupStateForRestart();
 
+// [Doruk-Aksoy] How many restarts this process has come back up from, so a step armed before a requested restart can wait until it has happened.
+int RestartCount();
+
 // Reload the engine onto a new WAD set. `iwad` may be NULL/empty to keep the current IWAD; `pwads`
 // replaces the current -file set (may be empty to run the bare IWAD). `startMap` (NULL/empty = none)
 // makes the reload boot straight into that map instead of the title screen -- if the map isn't in the

@@ -9,6 +9,8 @@ namespace zx { namespace netreplication {
 
 bool ComputeSendsWoundedHealth(bool isPlayer, int health) { return !isPlayer && health > 0; }
 
+bool ComputeSendsDeathHealth(bool isPlayer, bool killSuppressed) { return !isPlayer && killSuppressed; }
+
 bool ComputeAddPendingHealth(std::vector<int> &pending, int netId)
 {
 	if (netId <= 0 || std::find(pending.begin(), pending.end(), netId) != pending.end()) return false;
@@ -20,6 +22,8 @@ int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity)
 {
 	return (!noGravity && z < floorz) ? floorz : z;
 }
+
+bool ComputeSendsBlockedStop(bool isPlayer, bool wasMoving) { return !isPlayer && wasMoving; }
 
 int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bool temporaryObituary)
 {

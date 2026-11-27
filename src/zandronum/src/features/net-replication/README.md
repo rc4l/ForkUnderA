@@ -36,12 +36,22 @@ A puff goes to the clients through `SendPuff` (`ComputePuffSend`, `ComputeSkipsP
 and a rail sends its endpoint puff only once the puff survived the sky, since a client kept one the server sent and then
 took away (`netrailpuff`).
 
+A non-player's death sends its health on its own when the snapshot suppresses the `KillThing` that carried it
+(`SendDeathHealth`, `ComputeSendsDeathHealth`, legacy suppression 2), so a client's copy reads the server's dead
+health, not the last wounded one (`farhitscan`, `netsync` in snapshot mode).
+
 A non-player's death goes out with its place whole (`SERVERCOMMANDS_MoveThingExactWhole` from `AActor::Die`): the
 exact move used to leave out, or have the client reuse, any coordinate the server had last sent, but a client walks a
 monster itself between updates and keeps a walking update's whole-unit coordinates as its last, so corpses lay a unit
 off on a flat floor and a step off on narrow stairs (`netmonsterstairs`). A walker killed after stepping onto a higher
 floor, before the next tic's `P_ZMovement` raised it there, is first stood on that floor (`ComputeSettledDeathZ`, on a
 server only): the raise came after the send, and every client kept the corpse a step low.
+
+A moving non-player that `P_XYMovement` stops dead against a block sends its place and velocity whole
+(`SendBlockedStop`, `ComputeSendsBlockedStop`). A joiner whose start is blocked spawns on another and telefrags what
+stands there, and the kickback throws the corpse up to 32 units a tic in a random direction. The server's corpse is
+still solid inside the joiner, so it stops where it stood. A client whose copy the joiner did not block yet moved it a
+tic on the velocity it was sent, then kept that step for good (`netjoinstomp`).
 
 ## Players
 
@@ -79,10 +89,12 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
+- `p_interaction.cpp` `AActor::Die`: `SendDeathHealth` beside the `KillThing` the snapshot may suppress.
 - `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
 - `p_acs.cpp` `SetMapUsedStatus`: `SendMapUsedStatus` when a script changed an entry's used status.
 - `p_acs.cpp` `SetSelectedInventory`: `SendSelectedInventory` once a script selected a held inventory-bar item.
 - `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
+- `p_mobj.cpp` `P_XYMovement`: `SendBlockedStop` where a blocked mover that cannot slide stops dead.
 - `p_acs.cpp` `SetActorProperty`: `SendThingProperty` when a script changed a pawn's `APROP_RejumpDelay`.
 - `thingdef/thingdef_codeptr.cpp` `A_SetTranslation`: `SendThingTranslation` once a state changed the actor's translation (`features/trnslate`).
 - `p_mobj.cpp` `AActor::Slam`: `SendThingFrame` when a charger enters its class's own `Slam` state (`features/decorate-uzdoom`).

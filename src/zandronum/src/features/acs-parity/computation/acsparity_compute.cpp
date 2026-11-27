@@ -10,6 +10,27 @@ namespace zx { namespace acsparity {
 
 namespace {
 
+// [Doruk-Aksoy] The means-of-death numbers sectors keep their damage type as, and the damage types they name.
+struct ModName
+{
+	int mod;
+	const char* name;
+};
+constexpr ModName kMods[] = {
+	{ 9, "BFGSplash" }, { 12, "Drowning" }, { 13, "Slime" }, { 14, "Fire" }, { 15, "Crush" }, { 16, "Telefrag" }, { 17, "Falling" },
+	{ 18, "Suicide" }, { 20, "Exit" }, { 22, "Melee" }, { 23, "Railgun" }, { 24, "Ice" }, { 25, "Disintegrate" }, { 26, "Poison" },
+	{ 27, "Electric" }, { 1000, "Massacre" },
+};
+
+// [Doruk-Aksoy] Names compare ignoring case, as FNames do.
+bool SameName(const char* a, const char* b)
+{
+	for (; *a != 0 && *b != 0; ++a, ++b)
+		if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b)))
+			return false;
+	return *a == *b;
+}
+
 constexpr uint32_t kFracMask = 0xFFFF;
 constexpr uint32_t kHalf = 0x8000;
 
@@ -20,6 +41,29 @@ int32_t Wrap(uint32_t x)
 }
 
 } // namespace
+
+int ComputeDamageTypeMod(const char* name)
+{
+	if (name == nullptr || *name == 0 || SameName(name, "None"))
+		return 0;
+	for (const ModName& m : kMods)
+		if (SameName(name, m.name))
+			return m.mod;
+	return -1;
+}
+
+const char* ComputeModDamageType(int mod)
+{
+	for (const ModName& m : kMods)
+		if (m.mod == mod)
+			return m.name;
+	return nullptr;
+}
+
+int16_t ComputeSectorDamageAmount(int32_t amount)
+{
+	return static_cast<int16_t>(amount < 0 ? 0 : amount > INT16_MAX ? INT16_MAX : amount);
+}
 
 int32_t ComputeFixedFloor(int32_t x)
 {

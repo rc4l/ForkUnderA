@@ -11,6 +11,9 @@ struct FState;
 
 namespace zx { namespace netreplication {
 
+// [Doruk-Aksoy] A non-player that died, on a server: its health to every client when the snapshot suppresses the KillThing that carried it (ComputeSendsDeathHealth).
+void SendDeathHealth(AActor *actor);
+
 // [rc4l] An actor took damage and lived, on a server: its health goes to every client at the tic's end (ComputeSendsWoundedHealth).
 void NoteDamaged(AActor *target);
 
@@ -28,6 +31,9 @@ void SendThingTranslation(AActor *actor);
 
 // [Doruk-Aksoy] An actor a server put in a state of its class's own (a Slam state), on a server: the state to every client (SVC_SETTHINGFRAME).
 void SendThingFrame(AActor *actor, FState *state);
+
+// [Doruk-Aksoy] A mover P_XYMovement stopped dead against a block, on a server: its place and velocity exactly to every client when it was moving (ComputeSendsBlockedStop).
+void SendBlockedStop(AActor *actor, bool wasMoving);
 
 // [rc4l] A puff a server spawned, to its clients in state (STATE_SPAWN or the one it jumped to) as ComputePuffSend says, flags its P_SpawnPuff flags.
 void SendPuff(AActor *puff, AActor *source, unsigned state, int flags);

@@ -14,11 +14,17 @@ namespace zx { namespace netreplication {
 // [rc4l] Whether a damaged actor's health goes to every client: a non-player still alive, since a player's goes with its own damage command and a death with the death.
 bool ComputeSendsWoundedHealth(bool isPlayer, int health);
 
+// [Doruk-Aksoy] Whether a death sends its health on its own: a non-player whose KillThing, which carried it, the snapshot suppresses (legacy suppression 2), so clients' copies read the server's dead health.
+bool ComputeSendsDeathHealth(bool isPlayer, bool killSuppressed);
+
 // [rc4l] Add a wounded actor's network id to the tic's pending list once, so a shotgun's seven pellets send one health; false for no id (a server-only actor) or one already pending.
 bool ComputeAddPendingHealth(std::vector<int> &pending, int netId);
 
 // [Doruk-Aksoy] The height a death is sent at: a walker killed after stepping onto a higher floor, before the next tic's P_ZMovement raised it there, stands below it, and that raise came after the send, so clients kept a corpse a step low on narrow stairs; one with gravity is sent standing on the floor.
 int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity);
+
+// [Doruk-Aksoy] Whether a non-sliding mover stopped dead by a block sends where it stopped: a non-player that was moving, since a client its block did not stop (a spawn telefrag's corpse, still solid inside the joiner) moved on the velocity it was sent.
+bool ComputeSendsBlockedStop(bool isPlayer, bool wasMoving);
 
 // [rc4l] How a server sends a puff: with no net id, with one, or to each client in turn.
 enum PuffSend { kPuffNoNetID, kPuffWithNetID, kPuffEachClient };

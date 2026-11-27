@@ -35,6 +35,7 @@
 ** real way to test it.
 */
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include <assert.h>
 #include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
 #include "features/handoff/gamethread.h"   // [rc4l] AskMain
@@ -123,6 +124,8 @@
 #include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
 #include "features/acs-fields/acsfields.h"   // [Doruk-Aksoy] field access by name, fua_ 24030-24031
+#include "features/acs-queries/acsqueries.h"   // [Doruk-Aksoy] actor queries, fua_ 24040-24048
+#include "features/acs-traces/acstraces.h"   // [Doruk-Aksoy] line traces, fua_ 24050-24061
 #include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] named random streams, fua_ 24070-24072
 #include "features/acs-random/computation/random_compute.h"
 #include <cstddef>
@@ -360,6 +363,8 @@ static	bool	g_bCalledFromConsoleCommand = false;
 // [AK] A pointer to the script currently being run. When it's not equal to NULL, it means that
 // any action or line specials are being executed inside an ACS script.
 static	DLevelScript	*g_pCurrentScript = NULL;
+// [Doruk-Aksoy] features/acs-traces: the DLevelScript flag of a callback's run, which is no script of its module.
+static const int ACS_FUAFUNCTION = 1 << 16;
 
 
 //============================================================================
@@ -1079,6 +1084,8 @@ void P_ClearACSVars(bool alsoglobal)
 		GlobalACSStrings.Clear();
 		// [Doruk-Aksoy] features/acs-handles: nor to any handle, so the table starts over.
 		zx::acshandles::ResetTable();
+		// [Doruk-Aksoy] features/acs-queries: and no script holds a query, so ids start over.
+		zx::acsqueries::ResetIds();
 
 		// [BB] When the global vars are cleared, our query handles surely shouldn't
 		// be needed anymore. So clear them in case mods forgot to do so.
@@ -3910,6 +3917,8 @@ void DLevelScript::Serialize (FArchive &arc)
 	arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
 		<< WrapWidth;
 	arc << InModuleScriptNumber;
+	zx::acsqueries::SerializeScript( arc, fua_queries );	// [Doruk-Aksoy] features/acs-queries, from SAVEVER 4540
+	zx::acstraces::SerializeScript( arc, fua_tracers );	// [Doruk-Aksoy] features/acs-traces, from SAVEVER 4541
 	// [Doruk-Aksoy] features/acs-random: found again by the script's number, as starting it found it, so savegames keep their layout.
 	if (arc.IsLoading())
 		fua_clientside = ACS_IsScriptClientSide(script);
@@ -5765,6 +5774,7 @@ enum EACSFunctions
 	ACSF_Warp = 92,
 	// [Doruk-Aksoy] features/acs-parity: UZDoom's functions at UZDoom's numbers, uzdoom@c51abb0161.
 	ACSF_GetMaxInventory = 93,
+	ACSF_SetSectorDamage,		// [Doruk-Aksoy] 94, uzdoom@d0c372692b: (int tag, int amount [, str type [, int interval [, int leakiness]]]), the last two ignored
 
 	// [Doruk-Aksoy] uzdoom@a1e8d83724: out of order, at upstream's number, which ACC compiles SetMusicVolume to (-97).
 	ACSF_SetMusicVolume = 97,
@@ -5926,6 +5936,34 @@ enum EACSFunctions
 	// [Doruk-Aksoy] features/acs-fields: an actor's DECORATE fields by name.
 	ACSF_fua_GetField = 24030,			// (int h, str name [, int index])
 	ACSF_fua_SetField,					// (int h, str name, int value [, int index])
+	// [Doruk-Aksoy] features/acs-handles: named values a script attaches to an actor.
+	ACSF_fua_SetActorData = 24032,		// (int h, str key, int value)
+	ACSF_fua_GetActorData,				// (int h, str key [, int default])
+	ACSF_fua_HasActorData,				// (int h, str key)
+	ACSF_fua_ClearActorData,			// (int h [, str key])
+	// [Doruk-Aksoy] features/acs-queries: actors found by range or class, kept as handles.
+	ACSF_fua_QueryCreate = 24040,		// ()
+	ACSF_fua_QueryFree,					// (int q)
+	ACSF_fua_QueryClear,				// (int q [, int kind])
+	ACSF_fua_QueryFilter,				// (int q, int kind [, int a [, int b]])
+	ACSF_fua_QuerySort,					// (int q, int mode [, int max])
+	ACSF_fua_FindActors,				// (int q, fixed x, fixed y, fixed z, fixed radius)
+	ACSF_fua_FindActorsOfClass,			// (int q, str cls [, bool subclasses [, fixed x, fixed y, fixed z]])
+	ACSF_fua_FoundActor,				// (int q, int i)
+	ACSF_fua_FoundCount,				// (int q)
+	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers, decided by their rules and a callback function.
+	ACSF_fua_TracerCreate = 24050,		// ()
+	ACSF_fua_TracerFree,				// (int t)
+	ACSF_fua_TracerClear,				// (int t)
+	ACSF_fua_TraceRule,					// (int t, int hit, int action [, int filter [, a [, b]]])
+	ACSF_fua_TraceCallback,				// (int t, function fn [, int ctx])
+	ACSF_fua_LineTrace = 24055,			// (int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])
+	ACSF_fua_Trace,						// (int t, fixed x, fixed y, fixed z, fixed dx, fixed dy, fixed dz, fixed distance [, int flags [, int ignore]])
+	ACSF_fua_TraceHitCount,				// (int t)
+	ACSF_fua_TraceResult,				// (int t, int prop [, int hit])
+	ACSF_fua_TraceResultStr,			// (int t, int prop [, int hit])
+	ACSF_fua_LineInfo,					// (int line, int prop)
+	ACSF_fua_SectorInfo,				// (int sector, int prop)
 	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
 	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
 	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
@@ -5936,8 +5974,13 @@ static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && 
 static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
 static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
 static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
+static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
+static_assert(ACSF_fua_QueryCreate == zx::acsqueries::kQueryCreate && ACSF_fua_FoundCount == zx::acsqueries::kFoundCount, "the fua_ query functions keep their numbers");
+static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_TraceRule == zx::acstraces::kTraceRule && ACSF_fua_LineTrace == zx::acstraces::kLineTrace
+	&& ACSF_fua_Trace == zx::acstraces::kTrace && ACSF_fua_TraceCallback == zx::acstraces::kTraceCallback
+	&& ACSF_fua_TraceHitCount == zx::acstraces::kTraceHitCount && ACSF_fua_SectorInfo == zx::acstraces::kSectorInfo, "the fua_ trace functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
-static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
+static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
 	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
@@ -7533,6 +7576,20 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_GetField:
 			return zx::acsfields::GetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 2 ? args[2] : 0 );
 
+		// [Doruk-Aksoy] features/acs-handles: an actor's own named values, never sent anywhere.
+		case ACSF_fua_SetActorData:
+			return zx::acshandles::SetActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), args[2] );
+
+		case ACSF_fua_GetActorData:
+			return zx::acshandles::GetActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 2 ? args[2] : 0 );
+
+		case ACSF_fua_HasActorData:
+			return zx::acshandles::HasActorData( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ));
+
+		case ACSF_fua_ClearActorData:
+			zx::acshandles::ClearActorData( zx::acshandles::ActorOf( args[0] ), argCount > 1 ? FBehavior::StaticLookupString( args[1] ) : NULL );
+			return 0;
+
 		case ACSF_fua_SetField:
 			return zx::acsfields::SetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 3 ? args[3] : 0, args[2] );
 		// [Doruk-Aksoy] features/acs-random: a stream by name, a CLIENTSIDE script's apart.
@@ -7544,6 +7601,79 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_fua_SetRandomSeed:
 			return zx::acsrandom::SetSeed( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1] );
+
+		// [Doruk-Aksoy] features/acs-queries: read-only, so each machine's scripts query their own world.
+		case ACSF_fua_QueryCreate:
+			return zx::acsqueries::QueryCreate( fua_queries );
+
+		case ACSF_fua_QueryFree:
+			zx::acsqueries::QueryFree( fua_queries, args[0] );
+			return 0;
+
+		case ACSF_fua_QueryClear:
+			zx::acsqueries::QueryClear( fua_queries, args[0], argCount > 1 ? args[1] : 0 );
+			return 0;
+
+		case ACSF_fua_QueryFilter:
+			return zx::acsqueries::QueryFilter( fua_queries, args[0], args[1], argCount - 2, argCount > 2 ? args[2] : 0, argCount > 3 ? args[3] : 0,
+				argCount > 2 && zx::acsqueries::ComputeFilterArg( args[1] ) == zx::acsqueries::kArgName ? FBehavior::StaticLookupString( args[2] ) : NULL );
+
+		case ACSF_fua_QuerySort:
+			zx::acsqueries::QuerySort( fua_queries, args[0], args[1], argCount > 2 ? args[2] : 0 );
+			return 0;
+
+		case ACSF_fua_FindActors:
+			return zx::acsqueries::FindActors( fua_queries, args[0], args[1], args[2], args[3], args[4] );
+
+		case ACSF_fua_FindActorsOfClass:
+			return zx::acsqueries::FindActorsOfClass( fua_queries, args[0], FBehavior::StaticLookupString( args[1] ), argCount > 2 ? !!args[2] : true, argCount > 5 ? &args[3] : NULL );
+
+		case ACSF_fua_FoundActor:
+			return zx::acsqueries::FoundActor( fua_queries, args[0], args[1] );
+
+		case ACSF_fua_FoundCount:
+			return zx::acsqueries::FoundCount( fua_queries, args[0] );
+
+		case ACSF_fua_TracerCreate:
+			return zx::acstraces::TracerCreate( FuaTracers() );
+
+		case ACSF_fua_TracerFree:
+			zx::acstraces::TracerFree( FuaTracers(), args[0] );
+			break;
+
+		case ACSF_fua_TracerClear:
+			zx::acstraces::TracerClear( FuaTracers(), args[0] );
+			break;
+
+		case ACSF_fua_TraceRule:
+			return zx::acstraces::TraceRule( FuaTracers(), args[0], args[1], args[2], argCount - 3, argCount > 3 ? args[3] : 0, argCount > 4 ? args[4] : 0,
+				argCount > 5 ? args[5] : 0, argCount > 4 && zx::acstraces::ComputeRuleFilterArg( args[3] ) == zx::acsqueries::kArgName ? FBehavior::StaticLookupString( args[4] ) : NULL );
+
+		case ACSF_fua_TraceCallback:
+			return zx::acstraces::TraceCallback( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : 0 );
+
+		case ACSF_fua_Trace:
+			return zx::acstraces::Trace( FuaTracers(), args[0], activator, args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+				argCount > 8 ? args[8] : 0, argCount > 9 ? args[9] : 0 );
+
+		case ACSF_fua_LineTrace:
+			return zx::acstraces::LineTrace( FuaTracers(), args[0], activator, args[1], args[2], args[3], args[4],
+				argCount > 5 ? args[5] : 0, argCount > 6 ? args[6] : 0, argCount > 7 ? args[7] : 0, argCount > 8 ? args[8] : 0 );
+
+		case ACSF_fua_TraceHitCount:
+			return zx::acstraces::TraceHitCount( FuaTracers(), args[0] );
+
+		case ACSF_fua_TraceResult:
+			return zx::acstraces::TraceResult( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : -1 );
+
+		case ACSF_fua_TraceResultStr:
+			return GlobalACSStrings.AddString( zx::acstraces::TraceResultStr( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : -1 ) );
+
+		case ACSF_fua_LineInfo:
+			return zx::acstraces::LineInfo( args[0], args[1] );
+
+		case ACSF_fua_SectorInfo:
+			return zx::acstraces::SectorInfo( args[0], args[1] );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:
@@ -9589,6 +9719,11 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_Round:
 			return zx::acsparity::ComputeFixedRound(args[0]);
 
+		// [Doruk-Aksoy] features/acs-parity: our sectors damage on a fixed 32-tic beat with leaks set by the amount, so UZDoom's interval and leakiness are left for later.
+		case ACSF_SetSectorDamage:
+			zx::acsparity::SetSectorDamage( args[0], args[1], argCount > 2 ? FBehavior::StaticLookupString( args[2] ) : NULL );
+			break;
+
 		case ACSF_Ceil:
 			return zx::acsparity::ComputeFixedCeil(args[0]);
 
@@ -9693,6 +9828,11 @@ int DLevelScript::RunScript ()
 		{
 			localarrays = &ptr->LocalArrays;
 		}
+	}
+	// [Doruk-Aksoy] features/acs-traces: a callback's run starts in its function, with that function's arrays.
+	if (fua_entryFunction != NULL)
+	{
+		localarrays = const_cast<ACSLocalArrays *>(&fua_entryFunction->LocalArrays);
 	}
 
 	// Hexen truncates all special arguments to bytes (only when using an old MAPINFO and old ACS format
@@ -10131,6 +10271,14 @@ int DLevelScript::RunScript ()
 				else
 				{
 					value = 0;
+				}
+				// [Doruk-Aksoy] features/acs-traces: a return with no caller ends the run with its value, as a callback's function does.
+				if (activeFunction == NULL)
+				{
+					resultValue = value;
+					fua_returned = true;
+					state = SCRIPT_PleaseRemove;
+					break;
 				}
 				sp -= sizeof(CallReturn)/sizeof(int);
 				retsp = &Stack[sp];
@@ -12015,6 +12163,7 @@ scriptwait:
 		case PCD_SETLINEBLOCKING:
 			{
 				int line;
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 				FLineIdIterator itr(STACK(2));
 				while ((line = itr.Next()) >= 0)
@@ -12055,6 +12204,7 @@ scriptwait:
 		case PCD_SETLINEMONSTERBLOCKING:
 			{
 				int line;
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 				FLineIdIterator itr(STACK(2));
 				while ((line = itr.Next()) >= 0)
@@ -13644,6 +13794,44 @@ scriptwait:
 
 #undef PushtoStack
 
+int DLevelScript::RunFunctionNow (int ref, AActor *who, zx::acstraces::ScriptTracers *tracers, const int *args, int argcount, bool &ok)
+{
+	ok = false;
+	int funcnum;
+	FBehavior *module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+	ScriptFunction *func = module != NULL ? module->GetFunction(funcnum, module) : NULL;
+	if (func == NULL || func->ArgCount != argcount || !func->HasReturnValue)
+		return 0;
+	ScriptPtr code = {};
+	code.Type = SCRIPT_Closed;
+	code.ArgCount = func->ArgCount;
+	code.VarCount = WORD(func->ArgCount + func->LocalCount);
+	code.Address = func->Address;
+	DLevelScript *outer = g_pCurrentScript;
+	DLevelScript *run = new DLevelScript(who, NULL, 0, &code, module, args, argcount, ACS_ALWAYS | ACS_FUAFUNCTION);
+	run->fua_entryFunction = func;
+	run->fua_tracerOwner = tracers;
+	const int value = run->RunScript();
+	g_pCurrentScript = outer;
+	// [Doruk-Aksoy] A callback that waits is ended here, since its trace can't wait for it.
+	if (run->state != SCRIPT_PleaseRemove)
+	{
+		run->state = SCRIPT_PleaseRemove;
+		run->Unlink();
+		return 0;
+	}
+	ok = run->fua_returned;
+	return value;
+}
+
+bool DLevelScript::IsCallableFunction (int ref, int argcount)
+{
+	int funcnum;
+	FBehavior *module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+	const ScriptFunction *func = module != NULL ? module->GetFunction(funcnum, module) : NULL;
+	return func != NULL && func->ArgCount == argcount && func->HasReturnValue;
+}
+
 static DLevelScript *P_GetScriptGoing (AActor *who, line_t *where, int num, const ScriptPtr *code, FBehavior *module,
 	const int *args, int argcount, int flags)
 {
@@ -13682,7 +13870,8 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 		localvars[i] = args[i];
 	}
 	pc = module->GetScriptAddress(code);
-	InModuleScriptNumber = module->GetScriptIndex(code);
+	// [Doruk-Aksoy] features/acs-traces: a callback's run is no script of the module.
+	InModuleScriptNumber = (flags & ACS_FUAFUNCTION) ? -1 : module->GetScriptIndex(code);
 	activator = who;
 	activationline = where;
 	backSide = flags & ACS_BACKSIDE;

@@ -1,6 +1,6 @@
 # The bit of every flag DECORATE can set, by the field that holds it. DERIVED -- do not hand-edit.
 # Regenerate with: tools/flag_bits_snapshot.py --write
-savever 4538
+savever 4539
 AActor.BounceFlags ALLOWBOUNCEONACTORS 0x00000008
 AActor.BounceFlags BOUNCEONACTORS 0x00000010
 AActor.BounceFlags BOUNCEAUTOOFF 0x00000020
@@ -275,11 +275,18 @@ AActor.mvFlags USER4JUMP 0x00000400
 AActor.mvFlags WALLCLIMB 0x00000020
 AActor.mvFlags WALLJUMP 0x00000004
 AActor.mvFlags WALLJUMPV2 0x00000008
+AActor.renderflags DONTFLIP 0x00080000
 AActor.renderflags FORCEXYBILLBOARD 0x00020000
 AActor.renderflags FORCEYBILLBOARD 0x00010000
 AActor.renderflags INVISIBLE 0x00008000
-AActor.renderflags LIGHTMULTALPHA 0x00080000
 AActor.renderflags ROLLSPRITE 0x00040000
+AActor.renderflags SPRITEFLIP 0x08000000
+AActor.renderflags XFLIP 0x00000001
+AActor.renderflags YFLIP 0x00000002
+AActor.renderflags2 INVISIBLEINMIRRORS 0x00000001
+AActor.renderflags2 LIGHTMULTALPHA 0x00000400
+AActor.renderflags2 NODYNAMICLIGHTING 0x00004000
+AActor.renderflags2 ONLYVISIBLEINMIRRORS 0x00000002
 ADynamicLight.lightflags ATTENUATE 0x00000001
 ADynamicLight.lightflags SPOT 0x00000002
 AInventory.ItemFlags ADDITIVETIME 0x00000200

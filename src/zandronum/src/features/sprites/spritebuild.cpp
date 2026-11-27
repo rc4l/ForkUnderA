@@ -14,6 +14,7 @@
 #include "features/sprites/computation/spritestyle_compute.h"
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] ComputeTextureMode
 #include "features/hwrender/computation/fuzz_compute.h"   // [rc4l] ComputeFuzzKind
+#include "features/sprites/computation/spriteframe_compute.h"   // [Doruk-Aksoy] ComputeSpriteVFlip, ComputeMirrorHidesSprite
 #include "features/sprites/computation/spritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
@@ -191,6 +192,9 @@ static bool ViewRejects(const ActorRecord *thing, int spritenum, fixed_t x, fixe
 	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7))) &&
 	    !zx::modelreach::FootprintReached(zx::gamecopy::IndexOf(thing))) return true;
 	if (!view.PortalIsMirror() && thing->cameraIcon) return true;
+	// [Doruk-Aksoy] The mirror flags, a mirror being the view GL portals through or the backend's mirror walk.
+	if (ComputeMirrorHidesSprite(view.PortalIsMirror() || zx::levelmesh::MirrorCaptureView() >= 0, (thing->renderflags2 & RF2_INVISIBLEINMIRRORS) != 0,
+		(thing->renderflags2 & RF2_ONLYVISIBLEINMIRRORS) != 0)) return true;
 	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down or is a model.
 	if (P_AproxDistance(x - viewx, y - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
 	    !gl_FindModelFrame(thing->type, spritenum, thing->frame, false)) return true;
@@ -401,7 +405,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 
 	// [rc4l] The rotation the viewer sees, as GL picks it.
 	bool mirror = false;
-	const FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, R_PointToAngle(s.rotx, s.roty) - thing->angle, &mirror);
+	const FTextureID patch = gl_GetActorSpriteFrame(spritenum, thing->frame, R_PointToAngle(s.rotx, s.roty) - thing->angle, thing->renderflags, &mirror);
 	if (!patch.isValid()) return 0;
 	const int type = thing->renderflags & RF_SPRITETYPEMASK;
 	// [rc4l] A floor sprite leaves GL's quad unset, so it is not drawn here either.
@@ -422,6 +426,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	else if (!zx::materials::MaterialIfMade(TexMan[patch], type == RF_FACESPRITE, material)) return -1;
 	zx::materials::SpriteFrameInfo fi;
 	if (!zx::materials::MaterialSpriteFrame(material, fi)) return 0;
+	ComputeSpriteVFlip((thing->renderflags & RF_YFLIP) != 0, fi.vt, fi.vb);
 
 	float ul, ur;
 	const SpriteRect frame = { fi.left, fi.top, fi.width, fi.height };
@@ -1266,7 +1271,7 @@ static bool TicPieceHolds(const ActorRecord *thing, const MeshPiece &p)
 	const fixed_t ry = thing->PrevY + FixedMul(r_ActorFrac, thing->y - thing->PrevY);
 	if (ViewRejects(thing, thing->shownSprite, rx, ry)) return false;
 	bool mirror = false;
-	const FTextureID patch = gl_GetSpriteFrame(thing->shownSprite, thing->frame, -1, R_PointToAngle(rx, ry) - thing->angle, &mirror);
+	const FTextureID patch = gl_GetActorSpriteFrame(thing->shownSprite, thing->frame, R_PointToAngle(rx, ry) - thing->angle, thing->renderflags, &mirror);
 	return patch.GetIndex() * 2 + (mirror ? 1 : 0) == p.gpuPatch;
 }
 

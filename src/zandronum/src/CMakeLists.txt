@@ -1689,8 +1689,8 @@ add_executable( zdoom WIN32
 	features/panel-menu/panelmenu.cpp
 	features/panel-menu/computation/panelmenu_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
+	features/hitboxviz/ticboxgame.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
-	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
@@ -1752,6 +1752,8 @@ add_executable( zdoom WIN32
 	features/decorate-uzdoom/uservars.cpp
 	features/acs-handles/acshandles.cpp
 	features/acs-fields/acsfields.cpp
+	features/acs-queries/acsqueries.cpp
+	features/acs-traces/acstraces.cpp
 	features/acs-random/acsrandom.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
@@ -1909,6 +1911,7 @@ add_executable( zdoom WIN32
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
 	features/monster-stairs/monsterstairs.cpp
+	features/chase-trim/chasetrim.cpp
 	features/swept-missiles/sweptmove.cpp
 	features/blockmap-filter/cellarrays.cpp
 	features/actor-layout/actorprefetch.cpp

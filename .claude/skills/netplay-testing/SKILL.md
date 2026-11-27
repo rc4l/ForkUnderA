@@ -16,7 +16,7 @@ Run from `tools/fuactl` as `node src/cli.mjs …`, with `FUACTL_ENGINE` at the b
 ## A netgame in one command
 
 ```bash
-node src/cli.mjs netplay --players 1 --observers 1 [--map MAP01] [--iwad W] [--file a.wad] [--lag 100,0] [--loss 0,10]
+node src/cli.mjs netplay --players 1 --observers 1 [--map MAP01] [--iwad W] [--file a.wad] [--lag 100,0] [--loss 0,10] [--cvar k=v] [--server-cvar k=v]
 node src/cli.mjs netdiff            # the server against every client of the running set; exit 1 on a difference
 node src/cli.mjs netcap record --out cap --seconds 5   # what the server wrote for each client, to cap.netcap
 node src/cli.mjs netcap diff a.netcap b.netcap         # commands whose counts changed, and where each client's stream parts
@@ -27,6 +27,7 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   ports above it, all bound to `127.0.0.1` so no firewall prompt appears. Each client joins as a player and
   the command returns once the server holds every one spawned (`net.state`). It is recorded in
   `.netplay-session.json` for the other commands.
+- `--cvar` reaches the clients alone and `--server-cvar` the server, as a scenario config's `clientCvars` and `serverCvars` do; the snapshot netcode is the server's `fua_snap 1`, `fua_snap_send 1`, `fua_snap_nolegacy 3` until those are the defaults.
 - `--lag` and `--loss` are per client, comma-separated: `fua_net_fakeping` adds that many ms to the client's
   round trip (half each way) and `fua_net_fakeloss` drops that percent of its packets each way
   (`features/net-transport`). `--jitter` (`fua_net_fakejitter`) holds each packet up to that many ms more, in
@@ -50,7 +51,9 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   `sv_minfov` and `sv_maxfov` bound.
 - `rpc world.actors` lists synced actors by network id, each with its `fz` floor, `clip` floorclip and
   `px`/`py`/`pz`, where it was when its tic began, which the renderer interpolates from
-  (carried inventory left out, `owned: 1` keeps it);
+  (carried inventory left out, `owned: 1` keeps it), and its `rf`/`rf2` render words. On a snapshot
+  client an id held by a mirror alone (level 3) lists that mirror, marked `mirror: 1`, and `mirrors: 1`
+  lists every mirror beside the legacy copy that shares its id (levels 1-2), which is what the client draws;
   `world.sectorstate` and `world.sidestate` page through the map's look. `sim.hash` is not comparable
   between a server and a client.
 - `netdiff` compares the map once and the actors against the server's history at the tic each client last
@@ -74,7 +77,8 @@ server tick stalled by `fua_debug_server_stall_ms`) and `farhitscan` (a pistol a
 shot's client trace against the server's, what the observer holds) and `netmapchange` (`changemap` through the
 intermission, each client's own `reconnect`, then `map`, each judged on the accounts, playing, the world and a
 kill) and `netmusic` (ACS `SetMusic` and `SetMusicVolume` from the server, the song and volume the player and a
-late joiner after each hear, and each one's music cache, from a wad and from a deflated pk3). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps, and its `wad`
+late joiner after each hear, and each one's music cache, from a wad and from a deflated pk3) and `netjoinstomp`
+(joiners spawning onto starts that monsters hold, each corpse the telefrag threw held where the server stopped it). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps, and its `wad`
 (a wad or a pk3 buffer, such as udmf.mjs's `pk3(files, { deflate: true })` writes as mods ship them) replaces the
 scenario's file for it. After each judge it fails an instance
 whose netcode seams another thread entered (`fua_seams`), a client whose render copy missed a change its change

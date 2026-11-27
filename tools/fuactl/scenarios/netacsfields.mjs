@@ -4,7 +4,7 @@
 // usage:  node scenarios/netacsfields.mjs
 import { PCD, SCRIPT } from "../src/acs.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
-import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, NET_CONFIGS } from "../src/netacs.mjs";
 import { CHECKS, NEAR, S, fn, buildAcsFieldsPk3, judgeFields } from "./acsfields.mjs";
 import { logged } from "./acshandles.mjs";
 
@@ -40,6 +40,6 @@ export function judgeMachine(logs, member) {
 export const judgeNetplay = netJudge({ steps: STEPS, late: LATE, judge: judgeMachine,
   passed: `${CHECKS.length} reads and writes by field name give every machine its own actors' fields, a client's user_ writes staying on it` });
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }];
+export const CONFIGS = NET_CONFIGS;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsfields", wad: buildNetFieldsPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

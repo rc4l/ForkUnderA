@@ -9,8 +9,8 @@
     "features/surfaces/", "features/fakeflat/", "features/viewsetup/", "features/fov-interp/fovinterp.cpp",
     "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/", "features/modelreach/"
    ],
-   "exclude": ["*/computation/*", "*_test.cpp", "*_gl.cpp", "features/damage-tint/tintsubject.*"],
-   "why_excluded": "GL draws only while tics run inline (the *_gl.cpp files and gl/), and tintsubject is the damage tint's game half the fill calls.",
+   "exclude": ["*/computation/*", "*_test.cpp", "*_gl.cpp", "features/damage-tint/tintsubject.*", "features/hitboxviz/ticboxgame.*"],
+   "why_excluded": "GL draws only while tics run inline (the *_gl.cpp files and gl/), tintsubject is the damage tint's game half the fill calls, and ticboxgame is the hitbox overlay's game half AActor::Destroy calls.",
    "exempt": ["\\b(?:void|bool)\\s+(?:\\w+::)?(?:RenderView|WriteSavePic|RenderTextureView|SetupFrame|StateChanged)\\s*\\([^)]*\\)"],
    "why_exempt": "The renderer interface's signatures name the game's player and actor; the backend turns them into record indices without reading them, and the bodies are still checked. Console command bodies and declarations are never counted, since commands run between tics and a declaration reads nothing.",
    "patterns": [

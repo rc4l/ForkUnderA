@@ -34,6 +34,7 @@
 ** or false if it could not perform the desired action.
 */
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include "doomstat.h"
 #include "p_local.h"
 #include "p_lnspec.h"
@@ -70,6 +71,7 @@
 #include "p_acs.h"
 #include "g_game.h"
 #include "gamemode.h"
+#include "features/acs-parity/computation/acsparity_compute.h"   // [Doruk-Aksoy] the means-of-death table
 
 #define FUNC(a) static int a (line_t *ln, AActor *it, bool backSide, \
 	int arg0, int arg1, int arg2, int arg3, int arg4)
@@ -95,28 +97,11 @@ BYTE NamedACSToNormalACS[7] =
 	ACS_ExecuteAlways,
 };
 
+// [Doruk-Aksoy] features/acs-parity holds the table, so SetSectorDamage turns a damage type back into its number by the same one.
 FName MODtoDamageType (int mod)
 {
-	switch (mod)
-	{
-	default:	return NAME_None;			break;
-	case 9:		return NAME_BFGSplash;		break;
-	case 12:	return NAME_Drowning;		break;
-	case 13:	return NAME_Slime;			break;
-	case 14:	return NAME_Fire;			break;
-	case 15:	return NAME_Crush;			break;
-	case 16:	return NAME_Telefrag;		break;
-	case 17:	return NAME_Falling;		break;
-	case 18:	return NAME_Suicide;		break;
-	case 20:	return NAME_Exit;			break;
-	case 22:	return NAME_Melee;			break;
-	case 23:	return NAME_Railgun;		break;
-	case 24:	return NAME_Ice;			break;
-	case 25:	return NAME_Disintegrate;	break;
-	case 26:	return NAME_Poison;			break;
-	case 27:	return NAME_Electric;		break;
-	case 1000:	return NAME_Massacre;		break;
-	}
+	const char *name = zx::acsparity::ComputeModDamageType (mod);
+	return name != NULL ? FName (name) : FName (NAME_None);
 }
 
 FUNC(LS_NOP)
@@ -2884,6 +2869,7 @@ FUNC(LS_Line_SetBlocking)
 		if (arg2 & 1) clearflags |= flagtrans[i];
 	}
 
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 	FLineIdIterator itr(arg0);
 	int line;
 	while ((line = itr.Next()) >= 0)
@@ -3435,6 +3421,7 @@ FUNC(LS_ClearForceField)
 			if (line->backsector != NULL && line->special == ForceField)
 			{
 				line->flags &= ~(ML_BLOCKING|ML_BLOCKEVERYTHING);
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 				line->special = 0;
 				line->sidedef[0]->SetTexture(side_t::mid, FNullTextureID());
 				line->sidedef[1]->SetTexture(side_t::mid, FNullTextureID());
@@ -3462,6 +3449,7 @@ FUNC(LS_GlassBreak)
 	bool quest1, quest2;
 
 	ln->flags &= ~(ML_BLOCKING|ML_BLOCKEVERYTHING);
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 	// [BC] If we're the server, update this line's blocking.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )

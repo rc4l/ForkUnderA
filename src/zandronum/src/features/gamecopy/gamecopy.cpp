@@ -983,8 +983,8 @@ void TakeActor(AActor &live, ActorRecord &out)
 	out.shownSprite = sprite;
 	out.shownScaleX = scaleX;
 	out.shownScaleY = scaleY;
-	// [Doruk-Aksoy] A negative RenderRadius is never drawn, as in UZDoom.
-	out.visible = live.IsVisibleToPlayer() && live.renderradius >= 0;
+	// [Doruk-Aksoy] A negative RenderRadius is never drawn, as in UZDoom, nor a snapshot client's hidden legacy copy, whose mirror is drawn instead.
+	out.visible = live.IsVisibleToPlayer() && live.renderradius >= 0 && (live.STFlags & STFL_SNAPGHOSTHIDDEN) == 0;
 	// [Doruk-Aksoy] How far its sprite's models reach round it at its shown scale, at least its RenderRadius.
 	zx::modelreach::ModelReach reach = SpriteModelReach(sprite);
 	zx::modelreach::ComputeApplyRenderRadius(live.renderradius, reach);
@@ -995,6 +995,7 @@ void TakeActor(AActor &live, ActorRecord &out)
 	player_t &me = players[consoleplayer];
 	out.cameraIcon = !(me.cheats & CF_CHASECAM) && me.camera != NULL && me.camera->player != NULL && &live == me.camera->player->pIcon;
 	out.bobTic = live.FloatBobPhase + level.maptime;
+	out.fillcolor = (live.RenderStyle.Flags & STYLEF_ColorIsFixed) ? live.fillcolor : 0;
 	out.attackRadius = live.GetAttackRadius();
 	out.attackHeight = live.GetAttackHeight();
 	const zx::gamecopy::TintSubject tint = zx::gamecopy::TintSubjectOf(&live);

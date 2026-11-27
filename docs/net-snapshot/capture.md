@@ -293,7 +293,8 @@ Mover capture (see [Movers](design.md#71-movers)):
 ## Settings and commands
 
 Master switches, server only: `fua_snap` (the capture), `fua_snap_send` (send deltas) and
-`fua_snap_nolegacy` (suppression level 0-3; test servers run 3, and 0-2 are retired in Phase 6).
+`fua_snap_nolegacy` (suppression level 0-3, and 0-2 are retired in Phase 6). Every server runs `fua_snap 1`,
+`fua_snap_send 1` and `fua_snap_nolegacy 2` by default, 2 until the snapshot carries what 3 stops; `fua_snap 0` is the legacy netcode.
 The legacy mover gate also needs `fua_snap_movers`. Each level stops what the one below does and
 more, by the class each command in `sv_commands.cpp` tests: 1 motion (the MoveThing commands and
 SetThingAngle), 2 animation (SetThingFrame, SetThingState, deaths and missile explosions), 3
@@ -409,6 +410,8 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
 - `sv_commands.cpp`: the legacy suppression tests in the actor and local-player commands
   (`SuppressesLegacy`, `SuppressesLegacyLocal`), `GateOn`, the mover gate's stops, the reset count,
   map stamp and frame on `DestroyAllSectorMovers` and `SnapJoin`.
+- `features/net-replication/actorstate.cpp`: `SendDeathHealth` sends a dead non-player's health when
+  `SuppressesLegacy` stops the `KillThing` that carried it.
 - `p_mobj.cpp`: spawns (`NoteCosmeticSpawn`, `NoteSpawnNetID`, `NoteCosmeticNetID`), blood, splatter
   and puffs, routed-cosmetic tests, `ClientEffect`, and `ForgetCosmetic` from `AActor::Destroy`.
 - `dthinker.cpp`: the first-tick hooks around a thinker's first `Tick`.

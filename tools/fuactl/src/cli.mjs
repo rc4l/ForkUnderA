@@ -3,7 +3,7 @@
 //   fuactl <cmd>     humans / CI          fuactl mcp     agents (MCP stdio server)
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
-import { reap, readRegistry, pidAlive } from "./registry.mjs";
+import { reap, readRegistry, pidAlive, engineCheck } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed, watchFatal } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
@@ -178,7 +178,7 @@ const USAGE = `fuactl <command>
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
-  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--jitter MS,MS] [--port P] [--game-port G] [--for-user] [--cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
+  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--jitter MS,MS] [--port P] [--game-port G] [--for-user] [--cvar k=v] [--server-cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, --cvar on the clients and --server-cvar on the server, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
   netdiff [--seconds N]   the running netplay set's server against each client: actors by network id at the server tic each last heard, sectors and sidedefs; exit 1 when any differ
   netcap record --out FILE [--seconds N] | netcap diff A B   every command the running set's server writes for its clients, captured to FILE.netcap; diff names the commands whose counts changed and where each client's stream parts
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
@@ -610,7 +610,7 @@ async function main() {
       let outcome = await quitInstance(t);
       // [rc4l] A launch whose session file is gone leaves no token, so its orphan on this port is stopped as `reap --kill` stops orphans.
       if (outcome === "refused" || outcome === "running") {
-        const orphans = liveOnPort(readRegistry(), t.port, pidAlive).filter((e) => e.orphan);
+        const orphans = liveOnPort(readRegistry(), t.port, pidAlive, engineCheck()).filter((e) => e.orphan);
         for (const e of orphans) { try { process.kill(e.pid, "SIGTERM"); } catch { /* gone already */ } }
         if (orphans.length) outcome = `stopped orphan pid ${orphans.map((e) => e.pid).join(", ")}`;
       }
@@ -658,7 +658,7 @@ async function main() {
       // function-level hotspots of a running instance (by --pid, or --port -> registry lookup)
       let pid = flags.pid ? Number(flags.pid) : null;
       if (!pid && flags.port) {
-        const live = liveOnPort(readRegistry(), flags.port, pidAlive);
+        const live = liveOnPort(readRegistry(), flags.port, pidAlive, engineCheck());
         if (live.length) pid = live[0].pid;
       }
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }

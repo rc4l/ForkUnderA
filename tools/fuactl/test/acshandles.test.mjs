@@ -38,13 +38,14 @@ test("logs and counts parse, and absent ones read null", () => {
 });
 
 test("the hub run wants the kept handle back each round, the counts steady and the parked slots freed outside", () => {
-  const round = { away: "u2 0 0 5", back: "u2 1 0 7", counts: "fua_handles: live 1 parked 2 free 0 retired 0" };
+  const round = { away: "u2 0 0 5 -1", back: "u2 1 0 7 77", counts: "fua_handles: live 1 parked 2 free 0 retired 0" };
   const run = { first: "u1 7 1 0", rounds: Array.from({ length: ROUNDS }, () => round), outside: "u3 0", outsideCounts: "fua_handles: live 1 parked 0 free 2 retired 0" };
   assert.deepEqual(judgeHub(run), []);
-  assert.match(judgeHub({ ...run, rounds: [round, { ...round, back: "u2 0 0 9" }] }).join(), /round 2: back on MAP01/);
+  assert.match(judgeHub({ ...run, rounds: [round, { ...round, back: "u2 0 0 9 77" }] }).join(), /round 2: back on MAP01/);
+  assert.match(judgeHub({ ...run, rounds: [{ ...round, back: "u2 1 0 7 -1" }] }).join(), /its value -1, not 1 0 7 77/);
   assert.match(judgeHub({ ...run, rounds: [round, { ...round, counts: "fua_handles: live 1 parked 4 free 0 retired 0" }] }).join(), /not round 1's/);
   assert.match(judgeHub({ ...run, outsideCounts: "fua_handles: live 1 parked 2 free 0 retired 0" }).join(), /slots parked/);
-  assert.match(judgeHub({ ...run, rounds: [{ ...round, away: "u2 1 0 5", counts: "" }] }).join(), /away on MAP02.*fua_handles printed nothing/);
+  assert.match(judgeHub({ ...run, rounds: [{ ...round, away: "u2 1 0 5 -1", counts: "" }] }).join(), /away on MAP02.*fua_handles printed nothing/);
   assert.match(MAPINFO, /cluster 1\n\{\n\thub\n\}/);
 });
 

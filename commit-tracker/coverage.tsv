@@ -2236,7 +2236,7 @@ d432df55e9be1d56f98a1b3e8b5966aeecae4e3a	2016-01-05T14:39:21Z	- changed Sector_S
 5d388f8e635fbe90ec212b8d3e14951acd5a56ec	2016-01-05T14:41:19Z	Merge branch 'master' of https://github.com/rheit/zdoom into zmaster	pending		/
 3e13e772ef75eea0654b5ae816fb6aa16f1c88f7	2016-01-05T15:10:04Z	- after realizing that changing the sector's MOD variable to an FNameNoInit doesn't do anything bad, I just went ahead and got rid of the last place in the engine that still used this data type for internal storage.	pending		/
 2b519a92b166e06cd0bec48ca25e9117df878cdd	2016-01-05T15:19:55Z	- allow setting the sector's damage properties through UDMF.	pending		/
-d0c372692bd6388b699da253a4f9eb93c7f90fdf	2016-01-05T15:29:04Z	- added new ACS function SetSectorDamage which allows the use of actual damage types, unlike the old Sector_SetDamage. Unlike Sector_SetDamage this function does not use damage amount dependent defaults for the interval and the leakiness if none are passed.	pending		/
+d0c372692bd6388b699da253a4f9eb93c7f90fdf	2016-01-05T15:29:04Z	- added new ACS function SetSectorDamage which allows the use of actual damage types, unlike the old Sector_SetDamage. Unlike Sector_SetDamage this function does not use damage amount dependent defaults for the interval and the leakiness if none are passed.	partially-deferred	ACSF 94 as upstream (features/acs-parity): the amount and damage type, by the built-in types our sectors hold; the interval, leakiness and negative (healing) amounts deferred with UZDoom's sector damage model, which changes gameplay	9214eeb4044fa58b1f9b2d12c74244fc7cc39549
 ea6c498470594add90ffe088463ffedea59b93df	2016-01-05T15:49:00Z	Merge branch 'zmaster'	pending		/
 46b5900a0d744780857dd5c2456905d7c32697df	2016-01-05T16:06:24Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 006d3022ca60e1f8048a682668ee41a649695bba	2016-01-05T16:10:47Z	- changed the BFG decal for Freedoom to blue. With the software renderer this will be displayed as gray due to lack of blue in the palette. (Itz's still better than green, though.)	pending		/
@@ -4095,7 +4095,7 @@ c058ab9cc9ac17a23a86964387e9f138359935f1	2016-06-05T15:34:51Z	Fixed non-standard
 c176d38b7e8992f006a99950a249848ba0a0f039	2016-06-05T16:41:08Z	Fixed compilation with Clang	pending		/
 e2bcf5f4d71b01509d8a9b52d791e62e4e5fa3c7	2016-06-05T19:28:51Z	Merge pull request #1 from alexey-lysiuk/non_msvc	pending		/
 e58c6de7d68cb6c901a85a676bcae2243c524d51	2016-06-05T20:14:40Z	DONTFLIP flag prevents the backside from flipping over.	pending		/
-53837de17dd86407fc3fba2a61faf3aa35b78001	2016-06-05T20:21:19Z	Added DONTFLIP flag.	pending		/
+53837de17dd86407fc3fba2a61faf3aa35b78001	2016-06-05T20:21:19Z	Added DONTFLIP flag.	ported	RF_DONTFLIP at UZDoom's 0x80000 (#466) and its DECORATE row; a name only, read by no hardware renderer, as in UZDoom	109e79cfe
 b2d2389343cbd2ac8247a321cf229a22bb14956d	2016-06-05T20:51:23Z	Fixed: Slanted flat + roll sprites didn't take DONTFLIP into account.	pending		/
 1703842a9404f8c12ced1a2547714f05bfea5873	2016-06-06T08:48:40Z	- fixed some issues with teleport fog:	pending		/
 c5fcfb664f210996eadc22e20c036b50b4064abb	2016-06-06T22:55:52Z	Changed rgba renderer to use a command queue system for its drawers	pending		/
@@ -6935,7 +6935,7 @@ e235d83e5b049aef2e82bc4ea1cf38a499f6f7fb	2017-01-19T02:19:39Z	Merge branch 'mast
 3c30b59babc5b01314cc1cea988bd8ff5d71b0a2	2017-01-19T22:42:12Z	more inventory scriptification	pending		/
 545ae678e8a1315e08773a1991a1e8e5eb954a68	2017-01-19T23:22:29Z	Merge remote-tracking branch 'gzdoom/master' into qzdoom	pending		/
 62fb5d87c851c3de72658a4f2ccee59f1f911c7e	2017-01-19T23:48:21Z	- fixed: Remove ccmd should check if an object is actually an inventory object before attempting to check its owner. (Ooops!)	pending		/
-c880b26d985ced8c15d22a6511516df736ad619a	2017-01-20T00:11:36Z	- scriptified MorphProjectile and CustomSprite.	pending		/
+c880b26d985ced8c15d22a6511516df736ad619a	2017-01-20T00:11:36Z	- scriptified MorphProjectile and CustomSprite.	adapted	only the XFLIP and YFLIP DECORATE rows, with their sprite drawing on GL and the backend; the scriptification is never ours (no ZScript)	109e79cfe
 9d828a7ca08c72930af0beba3edbc2cd019fe683	2017-01-20T00:42:21Z	- marked all virtual overrides in DSBarInfo with the 'override' keyword so that I do not have to search for them again.	pending		/
 e52772745be154f58566be95a75e45e2ad8069d5	2017-01-20T04:07:14Z	Merge https://github.com/coelckers/gzdoom	pending		/
 f3159af211f6aa052863f57a6761eb6c22c1b984	2017-01-20T09:03:33Z	- fixed: Remove ccmd should check if an object is actually an inventory object before attempting to check its owner. (Ooops!)	pending		/
@@ -8717,7 +8717,7 @@ c3808bbc2d142d2350db231f34c8127995d15ff9	2017-06-04T00:17:44Z	- Add licenses to 
 e5eb173165ff85e993298be88bef77f17ab2498e	2017-06-04T09:33:37Z	- fixed minor menudef mistake	pending		/
 01f88cfb16eb151e72fa6ab40da57c3585831971	2017-06-04T10:30:35Z	- Added 'canonical transparency' cvar r_canontrans - this simply turns off transparency for Doom objects that were marked as transparent sometime in ZDoom's development cycle	pending		/
 c252b5d753e5d3fa5ab8012987007cf6ee826e46	2017-06-04T10:30:35Z	- fixed: forgot to assign +ZDOOMTRANS to rockets	pending		/
-89b372cb0151fbcdca76bad604ef29c78c8d700f	2017-06-04T10:30:35Z	- Changed MF7_SPRITEFLIP, MF8_ZDOOMTRANS to RenderFlags - Added RF_ZDOOMADD - renamed r_canontrans to r_vanillatrans - this developer's insanity level has increased by 231%.	pending		/
+89b372cb0151fbcdca76bad604ef29c78c8d700f	2017-06-04T10:30:35Z	- Changed MF7_SPRITEFLIP, MF8_ZDOOMTRANS to RenderFlags - Added RF_ZDOOMADD - renamed r_canontrans to r_vanillatrans - this developer's insanity level has increased by 231%.	pending	SPRITEFLIP done in 109e79cfe (rotation picked the other way round, mirror turned); left: RF_ZDOOMTRANS, RF_ZDOOMADD, r_vanillatrans	/
 a937f709aab0d9c16e4d0b47606022c4bfe0c963	2017-06-04T10:30:35Z	- Added +ZDOOMADD to all Heretic, Hexen, and Strife actors that needed it (that I know of...) - this developer's insanity level increased another 21%	pending		/
 2997f31f9f6616a6ee32763306a61c5e17a9f02e	2017-06-04T10:30:35Z	- removed ZDOOMADD and updated actors in question with ZDOOMTRANS	pending		/
 10a9d087f1cc36794f97688962f0b68111dfc6e1	2017-06-04T10:30:35Z	- fixed: missed the golden wand puff for the +ZDOOMTRANS flag	pending		/
@@ -16083,7 +16083,7 @@ c7fe3de4b033e6ae32c82ba5466fddc516d812b5	2022-06-22T05:55:19Z	Avoid creating new
 ed134c9b196eeaa3a2f96cd671fde23a36941e32	2022-06-22T05:55:19Z	Improve the builder syntax so that fewer temp variables are required to build vulkan objects	pending		/
 a0259e8e0037269633ce0711172d5535b156020d	2022-06-22T05:55:19Z	Hide experimental ray query behind vk_raytrace	pending		/
 e3d7afa2d55432761eb226778b90e661d711dc3c	2022-06-22T07:26:53Z	- added missing return	pending		/
-593627f0499ce3cda972368fe07dacaa00eac68d	2022-06-22T07:36:04Z	Add +ONLYVISIBLEINMIRRORS and +INVISIBLEINMIRRORS actor flags. The former makes the actor only visible in reflections, while the latter makes the actor not cast reflections in mirrors.	pending		/
+593627f0499ce3cda972368fe07dacaa00eac68d	2022-06-22T07:36:04Z	Add +ONLYVISIBLEINMIRRORS and +INVISIBLEINMIRRORS actor flags. The former makes the actor only visible in reflections, while the latter makes the actor not cast reflections in mirrors.	adapted	GL portals and the backend's mirror walks; the backend's reflective floors and ceilings redraw the frame's sprites and hold neither flag yet; no software renderer path	7ac2173bd
 aaf9618e61e0df556c91cf220ea73d26220c7610	2022-06-22T08:30:09Z	- make sure ticdup is initialized.	pending		/
 8c244f6f850eeb5a5dede7f887f3f1ba87b3d8bc	2022-06-22T09:11:29Z	- use static_assert to make 32 bit builds fail.	pending		/
 67127e4cced0f7c90cafda7837d46771e27b382f	2022-06-23T05:47:04Z	Bugfix for retro software mode mirrors not working	pending		/
@@ -18000,7 +18000,7 @@ d56b84d09484b1a33ad09a75340c6fedfeba481b	2025-04-23T21:49:23Z	hook up includes f
 b7d6f0b1a45fc6fd93344f795d113f30efe81c35	2025-04-27T04:31:13Z	Added am_showlevelname CVar	pending		/
 a393a6ac56b94517988fb96d60be1d6bf04b134a	2025-04-29T10:53:02Z	fix dsdhacked actors not spawning when placed in a map	pending		/
 80c36d4069db5ed92c100d4d26c3add3576b2d41	2025-04-29T11:05:38Z	add a few commonly-used gzdoom-specific properties to the dehacked parser	pending		/
-c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	ported	RF_LIGHTMULTALPHA (renderflags 0x80000); the server already sends alpha changes	7d9be643
+c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	ported	RF2_LIGHTMULTALPHA (renderflags2 0x400, as UZDoom, since #466); the server already sends alpha changes	7d9be643
 3780c5910ae378fb2759e60554943cdcc024ce37	2025-05-01T13:15:46Z	Bone Manip part 1 - bone setters	pending		/
 0d612553a42178be8578cd642c4383a7e8673c3b	2025-05-02T13:36:05Z	- do not allow sv_gravity to be INF	pending		/
 502af6adb9d00c6d9cc603bd9f5e11796f2eb7b8	2025-05-02T13:37:59Z	SSECMF_DRAWN was being skipped for some cases, affecting texture automap drawing. See bug #3066.	pending		/
@@ -18642,7 +18642,7 @@ f5cf4908bbf9964e4fca7eb365fe8b7912ae31e5	2025-12-02T19:59:01Z	fix some more stuf
 29b996e48045c2403c38f1f400b8ce306904d62d	2025-12-02T20:13:10Z	Prevent Inventory from being client-sided	pending		/
 149573fcad2b4d4a94deeb89dfef33d1122d9a10	2025-12-03T16:51:15Z	Fixed death cam not working with A_SkullPop	pending		/
 4a811a7933bd7796a2a8aec626f6f079bae28b25	2025-12-04T04:08:22Z	Fix string oob in C_ParseCmdLineParams	pending		/
-f4b1532fefe2df399f5c604f1bfd6c09026b3ab1	2025-12-04T18:42:14Z	Added flags to disable dynamic lighting effects for actors, particles and vthinkers. * +NODYNAMICLIGHTING for actors, works on models and weapon sprites/models * SPF_NODYNAMICLIGHTING for particles/vthinkers	pending		/
+f4b1532fefe2df399f5c604f1bfd6c09026b3ab1	2025-12-04T18:42:14Z	Added flags to disable dynamic lighting effects for actors, particles and vthinkers. * +NODYNAMICLIGHTING for actors, works on models and weapon sprites/models * SPF_NODYNAMICLIGHTING for particles/vthinkers	adapted	actors' sprites, models and the weapon on GL and the backend; SPF_NODYNAMICLIGHTING is for ZScript particles and vthinkers, never ours	7ac2173bd
 091432532f4582f3480e1e63219b1eb20d00eeaf	2025-12-05T06:02:38Z	Adding yscale to skymist layer. Can control through mapinfo and Level.ChangeSkyMist() zscript function.	pending		/
 4efc213be9dddca107ca9fee66e6a5dd71c43e3e	2025-12-06T15:07:43Z	Added support for client-side pointer handling in ACS functions	pending		/
 d0ed2705341608ef642db8a7145bfbee01dabae2	2025-12-06T21:43:07Z	Add support for new mapinfo keys `freeaim`, `jumping`, `crouching`	pending		/

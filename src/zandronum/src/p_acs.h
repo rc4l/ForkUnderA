@@ -47,6 +47,8 @@
 #include "cl_commands.h"
 #include "sv_commands.h"
 #include "features/acs-strings/computation/stringpool_compute.h"
+#include "features/acs-queries/computation/queries_compute.h"
+#include "features/acs-traces/computation/traces_compute.h"
 
 #define LOCAL_SIZE				20
 #define NUM_MAPVARS				128
@@ -1075,6 +1077,11 @@ public:
 	void Serialize (FArchive &arc);
 	int RunScript ();
 
+	// [Doruk-Aksoy] features/acs-traces: runs ACS function `ref` at once with `args`, reading `tracers` as its own, and returns its value; `ok` is false when it waited or ended without returning.
+	static int RunFunctionNow (int ref, AActor *activator, zx::acstraces::ScriptTracers *tracers, const int *args, int argcount, bool &ok);
+	// [Doruk-Aksoy] features/acs-traces: whether `ref` names a function of `argcount` arguments that returns a value.
+	static bool IsCallableFunction (int ref, int argcount);
+
 	inline void SetState (EScriptState newstate) { state = newstate; }
 	inline EScriptState GetState () { return state; }
 
@@ -1110,6 +1117,12 @@ protected:
 	int				WrapWidth;
 	FBehavior	    *activeBehavior;
 	int				InModuleScriptNumber;
+	zx::acsqueries::ScriptQueries fua_queries;	// [Doruk-Aksoy] features/acs-queries: this script's queries, freed with it
+	zx::acstraces::ScriptTracers fua_tracers;	// [Doruk-Aksoy] features/acs-traces: this script's tracers, freed with it
+	zx::acstraces::ScriptTracers *fua_tracerOwner = NULL;	// [Doruk-Aksoy] features/acs-traces: a callback's run reads its caller's tracers
+	const ScriptFunction *fua_entryFunction = NULL;	// [Doruk-Aksoy] features/acs-traces: the function a callback's run starts in
+	bool fua_returned = false;	// [Doruk-Aksoy] features/acs-traces: whether that function returned
+	zx::acstraces::ScriptTracers &FuaTracers () { return fua_tracerOwner != NULL ? *fua_tracerOwner : fua_tracers; }
 	bool			fua_clientside;	// [Doruk-Aksoy] features/acs-random: a CLIENTSIDE script, whose named streams are apart from every other script's
 	FString			activefontname; // [TP]
 

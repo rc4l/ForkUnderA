@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { classifyInstances } from "./proto.mjs";
 
 export function registryDir() {
@@ -34,13 +35,34 @@ export function pidAlive(pid) {
   catch (e) { return e.code === "EPERM"; } // EPERM => alive but not ours; ESRCH => gone
 }
 
+// [Doruk-Aksoy] The engine pids in a process listing: tasklist's CSV rows ("forkundera.exe","7712",...) or ps's "pid comm" lines.
+export function parseEnginePids(listing) {
+  const pids = new Set();
+  for (const line of String(listing).split(/\r?\n/)) {
+    const csv = /^"([^"]+)","(\d+)"/.exec(line.trim());
+    const ps = /^(\d+)\s+(.+)$/.exec(line.trim());
+    const [name, pid] = csv ? [csv[1], csv[2]] : ps ? [ps[2], ps[1]] : [];
+    if (name && /^(.*[\\/])?forkundera(\.exe)?$/i.test(name.trim())) pids.add(Number(pid));
+  }
+  return pids;
+}
+
+// [Doruk-Aksoy] Whether a pid is a running engine, from one listing taken now; quit and reap killed a dead entry's pid that another program had taken, five at once on 2026-11-26.
+export function engineCheck({ run = spawnSync, platform = process.platform } = {}) {
+  const r = platform === "win32"
+    ? run("tasklist", ["/FI", "IMAGENAME eq forkundera.exe", "/FO", "CSV", "/NH"], { encoding: "utf8" })
+    : run("ps", ["-A", "-o", "pid=,comm="], { encoding: "utf8" });
+  const pids = parseEnginePids(r?.stdout || "");
+  return (pid) => pids.has(pid);
+}
+
 // Reap, MULTI-SESSION SAFE. Always prunes dead entries' files. With kill=true, SIGTERMs only genuine
 // ORPHANS (engine alive but its launcher gone) -- so it never touches an engine another concurrent
 // session/folder is actively using. Pass all=true to also stop live, still-owned instances (the
 // explicit "kill everything on this machine" escape hatch, like the MCP reset's all:true).
-export function reap({ kill = false, all = false, signal = "SIGTERM" } = {}) {
+export function reap({ kill = false, all = false, signal = "SIGTERM", isEngine = engineCheck() } = {}) {
   const entries = readRegistry();
-  const { dead, orphan, owned } = classifyInstances(entries, pidAlive);
+  const { dead, orphan, owned } = classifyInstances(entries, pidAlive, isEngine);
   const killed = [];
   if (kill || all) {
     const targets = all ? [...orphan, ...owned] : orphan;

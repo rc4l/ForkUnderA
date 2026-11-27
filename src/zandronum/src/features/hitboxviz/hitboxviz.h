@@ -12,6 +12,7 @@
 
 #include "doomtype.h"
 #include "features/hitboxviz/computation/boxedges_compute.h"   // [rc4l] Vertex3
+#include "features/hitboxviz/computation/ticboxes_compute.h"   // [MGOOOOOO] TicBoxRecord
 
 class AActor;
 
@@ -57,9 +58,16 @@ int BackendLines(LineBatch *out, bool &xray, float &widthPx);
 // server's authoritative one.
 void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance);
 
-// Drops every recorded blast. Called on level setup so regions cannot survive a map change,
-// reconnect or demo seek and be drawn at coordinates belonging to a different level.
-void ClearBlasts();
+// --- one-tic actors --------------------------------------------------------
+
+// [MGOOOOOO] Offers an actor being destroyed, kept for its tic's frames when it was spawned in this same tic (no copy between tics ever held it); called from AActor::Destroy, in ticboxgame.cpp, the game half.
+void NoteDestroyed(const AActor *thing);
+
+// [MGOOOOOO] Hands a one-tic actor's record to the frames' store, through the handoff when a tic runs on the game thread.
+void PushTicBox(const TicBoxRecord &box);
+
+// [MGOOOOOO] Drops every recorded blast and one-tic actor, on level setup, so none is drawn on another level after a map change, reconnect or demo seek.
+void ClearRecords();
 
 // True when the server should be broadcasting explosion debug info -- i.e. sv_debugexplosions is on
 // and cheats are enabled. Also gates the debug-only replication of the attack extent, so neither

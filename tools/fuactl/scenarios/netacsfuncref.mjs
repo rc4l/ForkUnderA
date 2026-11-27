@@ -5,7 +5,7 @@
 // usage:  node scenarios/netacsfuncref.mjs
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
-import { addPlayerStarts, runSteps, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { addPlayerStarts, runSteps, changeMap, judgeEach, mergeLogs, result, NET_CONFIGS } from "../src/netacs.mjs";
 import { buildAcsFuncRefPk3, judgeSteps } from "./acsfuncref.mjs";
 
 // [Doruk-Aksoy] Each map's steps: the scripts fixtures/acsfuncref runs there, each with its copy at 190N.
@@ -21,13 +21,6 @@ export function buildNetFuncRefPk3() {
   return buildAcsFuncRefPk3({ withMap: (m) => addPlayerStarts(m, STARTS) });
 }
 
-// [Doruk-Aksoy] Each machine's output on every map, merged by tag.
-export function mergeLogs(rounds) {
-  const out = new Map();
-  for (const logs of rounds) for (const [m, l] of logs) out.set(m, { ...(out.get(m) || {}), ...l });
-  return out;
-}
-
 export async function judgeNetplay(set, label) {
   await cap.waitTics(set.server.c, 35);
   const rounds = [], faults = [];
@@ -40,6 +33,6 @@ export async function judgeNetplay(set, label) {
   return result(label, faults, "every machine's references compare equal between modules, survive two changemaps in its own global variables, and one into an unloaded library stops its script");
 }
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }];
+export const CONFIGS = NET_CONFIGS;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsfuncref", wad: buildNetFuncRefPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

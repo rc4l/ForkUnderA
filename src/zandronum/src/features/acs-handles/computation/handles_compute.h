@@ -33,12 +33,30 @@ enum SlotState : uint8_t
 	kSlotRetired,	// [Doruk-Aksoy] Its generation ran out, so it is never given out again.
 };
 
+// [Doruk-Aksoy] One of the values a script attached to an actor, its key a name number.
+struct DataPair
+{
+	int key;
+	int32_t value;
+};
+
+// [Doruk-Aksoy] The most keys one actor carries.
+constexpr size_t kMaxDataKeys = 64;
+
 struct SlotEntry
 {
 	uint32_t generation;
 	SlotState state;
 	int map;				// [Doruk-Aksoy] The hub map a parked slot waits for.
 	const void *actor;		// [Doruk-Aksoy] A live slot's actor; not saved.
+	std::vector<DataPair> data;	// [Doruk-Aksoy] Its actor's key/value store, in the order keys were first set.
+};
+
+enum DataResult
+{
+	kDataSet,
+	kDataFull,		// [Doruk-Aksoy] A new key past kMaxDataKeys.
+	kDataNoSlot,	// [Doruk-Aksoy] The slot holds no live actor.
 };
 
 // [Doruk-Aksoy] Everything a savegame keeps of the table: each slot past 0 in order, the free queue, and each hub map's last visit.
@@ -51,7 +69,7 @@ struct TableState
 	uint64_t clock;
 };
 
-// [Doruk-Aksoy] The savegame chunk for a table whose map keys are 1-based indices into `names`, the maps' names, since name numbers change between runs.
+// [Doruk-Aksoy] The savegame chunk for a table whose map and data keys are 1-based indices into `names`, since name numbers change between runs.
 std::vector<uint8_t> ComputeEncodeTable(const TableState &state, const std::vector<std::string> &names);
 
 // [Doruk-Aksoy] A chunk read back, false when it is too short or of another version.
@@ -66,6 +84,15 @@ void ComputeRemapMaps(TableState &state, Remap remap)
 			entry.map = remap(entry.map);
 	for (int &map : state.visitMaps)
 		map = remap(map);
+}
+
+// [Doruk-Aksoy] Every data key in `state` passed through `remap`.
+template <class Remap>
+void ComputeRemapDataKeys(TableState &state, Remap remap)
+{
+	for (SlotEntry &entry : state.slots)
+		for (DataPair &pair : entry.data)
+			pair.key = remap(pair.key);
 }
 
 // [Doruk-Aksoy] One machine's handle table over opaque actor pointers: slots given out oldest first, retired when their generation runs out, parked while their hub map is away.
@@ -105,6 +132,16 @@ public:
 
 	// [Doruk-Aksoy] Every slot free, every generation 0: a new game, where no variable can hold a handle.
 	void Reset();
+
+	// [Doruk-Aksoy] The live slot's value under `key` set, a new key going last.
+	DataResult SetData(uint32_t slot, int key, int32_t value);
+
+	// [Doruk-Aksoy] The live slot's value under `key` into `value`, false when unset.
+	bool GetData(uint32_t slot, int key, int32_t &value) const;
+
+	// [Doruk-Aksoy] The live slot's key `key` removed, or all its keys.
+	void ClearData(uint32_t slot, int key);
+	void ClearAllData(uint32_t slot);
 
 	uint32_t Capacity() const { return capacity_; }
 	// [Doruk-Aksoy] How many slots past 0 are in `state`.

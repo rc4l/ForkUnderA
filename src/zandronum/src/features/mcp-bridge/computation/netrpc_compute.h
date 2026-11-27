@@ -6,6 +6,7 @@
 #ifndef ZX_NETRPC_COMPUTE_H
 #define ZX_NETRPC_COMPUTE_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -53,12 +54,17 @@ struct WorldActorRow
 	double drawnScaleX = 1, drawnScaleY = 1;   // [rc4l] the scale it is drawn at, which for a player's pawn is their skin's (P_CheckPlayerSprite)
 	std::string sprite;  // [rc4l] the sprite and frame it shows, as "TROOA"
 	unsigned translation = 0;   // [Doruk-Aksoy] its colour translation, type << 16 | index, as a server sends it
+	uint32_t renderFlags = 0, renderFlags2 = 0;   // [Doruk-Aksoy] its render words, which a snapshot client's mirror draws by
+	bool mirror = false;   // [Doruk-Aksoy] a snapshot client's mirror, listed under its snapshot id
 };
 
 std::string ComputeWorldActorJson(const WorldActorRow &row);
 
 // [rc4l] Rows in network id order, so two instances list the same actors in the same order whatever their thinker lists hold.
 void ComputeSortActorRows(std::vector<WorldActorRow> &rows);
+
+// [Doruk-Aksoy] Whether a snapshot client lists a mirror: always when asked for every mirror, else only where no legacy actor holds its id (level 3), so each id lists once.
+bool ComputeListsMirror(bool idHasLegacy, bool allMirrors);
 
 // [rc4l] One sector's look as a netgame syncs it: plane heights at its sound origin, light, colour and fade, and its flats' names.
 struct SectorStateRow

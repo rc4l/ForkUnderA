@@ -10,7 +10,8 @@ import { acsScripts, callFunc, ACSF, PCD, SCRIPT } from "../src/acs.mjs";
 import { runScenarioIfMain, compareNetplay, writeTemplateFile, FREEDOOM2, MUTE } from "../src/template.mjs";
 import { withLockedInstance } from "../src/play.mjs";
 import { resolveEngine } from "../src/launch.mjs";
-import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, actorRows } from "../src/netacs.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
 
 export const FIRST_TID = 100, CHECK_SCRIPT = 1;
@@ -26,7 +27,12 @@ export const ACTORS = [
   { cls: "ZxRipperChanged", flags: ["NORIPSOUND"], change: { NORIPSOUND: false, RIPEXPLODEONLIMIT: true }, want: { NORIPSOUND: 0, RIPEXPLODEONLIMIT: 1 } },
   // [Doruk-Aksoy] renderflags and BounceFlags, which a client never heard of a change to before FLAGSET_RENDERFLAGS and FLAGSET_BOUNCEFLAGS; names an older build knows, since it loads this pk3 too.
   { cls: "ZxRenderChanged", change: { INVISIBLE: true }, want: { INVISIBLE: 1 } },
+  // [Doruk-Aksoy] A render bit the snapshot itself never carries, which only the legacy copy hears of; a snapshot client draws it once its mirror takes the copy's render words.
+  { cls: "ZxBillboardChanged", change: { FORCEYBILLBOARD: true }, want: { FORCEYBILLBOARD: 1 } },
   { cls: "ZxBounceChanged", flags: ["BOUNCEONWALLS"], change: { BOUNCEONWALLS: false, BOUNCEONFLOORS: true }, want: { BOUNCEONWALLS: 0, BOUNCEONFLOORS: 1 } },
+  // [Doruk-Aksoy] LIGHTMULTALPHA, in renderflags2 since its old renderflags bit is UZDoom's DONTFLIP; an older build's save has it there.
+  { cls: "ZxRender2", flags: ["LIGHTMULTALPHA"], want: { LIGHTMULTALPHA: 1, INVISIBLE: 0 } },
+  { cls: "ZxRender2Changed", change: { LIGHTMULTALPHA: true }, want: { LIGHTMULTALPHA: 1 } },
 ];
 
 // [Doruk-Aksoy] Every [actor index, flag, wanted value], in the order script 1 logs them.
@@ -130,11 +136,35 @@ export async function compareOffline({ name, wad: data, iwad = FREEDOOM2, port, 
   return { lines: results.map((r) => r.line), failed: results.reduce((n, r) => n + r.failed, 0) };
 }
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }];
+// [Doruk-Aksoy] The legacy netcode and the snapshot overhaul, whose server cvars are its settings until they become the defaults.
+export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "snap", players: 1, observers: 1, serverCvars: SNAP_SERVER_CVARS }];
 
 // [Doruk-Aksoy] Every machine reads the flags it joined with, the late joiner too, each by script 1's CLIENTSIDE copy.
-export const judgeNetplay = netJudge({ steps: [{ script: CHECK_SCRIPT, tags: ["flags"] }], late: [{ script: CHECK_SCRIPT, tags: ["flags"] }], by: "server",
+export const judgeFlagsEverywhere = netJudge({ steps: [{ script: CHECK_SCRIPT, tags: ["flags"] }], late: [{ script: CHECK_SCRIPT, tags: ["flags"] }], by: "server",
   judge: (logs) => judgeFlags(logs.flags), passed: `${CHECKS.length} flags read as set on every machine` });
+
+// [Doruk-Aksoy] Each check actor whose mirror, what a snapshot client draws in its place, holds other render words than the server's actor.
+export function judgeMirrorFlags(serverRows, clientRows) {
+  const classes = new Set(ACTORS.map((a) => a.cls));
+  const mirrors = new Map(clientRows.filter((r) => r.mirror === 1).map((r) => [r.netid, r]));
+  return serverRows.filter((r) => classes.has(r.c)).flatMap((s) => {
+    const m = mirrors.get(s.netid);
+    if (!m) return [`${s.c} has no mirror`];
+    return m.rf === s.rf && m.rf2 === s.rf2 ? [] : [`${s.c}'s mirror draws rf ${m.rf} rf2 ${m.rf2}, the server's actor ${s.rf} ${s.rf2}`];
+  });
+}
+
+// [Doruk-Aksoy] The flags on every machine, and under the snapshot netcode each client's mirrors, the late joiner's too, against the server's render words.
+export async function judgeNetplay(set, label, { config = {} } = {}, deps = {}) {
+  const { flags = judgeFlagsEverywhere, rows = actorRows } = deps;
+  const r = await flags(set, label);
+  if (!config.serverCvars || !config.serverCvars.fua_snap) return r;
+  const server = await rows(set.server.c);
+  const faults = [];
+  for (const c of set.clients) faults.push(...judgeMirrorFlags(server, await rows(c.c, { mirrors: 1 })).map((f) => `${c.role} player ${c.player}: ${f}`));
+  if (!faults.length) return { line: `${r.line}, and every client's mirrors draw the server's render words`, failed: r.failed };
+  return { line: r.failed ? `${r.line}; mirrors: ${faults.join("; ")}` : `FAIL ${label}: mirrors: ${faults.join("; ")}`, failed: 1 };
+}
 
 // [Doruk-Aksoy] Offline first, then hosted.
 export async function compareOfflineAndOnline(opts, { offline = compareOffline, online = compareNetplay } = {}) {

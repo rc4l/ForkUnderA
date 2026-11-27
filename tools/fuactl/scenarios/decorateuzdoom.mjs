@@ -10,6 +10,7 @@ import { THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareEachLaunch, compareNetplay, isMain } from "../src/template.mjs";
 import { runUzdoom } from "../src/uzdoom.mjs";
 import * as cap from "../src/capture.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 export const ROOM_SIZE = 2048, SPACING = 192, FIRST_NUM = 31000;
@@ -35,6 +36,10 @@ const all = (...parts) => parts.join(" && ");
 // [Doruk-Aksoy] The states with which an actor other than the check gives check `id` its verdict.
 const verdictFrom = (kind, id) => [`TNT1 A 0 A_Log("zxcheck ${id} ${kind}")`, spawn(`Zx${kind === "pass" ? "Pass" : "Fail"}_${id}`, 0, 0, 0), "TNT1 A -1", "Stop"];
 // [Doruk-Aksoy] A_CheckFlag on each flag in turn, any one unset going to Failed.
+// [Doruk-Aksoy] The sprite flip render flags (renderflags at UZDoom's bits).
+const FLIP_FLAGS = ["XFLIP", "YFLIP", "SPRITEFLIP", "DONTFLIP"];
+// [Doruk-Aksoy] The mirror and light flags of UZDoom's second render word (renderflags2).
+const RENDER2_FLAGS = ["INVISIBLEINMIRRORS", "ONLYVISIBLEINMIRRORS", "NODYNAMICLIGHTING"];
 const allFlagsSet = (flags) => flags.flatMap((f, i) => [`TNT1 A 0 A_CheckFlag("${f}", "Flag${i}")`, "Goto Failed", `Flag${i}:`]).concat(["Goto Passed"]);
 // [Doruk-Aksoy] UZDoom's gameplay flags now at its bits (features/decorate-uzdoom).
 export const NEW_FLAGS = ["GETOWNER", "LAXTELEFRAGDMG", "ICESHATTER", "SMASHABLE", "NOSHIELDREFLECT", "FORCEZERORADIUSDMG", "NOINFIGHTSPECIES", "FORCEINFIGHTING",
@@ -109,6 +114,10 @@ export const CHECKS = [
     props: ["InfightingGroup 1", "ProjectileGroup -1", "SplashGroup 2", "MissileChanceMult 0.5", "StealthAlpha 0.25", "FriendlySeeBlocks 4", "MinRespawnTics -2",
       "RespawnDice 8", "DefThreshold 50"], states: ["Goto Passed"] },
   { id: "newflags", what: "UZDoom's gameplay flags set from DECORATE", props: NEW_FLAGS.map((f) => `+${f}`), states: allFlagsSet(NEW_FLAGS) },
+  { id: "renderflips", what: "UZDoom's sprite flip render flags, set from DECORATE and by A_ChangeFlag", props: FLIP_FLAGS.map((f) => `+${f}`),
+    states: ['TNT1 A 0 A_ChangeFlag("SPRITEFLIP", false)', 'TNT1 A 0 A_CheckFlag("SPRITEFLIP", "Failed")', 'TNT1 A 0 A_ChangeFlag("SPRITEFLIP", true)', ...allFlagsSet(FLIP_FLAGS)] },
+  { id: "render2flags", what: "UZDoom's mirror and light render flags, set from DECORATE and by A_ChangeFlag", props: RENDER2_FLAGS.map((f) => `+${f}`),
+    states: ['TNT1 A 0 A_ChangeFlag("NODYNAMICLIGHTING", false)', 'TNT1 A 0 A_CheckFlag("NODYNAMICLIGHTING", "Failed")', 'TNT1 A 0 A_ChangeFlag("NODYNAMICLIGHTING", true)', ...allFlagsSet(RENDER2_FLAGS)] },
   { id: "laxtelefrag", what: "+LAXTELEFRAGDMG lets DamageFactor cut telefrag damage", props: ["Health 1500000", "+SHOOTABLE", "PainChance 0", "DamageFactor 0.5", "+LAXTELEFRAGDMG"],
     states: ['TNT1 A 0 A_DamageSelf(1000000, "None", 0, "None", "None", AAPTR_DEFAULT, AAPTR_DEFAULT)', jumpIf("health == 1000000")] },
   { id: "forcezero", what: "+FORCEZERORADIUSDMG passes a zero-damage blast on (here as a forced pain)", verdictBy: "ZxZeroTarget", props: ["+FORCEZERORADIUSDMG", "+FORCEPAIN"],
@@ -336,7 +345,8 @@ export async function judgeNetplay(set, label) {
 
 // [Doruk-Aksoy] Monsters kept offline, since the infighting checks are monsters (none of them moves or attacks).
 export const SIDES = [{ name: "vk", launchCvars: { sv_nomonsters: 0 } }];
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }];
+// [Doruk-Aksoy] The legacy netcode and the snapshot overhaul.
+export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "snap", players: 1, observers: 1, serverCvars: SNAP_SERVER_CVARS }];
 
 // [Doruk-Aksoy] Offline first, then hosted with a player and an observer.
 export async function compareOfflineAndOnline(opts, { offline = compareEachLaunch, online = compareNetplay } = {}) {

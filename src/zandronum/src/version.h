@@ -183,8 +183,13 @@ int GetRevisionNumber();
 // [rc4l] 4531: lines no longer save their ID either (zandronum@020ebf903625, also its 4523); older saves skip it in P_SerializeWorld.
 // [Doruk-Aksoy] 4532: ADynamicLight serializes a spot's inner and outer angles (features/dynlights, guarded in ADynamicLight::Serialize).
 // [Doruk-Aksoy] 4533: AActor serializes its ACS handle slot (features/acs-handles, guarded in SerializeActor); the handle table rides in its own savegame chunk.
-// [Doruk-Aksoy] 4538: flags7, flags8 and flags9 take UZDoom's bits and ours move to fua_flags (older saves remapped in AActor::Serialize), and BounceFlags is saved as 32 bits; 4534-4537 are the ACS chain's.
-#define SAVEVER 4538
+// [Doruk-Aksoy] 4538: flags7, flags8 and flags9 take UZDoom's bits and ours move to fua_flags (older saves remapped in AActor::Serialize), and BounceFlags is saved as 32 bits; 4534-4537 went unused.
+// [Doruk-Aksoy] 4539: AActor serializes renderflags2, and an older save's LIGHTMULTALPHA moves into it from renderflags, whose bit is UZDoom's DONTFLIP (guarded in AActor::Serialize).
+// [Doruk-Aksoy] 4540: each ACS script serializes its queries (features/acs-queries, guarded in SerializeScript); the next query id rides in its own savegame chunk.
+// [Doruk-Aksoy] 4541: each ACS script serializes its tracers (features/acs-traces, guarded in SerializeScript).
+// [Doruk-Aksoy] 4542: ACS tracers save their rules (features/acs-traces, guarded in SerializeScript).
+// [Doruk-Aksoy] 4543: ACS tracers save their callback function (features/acs-traces, guarded in SerializeScript).
+#define SAVEVER 4543
 
 
 #define SAVEVERSTRINGIFY2(x) #x

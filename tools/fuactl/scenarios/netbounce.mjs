@@ -1,6 +1,9 @@
 // [Doruk-Aksoy] A server's bouncing missile past a post only its clients hold, and one bouncing off a post in a corridor so low it hits the floor or ceiling every tic, hosted with a player and an observer: exit 0 when each client's copy keeps flying on the server's own path, facing its way, on loopback and at 100 ms of ping.
 //
 // usage:  node scenarios/netbounce.mjs
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, callFunc, ACSF, PCD, SCRIPTF } from "../src/acs.mjs";
 import { THING } from "../src/doomnums.mjs";
@@ -138,16 +141,43 @@ export function recordUntilStopped(sc, { sleep = cap.sleep } = {}) {
   return { stop: async () => { await sleep(500); stopped = true; return done; } };
 }
 
+// [Doruk-Aksoy] How many tics the server's recording skipped: a poll that lands a few tics late leaves no sample at a bounce, so a client reading taken there has nothing true to match.
+export function missedTics(history) {
+  let missed = 0;
+  for (let i = 1; i < history.length; i++) missed += Math.max(0, history[i].tic - history[i - 1].tic - 1);
+  return missed;
+}
+
+// [Doruk-Aksoy] Tries at reading a client; one off the path on a whole recording fails at once, and only a recording with gaps is read again.
+export const FOLLOW_TRIES = 3;
+export function readAgain(faults, missed, tried) {
+  return faults.length > 0 && missed > 0 && tried < FOLLOW_TRIES;
+}
+
 // [Doruk-Aksoy] Each client read twice, five tics apart, while the server's flight is recorded from before the first reading to after the second.
-async function clientFollows(sc, client, map) {
-  const { bouncer } = MAPS[map];
+async function followOnce(sc, client, bouncer) {
   const recording = recordUntilStopped(sc);
   await cap.sleep(300);
   const read = async () => ((await client.c.rpc("world.actors", { limit: 100000 }))?.actors || []).find((a) => a.c === bouncer);
   const first = await read();
   await cap.waitTics(client.c, 5);
   const second = await read();
-  return judgeFollow(await recording.stop(), [first, second], bouncer);
+  const history = await recording.stop();
+  return { history, readings: [first, second], faults: judgeFollow(history, [first, second], bouncer) };
+}
+
+// [Doruk-Aksoy] A client's faults, read again while the server's recording has gaps, with the last try's recording and readings saved beside a fault so it can be read after.
+async function clientFollows(sc, client, map, label) {
+  const { bouncer } = MAPS[map];
+  for (let tried = 1; ; tried++) {
+    const r = await followOnce(sc, client, bouncer);
+    const missed = missedTics(r.history);
+    if (readAgain(r.faults, missed, tried)) continue;
+    if (!r.faults.length) return [];
+    const file = path.join(os.tmpdir(), `netbounce-${label.replace(/\W+/g, "-")}-${client.role}.json`);
+    fs.writeFileSync(file, JSON.stringify({ bouncer, missed, tried, readings: r.readings, history: r.history.map((h) => ({ tic: h.tic, bouncer: h.actors.filter((a) => a.c === bouncer) })) }));
+    return [...r.faults, `try ${tried}, the server's recording missed ${missed} tic(s); flight in ${file}`];
+  }
 }
 
 export async function judgeNetplay(set, label, { map }) {
@@ -157,7 +187,7 @@ export async function judgeNetplay(set, label, { map }) {
   const lines = [];
   let failed = 0;
   for (const c of set.clients) {
-    const faults = await clientFollows(sc, c, map);
+    const faults = await clientFollows(sc, c, map, label);
     const name = `${label} ${c.role} player ${c.player}`;
     lines.push(faults.length ? `FAIL ${name}: ${faults.join("; ")}` : `PASS ${name}: on the server's path`);
     if (faults.length) failed++;

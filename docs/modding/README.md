@@ -115,6 +115,15 @@ than only at class-definition time.
   instead of a TID, kept across savegames and hub maps, and how to use them in clientside scripts.
 - [Actor fields](acs/Actor_fields.md) — `fua_GetField` and `fua_SetField`: any DECORATE field read by name,
   `user_` variables written.
+- [Actor data](acs/Actor_data.md) — `fua_SetActorData` and its siblings: up to 64 named values kept on any
+  actor, gone with it, kept in savegames and hub maps.
+- [Actor queries](acs/Actor_queries.md) — `fua_FindActors` and `fua_FindActorsOfClass`: actors found by range
+  or class, filtered and sorted, kept as handles a script reads at its own pace.
+- [Line traces](acs/Line_traces.md) — `fua_LineTrace` and `fua_Trace`: ZScript's `LineTrace` and `LineTracer`
+  in ACS, rules deciding each hit, every hit property read back from a tracer, and lines and sectors read
+  by index with `fua_LineInfo` and `fua_SectorInfo`.
+- [Line traces](acs/Line_traces.md) — `fua_LineTrace`: ZScript's `LineTrace` in ACS, every hit property read
+  back from a tracer, and lines and sectors read by index with `fua_LineInfo` and `fua_SectorInfo`.
 - [Named random streams](acs/Random_streams.md) — `fua_Random`, `fua_FRandom` and `fua_SetRandomSeed`:
   sequences of their own that never move `Random()`'s, kept in savegames and demos.
 

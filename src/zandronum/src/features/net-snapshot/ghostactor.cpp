@@ -53,6 +53,7 @@
 #include "features/net-snapshot/computation/smooth_compute.h"
 #include "features/net-snapshot/computation/replay_compute.h"	// [Kaori-Chani] ComputeCensusAdd
 #include "features/net-snapshot/computation/wall_compute.h"
+#include "features/net-snapshot/computation/follow_compute.h"	// [Doruk-Aksoy] a hidden legacy copy's life
 #include "features/net-snapshot/capture.h"
 #include "features/net-snapshot/record.h"
 #include "features/net-snapshot/selftest.h"
@@ -698,6 +699,22 @@ bool zx::netsnapshot::RespawnBehindMirror(AActor* pActor, bool bFog)
 	return true;
 }
 
+AActor* zx::netsnapshot::ActorBehindMirror(const AActor* pMirror)
+{
+	if ((g_mirror == NULL) || (pMirror == NULL) || ((pMirror->NetworkFlags & NETFL_MIRROR) == 0))
+		return NULL;
+	for (unsigned int k = 0; k < g_mirrorIds.Size(); ++k)
+	{
+		const unsigned int id = g_mirrorIds[k];
+		if (g_mirror[id] != pMirror)
+			continue;
+		// [Doruk-Aksoy] A player's mirror sits at the player's reserved id, which its pawn holds too.
+		AActor* const pReal = g_ActorNetIDList.findPointerByID((unsigned short)id);
+		return ((pReal != NULL) && ((pReal->NetworkFlags & NETFL_MIRROR) == 0)) ? pReal : NULL;
+	}
+	return NULL;
+}
+
 // The server sends this entity's sounds, so a client playing them itself would double them.
 // True to skip: the role test, the counters and the switch all live here.
 bool zx::netsnapshot::GhostSoundHandled(AActor* pActor)
@@ -1249,7 +1266,6 @@ static void ghost_ShowLegacy(unsigned int id, bool reveal)
 	AActor* pReal = (reveal) ? g_ActorNetIDList.findPointerByID((unsigned short)id) : NULL;
 	if (pReal != NULL)
 	{
-		pReal->renderflags &= ~RF_INVISIBLE;
 		// Resume ticking: the actor is authoritative again.
 		pReal->STFlags &= ~STFL_SNAPGHOSTHIDDEN;
 		// Relinked, clearing only the bits the hide added.
@@ -1295,7 +1311,7 @@ static void ghost_HideLegacy(unsigned int id, const AActor* pMirror, bool allowR
 	if ((pReal == NULL) || (pReal == pMirror) || ghost_ExcludedPlayer(id))
 		return;
 
-	pReal->renderflags |= RF_INVISIBLE;
+	// [Doruk-Aksoy] Hidden by STFL_SNAPGHOSTHIDDEN alone, which the draw paths skip: an RF_INVISIBLE here read as the actor's own to every CheckFlag and A_CheckFlag on a client.
 
 	// Stop it ticking: the mirror carries its motion and animation,
 	// so its own Tick is pure cost.
@@ -1338,6 +1354,72 @@ static void ghost_HideLegacy(unsigned int id, const AActor* pMirror, bool allowR
 		g_hidRelinkPending[id] = 0;
 }
 
+// [Doruk-Aksoy] Legacy copies a mirror moved, re-posed or changed the life of, for the report.
+static unsigned int g_legacyFollowed = 0;
+
+// [Doruk-Aksoy] Below level 3 the hidden legacy copy is what a client's scripts and DECORATE reach (by TID, net id or pointer), and the commands that moved, animated and killed it are suppressed from level 1, so it takes its mirror's pose, state and life.
+static void ghost_FollowLegacy(unsigned int id, const AActor* pMirror, unsigned int renderMS)
+{
+	if ((g_hidLegacy == NULL) || (g_hidLegacy[id] == 0) || ((g_hidRelinkPending != NULL) && g_hidRelinkPending[id]))
+		return;
+	AActor* pReal = g_ActorNetIDList.findPointerByID((unsigned short)id);
+	if ((pReal == NULL) || (pReal == pMirror) || (pReal->player != NULL))
+		return;
+	SnapGhostPose pose;
+	if (SampleGhost(id, renderMS, pose) == false)
+		return;
+
+	// Moved as a legacy MoveThing moved it, only when it moved: CLIENT_MoveThing holds the box floor the server does, where the mirror's floor is the one under its centre (netmonsterstairs).
+	if ((pReal->x != pose.x) || (pReal->y != pose.y) || (pReal->z != pose.z))
+		CLIENT_MoveThing(pReal, pose.x, pose.y, pose.z);
+	pReal->angle = pose.angle;
+	pReal->pitch = pose.pitch;
+	pReal->velx = pose.vx;
+	pReal->vely = pose.vy;
+	pReal->velz = pose.vz;
+
+	// The mirror's state assigned, not entered: the copy does not tick, and SetState would run the state's action, and its sound, a second time.
+	if (pMirror->state != NULL)
+	{
+		pReal->state = pMirror->state;
+		pReal->tics = pMirror->tics;
+		pReal->sprite = pMirror->sprite;
+		pReal->frame = pMirror->frame;
+	}
+
+	DWORD lifeBits = 0;
+	lifeBits |= MF_SHOOTABLE;
+	lifeBits |= MF_SOLID;
+	lifeBits |= MF_FLOAT;
+	lifeBits |= MF_SKULLFLY;
+	switch (ComputeLegacyLife((pReal->flags & MF_CORPSE) != 0, (pose.misc & SNAPMISC_CORPSE) != 0))
+	{
+	case kSnapLifeDied:
+		pReal->flags = ActorFlags::FromInt(ComputeLegacyDeathFlags(pReal->flags, MF_CORPSE, lifeBits));
+		pReal->health = ComputeLegacyDeathHealth(pReal->health);
+		break;
+	case kSnapLifeRaised:
+		pReal->flags = ActorFlags::FromInt(ComputeLegacyRaisedFlags(pReal->flags, pReal->GetDefault()->flags, MF_CORPSE, lifeBits));
+		pReal->health = pReal->GetDefault()->health;
+		break;
+	default:
+		break;
+	}
+	++g_legacyFollowed;
+}
+
+// [Doruk-Aksoy] Below level 3 the flag commands (A_ChangeFlag's SetThingFlags) still reach the hidden legacy copy, so the mirror the client draws takes its render words each frame, before the snapshot's own bits, keeping the RF_INVISIBLE the snapshot and the trail-smoke rule drive.
+static void ghost_FollowRenderFlags(unsigned int id, AActor* pMirror)
+{
+	if ((g_hidLegacy == NULL) || (g_hidLegacy[id] == 0))
+		return;
+	const AActor* pReal = g_ActorNetIDList.findPointerByID((unsigned short)id);
+	if ((pReal == NULL) || (pReal == pMirror) || (pReal->player != NULL))
+		return;
+	pMirror->renderflags = ActorRenderFlags::FromInt(ComputeMirrorRenderWord(pMirror->renderflags, pReal->renderflags, RF_INVISIBLE));
+	pMirror->renderflags2 = ActorRenderFlags2::FromInt(ComputeMirrorRenderWord(pMirror->renderflags2, pReal->renderflags2, 0));
+}
+
 // Mirror actor for a NetID, or NULL.
 unsigned int g_mirrorLookupNoTable = 0, g_mirrorLookupBadId = 0;
 unsigned int g_mirrorLookupEmpty = 0, g_mirrorLookupOk = 0;
@@ -1373,6 +1455,20 @@ int zx::netsnapshot::MirrorPlayerNum(const AActor* pActor)
 			return (int)p;
 	}
 	return -1;
+}
+
+unsigned int zx::netsnapshot::MirrorCount()
+{
+	return g_mirrorIds.Size();
+}
+
+AActor* zx::netsnapshot::MirrorAt(unsigned int k, unsigned int& id)
+{
+	id = 0;
+	if ((g_mirror == NULL) || (k >= g_mirrorIds.Size()))
+		return NULL;
+	id = g_mirrorIds[k];
+	return g_mirror[id];
 }
 
 AActor* zx::netsnapshot::MirrorForNetID(unsigned int id, bool bCount)
@@ -2411,7 +2507,9 @@ void zx::netsnapshot::GhostFrame()
 			const long long sdsq = sdx * sdx + sdy * sdy;
 			// A corpse, by the wire bit, is never solid.
 			const bool corpse = ((pose.misc & SNAPMISC_CORPSE) != 0);
-			const bool want = (corpse == false)
+			// [Doruk-Aksoy] Below level 3 the hidden legacy copy, which follows this mirror, is the one in the blockmap.
+			const bool mayCollide = ComputeMirrorMayCollide((g_hidLegacy != NULL) && g_hidLegacy[id]);
+			const bool want = (corpse == false) && mayCollide
 				&& (isSolid ? (sdsq <= collideOut)
 					: ((sdsq <= collideIn) && ghost_ClassCollides(GhostClassId(id))));
 			if (corpse && isSolid)
@@ -2832,6 +2930,7 @@ void zx::netsnapshot::GhostFrame()
 
 		// The client's own copy hidden, catching any the packet path missed.
 		ghost_HideLegacy(id, pActor, true);
+		ghost_FollowRenderFlags(id, pActor);
 
 		// Particle effects, which only P_RunEffects reads.
 		pActor->effects = UnpackEffects(pose.effects);
@@ -2884,12 +2983,21 @@ void zx::netsnapshot::GhostFrame()
 				continue;
 
 			AActor * const pReal = players[pl].mo;
+			// [Doruk-Aksoy] Turned even when it stands still: a player who reconnected and never moved kept the facing they joined with (netonetime).
+			pReal->angle = rpose.angle;
 			if ((pReal->x == rpose.x) && (pReal->y == rpose.y) && (pReal->z == rpose.z))
 				continue;
 
 			CLIENT_MoveThing(pReal, rpose.x, rpose.y, rpose.z);
-			pReal->angle = rpose.angle;
 			++g_realPosed;
+		}
+
+		// [Doruk-Aksoy] Every other hidden legacy copy follows its mirror the same once a gametic.
+		for (unsigned int m = 0; m < g_mirrorIds.Size(); ++m)
+		{
+			const unsigned int mid = g_mirrorIds[m];
+			if (g_mirror[mid] != NULL)
+				ghost_FollowLegacy(mid, g_mirror[mid], renderMS);
 		}
 	}
 
@@ -2906,7 +3014,21 @@ void zx::netsnapshot::GhostFrame()
 				if ((GhostTarget(id, bResolved, bChanged) != 0) && (bResolved == false))
 					++g_tgtNever;
 			}
+			// [Doruk-Aksoy] The legacy copy of an actor the server removed goes with it; left hidden it outlived the server's for good, as an exploded rocket did (netbroadcast), since a client never explodes a server's missile itself.
+			AActor* pLeft = g_ActorNetIDList.findPointerByID((unsigned short)id);
+			const bool bLeftHidden = (pLeft != NULL) && (pLeft != g_mirror[id]) && (pLeft->player == NULL) && (pLeft->STFlags & STFL_SNAPGHOSTHIDDEN);
 			ghost_ShowLegacy(id, false);
+			if (bLeftHidden)
+			{
+				if (ComputeLeaveDestroysLegacy(pLeft->IsKindOf(RUNTIME_CLASS(AInventory))))
+					pLeft->Destroy();
+				else
+				{
+					// [Doruk-Aksoy] Inventory ticks again, undrawn, for the pickup commands to take.
+					pLeft->renderflags |= RF_INVISIBLE;
+					pLeft->STFlags &= ~STFL_SNAPGHOSTHIDDEN;
+				}
+			}
 			// An id is handed out again, so a set left here would dress whatever
 			// takes it next.
 			g_ghostProps.Remove(id);
@@ -3136,8 +3258,9 @@ static void ghost_Report()
 			ghost_RawToMS(g_gtickerRaw) * inv,
 			ghost_RawToMS(g_netupdateRaw) * inv,
 			g_ghostCensusFills);
-		ghost_Print("[snap] player mirrors: %u player ghosts, %u excluded\n",
-			g_playerGhostSeen, g_playerGhostExcluded);
+		ghost_Print("[snap] player mirrors: %u player ghosts, %u excluded | %u legacy copies followed their mirror\n",
+			g_playerGhostSeen, g_playerGhostExcluded, g_legacyFollowed);
+		g_legacyFollowed = 0;
 		{
 			unsigned int gU = 0, gE = 0, gZ = 0, gR = 0, gN = 0;
 			double gMean = 0.0, gWorst = 0.0;

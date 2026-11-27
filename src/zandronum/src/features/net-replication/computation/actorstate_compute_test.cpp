@@ -7,6 +7,20 @@
 
 using namespace zx::netreplication;
 
+// [Doruk-Aksoy] Seen 2026-11-26 at legacy suppression 2: farhitscan's killed monster read 10 on clients, the server -5, with KillThing suppressed.
+TEST(ComputeSendsDeathHealth, AMonsterWhoseKillThingIsSuppressedSendsItsDeadHealth)
+{
+	EXPECT_TRUE(ComputeSendsDeathHealth(false, true));
+}
+
+// [Doruk-Aksoy] KillThing carries it when it goes out, and a player's death is its own command.
+TEST(ComputeSendsDeathHealth, NothingWhenKillThingGoesOrForAPlayer)
+{
+	EXPECT_FALSE(ComputeSendsDeathHealth(false, false));
+	EXPECT_FALSE(ComputeSendsDeathHealth(true, true));
+	EXPECT_FALSE(ComputeSendsDeathHealth(true, false));
+}
+
 TEST(ComputeSendsWoundedHealth, AWoundedMonsterOnly)
 {
 	// [rc4l] farhitscan's wounded monsters read full health on the shooter and the observer while the server had them at 5 to 12.
@@ -39,6 +53,20 @@ TEST(ComputeSettledDeathZ, AWalkerBelowTheFloorItSteppedOntoIsSentStandingOnIt)
 {
 	const int64_t UNIT = 65536;
 	EXPECT_EQ(-16 * UNIT, ComputeSettledDeathZ(-32 * UNIT, -16 * UNIT, false));
+}
+
+// [Doruk-Aksoy] Seen in netjoinstomp: a joiner's telefrag threw a corpse still solid inside it, the server's stopped dead, and a client its own block missed kept it a 32-unit step off.
+TEST(ComputeSendsBlockedStop, AMovingNonPlayerStoppedByABlockSendsWhereItStopped)
+{
+	EXPECT_TRUE(ComputeSendsBlockedStop(false, true));
+}
+
+// [Doruk-Aksoy] A player's place goes with its own movement commands, and a mover already at rest changed nothing a client holds.
+TEST(ComputeSendsBlockedStop, APlayerOrAMoverAlreadyAtRestSendsNothing)
+{
+	EXPECT_FALSE(ComputeSendsBlockedStop(true, true));
+	EXPECT_FALSE(ComputeSendsBlockedStop(false, false));
+	EXPECT_FALSE(ComputeSendsBlockedStop(true, false));
 }
 
 // [Doruk-Aksoy] Standing on its floor or above it, falling, a death goes out where it is, and one without gravity is never moved.

@@ -23,7 +23,7 @@ sends out goes through a queue. This folder is the low layer any feature may use
   tic), and a single action runs or queues with `RunOrQueue`; the generated list below names every file that does.
   `Deferred<T>` does the same for values a tic makes for a store the frame reads: the projected decals' marks and
   forgotten owners (`features/levelmesh/projdecals.cpp`, whose marks load their pictures) and the hitbox overlay's
-  blasts (`features/hitboxviz`); `wad/read` makes any lump read from the game thread a violation.
+  blasts and one-tic actors' boxes (`features/hitboxviz`); `wad/read` makes any lump read from the game thread a violation.
 - `gamethread.cpp`: the worker that runs a tic's playsim (`StartOnGameThread`, `TakeBack`, `TicInFlight`); what it
   throws is rethrown on the main thread when the tic is taken back. `AskMain` (`AskMainFor` with a lambda) has the
   main thread run a call whose answer the tic needs at once and waits for it, up to a frame (`ServeAsks` each frame
@@ -80,8 +80,8 @@ Generated from the field tables and the `ZX_SEAM` declarations; do not edit by h
 
 Copied by `features/gamecopy/fields.h`:
 
-- actor: `x`, `y`, `z`, `PrevX`, `PrevY`, `PrevZ`, `velx`, `vely`, `velz`, `angle`, `PrevAngle`, `pitch`, `roll`, `PrevRoll`, `sprite`, `frame`, `scaleX`, `scaleY`, `RenderStyle`, `renderflags`, `alpha`, `fillcolor`, `Translation`, `flags`, `flags2`, `flags3`, `flags5`, `state`, `tics`, `radius`, `height`, `floorclip`, `floorz`, `ceilingz`, `Speed`, `Sector`, `fua_material`, `fua_materialSlot`, `subsector`, `reactiontime`, `health`
-- actor, worked out by the fill: `who`, `id`, `type`, `target`, `nextInSector`, `shownSprite`, `shownScaleX`, `shownScaleY`, `visible`, `isPlayer`, `playerIndex`, `inventory`, `cameraIcon`, `bobTic`, `attackRadius`, `attackHeight`, `playerBody`, `tintActive`, `tintTexture`, `modelFootprint`, `modelReach`
+- actor: `x`, `y`, `z`, `PrevX`, `PrevY`, `PrevZ`, `velx`, `vely`, `velz`, `angle`, `PrevAngle`, `pitch`, `roll`, `PrevRoll`, `sprite`, `frame`, `scaleX`, `scaleY`, `RenderStyle`, `renderflags`, `renderflags2`, `alpha`, `Translation`, `flags`, `flags2`, `flags3`, `flags5`, `state`, `tics`, `radius`, `height`, `floorclip`, `floorz`, `ceilingz`, `Speed`, `Sector`, `fua_material`, `fua_materialSlot`, `subsector`, `reactiontime`, `health`
+- actor, worked out by the fill: `who`, `id`, `type`, `target`, `nextInSector`, `shownSprite`, `shownScaleX`, `shownScaleY`, `visible`, `isPlayer`, `playerIndex`, `inventory`, `cameraIcon`, `bobTic`, `fillcolor`, `attackRadius`, `attackHeight`, `playerBody`, `tintActive`, `tintTexture`, `modelFootprint`, `modelReach`
 - decal: `LeftDistance`, `Z`, `ScaleX`, `ScaleY`, `Alpha`, `AlphaColor`, `Translation`, `PicNum`, `RenderFlags`, `RenderStyle`, `Sector`
 - flatdecal: `ContactX`, `ContactY`, `ContactZ`, `Normal`, `Travel`, `AnchorSector`, `AnchorPlane`, `AnchorOffset`
 - level: `time`, `maptime`, `flags`, `flags2`, `skyspeed1`, `skyspeed2`, `fadeto`, `outsidefog`

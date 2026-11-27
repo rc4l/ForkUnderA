@@ -13,6 +13,7 @@
 
 #include "features/net-replication/computation/actorstate_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-snapshot/capture.h"   // [Doruk-Aksoy] SuppressesLegacy, for SendDeathHealth
 
 #include <vector>
 
@@ -54,9 +55,22 @@ void SendThingTranslation(AActor *actor)
 	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingTranslation(actor);
 }
 
+void SendDeathHealth(AActor *actor)
+{
+	if (actor != NULL && zx::net::IsServer() && ComputeSendsDeathHealth(actor->player != NULL, zx::netsnapshot::SuppressesLegacy(actor, SNAPLEGACY_ANIM)))
+		SERVERCOMMANDS_SetThingHealth(actor);
+}
+
 void SendThingFrame(AActor *actor, FState *state)
 {
 	if (actor != NULL && state != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingFrame(actor, state);
+}
+
+void SendBlockedStop(AActor *actor, bool wasMoving)
+{
+	// [Doruk-Aksoy] Whole, not trimmed: the place it stopped at is the one last sent, which a client that moved on is no longer at.
+	if (actor != NULL && zx::net::IsServer() && ComputeSendsBlockedStop(actor->player != NULL, wasMoving))
+		SERVERCOMMANDS_MoveThingExactWhole(actor, CM_X | CM_Y | CM_VELX | CM_VELY);
 }
 
 // [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: the send P_SpawnPuff made, on its own so a rail sends its puff once the puff survived the sky.

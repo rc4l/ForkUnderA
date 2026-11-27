@@ -4,6 +4,7 @@
 #include "features/acs-parity/acsparity.h"
 
 #include "actor.h"
+#include "c_console.h"
 #include "actorptrselect.h"
 #include "d_player.h"
 #include "g_shared/a_pickups.h"
@@ -126,6 +127,31 @@ AActor* ActorFromNetID(int32_t id)
 const char* FloorTerrainName(AActor* actor)
 {
 	return Terrains[P_GetThingFloorType(actor)].Name.GetChars();
+}
+
+void SetSectorDamage(int tag, int32_t amount, const char* type)
+{
+	int mod = ComputeDamageTypeMod(type);
+	if (mod < 0)
+	{
+		// [Doruk-Aksoy] Each name warns once, so a script setting it every tic doesn't flood the console.
+		static TArray<FName> warned;
+		const FName name(type);
+		if (warned.Find(name) == warned.Size())
+		{
+			warned.Push(name);
+			Printf(TEXTCOLOR_ORANGE "SetSectorDamage: sectors here hold only the built-in damage types, so '%s' does normal damage.\n", type);
+		}
+		mod = 0;
+	}
+	const short damage = ComputeSectorDamageAmount(amount);
+	FSectorTagIterator it(tag);
+	int s;
+	while ((s = it.Next()) >= 0)
+	{
+		sectors[s].damage = damage;
+		sectors[s].mod = short(mod);
+	}
 }
 
 bool IsActorClass(const char* name)

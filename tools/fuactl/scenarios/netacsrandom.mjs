@@ -5,7 +5,7 @@
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { addClient } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
-import { withNetCopies, addPlayerStarts, runSteps, who, result } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, runSteps, who, result, NET_CONFIGS } from "../src/netacs.mjs";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, SCRIPT } from "../src/acs.mjs";
 import { SCRIPTS, STRINGS, logged } from "./acsrandom.mjs";
@@ -51,6 +51,6 @@ export async function judgeNetplay(set, label) {
   return result(label, judgeMachines(first, again), "every client's seeded clientside stream gives the same numbers, a late joiner's too, and the server's seeded stream repeats");
 }
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }];
+export const CONFIGS = NET_CONFIGS;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsrandom", wad: buildNetRandomPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

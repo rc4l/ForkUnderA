@@ -3,12 +3,18 @@
 import { PCD, SCRIPT, SCRIPTF } from "./acs.mjs";
 import { SPECIAL } from "./doomnums.mjs";
 import * as cap from "./capture.mjs";
-import { addClient } from "./netplay.mjs";
+import { addClient, SNAP_SERVER_CVARS } from "./netplay.mjs";
 
 // [Doruk-Aksoy] A script's CLIENTSIDE copy is its number plus COPY; START is the server script that starts any copy, its number its argument.
 export const COPY = 1000, START = 30000;
 // [Doruk-Aksoy] How many more tics a step waits for a machine that has printed nothing yet.
 export const MORE_TICS = 105;
+
+// [Doruk-Aksoy] Each config with its server on the snapshot netcode, over any server cvars it sets itself.
+export const onSnapshots = (configs) => configs.map((c) => ({ ...c, serverCvars: { ...SNAP_SERVER_CVARS, ...(c.serverCvars || {}) } }));
+
+// [Doruk-Aksoy] The player and an observer on a LAN and at 100 ms, the pair most ACS net scenarios run.
+export const NET_CONFIGS = onSnapshots([{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }]);
 
 // [Doruk-Aksoy] START's words: ACS_ExecuteAlways(its argument) on this map, which a server sends to every client for a CLIENTSIDE script, with the activator that ran START.
 export function startWords() {
@@ -62,21 +68,31 @@ export async function runSteps(set, steps, { on = set.clients, by = set.clients[
   return logs;
 }
 
-// [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, each machine's faults from `judge(logs, member)`;
-// `by` "player" runs them from the first client, its pawn the activator, and "server" from the server's console.
-export function netJudge({ steps, late = [], judge, passed, by = "player" }, deps = {}) {
+// [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, then `after` on every machine with it, each
+// machine's output merged over the rounds and its faults from `judge(logs, member)`; `by` "player" runs them from the first client, its pawn the activator,
+// and "server" from the server's console; `before(set)` readies the set first, such as a player's god mode turned off.
+export function netJudge({ steps, late = [], after = [], judge, passed, by = "player", before = async () => {} }, deps = {}) {
   const { join = addClient, waitTics = cap.waitTics, run = runSteps } = deps;
   return async (set, label) => {
     await waitTics(set.server.c, 35);
+    await before(set);
     const runner = by === "server" ? set.server : set.clients[0];
-    const faults = judgeEach(await run(set, steps, { by: runner }), judge);
-    if (late.length) {
+    const rounds = [await run(set, steps, { by: runner })];
+    if (late.length || after.length) {
       const joiner = await join(set, { role: "latejoin" });
       await waitTics(set.server.c, 35);
-      faults.push(...judgeEach(await run(set, late, { on: [joiner], server: false, by: runner }), judge));
+      if (late.length) rounds.push(await run(set, late, { on: [joiner], server: false, by: runner }));
+      if (after.length) rounds.push(await run(set, after, { by: runner }));
     }
-    return result(label, faults, passed);
+    return result(label, judgeEach(mergeLogs(rounds), judge), passed);
   };
+}
+
+// [Doruk-Aksoy] Each machine's output over several rounds of runSteps, merged by tag.
+export function mergeLogs(rounds) {
+  const out = new Map();
+  for (const logs of rounds) for (const [m, l] of logs) out.set(m, { ...(out.get(m) || {}), ...l });
+  return out;
 }
 
 // [Doruk-Aksoy] `role`'s answer for `key` from a scenario's per-machine answers, else `fallback`; "client" stands for every client's role.
@@ -116,6 +132,9 @@ export function judgeEach(logs, judge) {
 }
 
 // [Doruk-Aksoy] A scenario's PASS or FAIL line and failed count from its faults.
+// [Doruk-Aksoy] Every actor row an instance's world.actors lists, with `extra` such as { mirrors: 1 } for a snapshot client's mirrors beside their legacy copies.
+export const actorRows = async (c, extra = {}) => (await c.rpc("world.actors", { limit: 100000, ...extra }))?.actors || [];
+
 export function result(label, faults, passed) {
   return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${passed}`, failed: faults.length ? 1 : 0 };
 }

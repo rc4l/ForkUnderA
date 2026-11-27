@@ -80,6 +80,14 @@ std::vector<std::string> ComputeReloadArgv(const std::vector<std::string> &argv,
 	return out;
 }
 
+std::vector<std::string> ComputeReloadDroppedSwitches(bool changingIwad)
+{
+	std::vector<std::string> out = { "-file", "-playdemo", "-timedemo", "-record", "-loadgame", "-connect", "+connect" };
+	if (changingIwad)
+		out.push_back("-iwad");
+	return out;
+}
+
 ArchiveKind ClassifyArchiveMagic(const unsigned char *bytes, size_t n)
 {
 	if (bytes == nullptr)

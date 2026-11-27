@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { PCD, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 import { SPECIAL } from "../src/doomnums.mjs";
 import { UdmfMap } from "../src/udmf.mjs";
-import { COPY, START, MORE_TICS, startWords, withNetCopies, addPlayerStarts, who, runSteps, netJudge, answerFor, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { COPY, START, MORE_TICS, onSnapshots, NET_CONFIGS, startWords, withNetCopies, addPlayerStarts, who, runSteps, netJudge, answerFor, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 import { GS_INTERMISSION } from "../src/capture.mjs";
 
 test("START runs ACS_ExecuteAlways on its argument, and each copied script gets a NET original and a CLIENTSIDE copy", () => {
@@ -127,4 +128,38 @@ test("a step waits on, at most MORE_TICS, for a machine whose output comes late"
   await runSteps(set, [{ script: 1, tags: ["a"], server: false }], {}, slow);
   assert.equal(waits, -1000 + 1 + MORE_TICS / 5);
   assert.ok(late);
+});
+
+test("onSnapshots puts every config's server on the snapshot netcode, keeping its own server cvars and its clients' as they are", () => {
+  const [plain, own] = onSnapshots([{ name: "a" }, { name: "b", serverCvars: { sv_cheats: 0, fua_snap_nolegacy: 1 }, clientCvars: { x: 1 } }]);
+  assert.deepEqual(plain.serverCvars, SNAP_SERVER_CVARS);
+  assert.deepEqual(own.serverCvars, { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 1, sv_cheats: 0 });
+  assert.deepEqual(own.clientCvars, { x: 1 });
+  assert.deepEqual(NET_CONFIGS.map((c) => [c.name, c.observers, c.serverCvars]), [["lan", 1, SNAP_SERVER_CVARS], ["ping100", 1, SNAP_SERVER_CVARS]]);
+});
+
+test("after the late joiner's round, `after` runs on every machine with it, and each machine is judged once on its merged output", async () => {
+  const { set } = fakeSet();
+  const late = { role: "latejoin", c: {} };
+  const runs = [];
+  const run = async (s, steps, opts) => {
+    const on = opts.on || s.clients;
+    runs.push([steps.map((x) => x.script), on.map((m) => m.role), opts.server ?? true]);
+    return new Map([...on.map((m) => [m, { [`t${steps[0].script}`]: m.role }]), ...(opts.server === false ? [] : [[s.server, { [`t${steps[0].script}`]: "server" }]])]);
+  };
+  const judged = [];
+  const judge = netJudge({ steps: [{ script: 1 }], late: [{ script: 2 }], after: [{ script: 3 }], judge: (l, m) => { judged.push([m.role, Object.keys(l).sort().join()]); return []; }, passed: "ok" },
+    { join: async (s) => { s.clients.push(late); return late; }, waitTics: async () => {}, run });
+  assert.deepEqual(await judge(set, "M"), { line: "PASS M: ok", failed: 0 });
+  assert.deepEqual(runs, [[[1], ["player", "observer"], true], [[2], ["latejoin"], false], [[3], ["player", "observer", "latejoin"], true]]);
+  assert.deepEqual(judged, [["player", "t1,t3"], ["observer", "t1,t3"], ["server", "t1,t3"], ["latejoin", "t2,t3"]]);
+});
+
+test("netJudge readies the set with `before` once the level settled, before any step", async () => {
+  const { set } = fakeSet();
+  const order = [];
+  const judge = netJudge({ steps: [{ script: 1 }], judge: () => [], passed: "ok", before: async (s) => order.push(["before", s === set]) },
+    { waitTics: async () => order.push(["wait"]), run: async () => { order.push(["run"]); return new Map(); } });
+  await judge(set, "M");
+  assert.deepEqual(order, [["wait"], ["before", true], ["run"]]);
 });

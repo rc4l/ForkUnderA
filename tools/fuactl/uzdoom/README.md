@@ -91,3 +91,31 @@ lean, and the blend its height shows (32 + 16t over 32). Launches are shared wit
 | MAP01 MD3, keyframe 1 lean / height ratio | -0.447 / 1.492 | -0.446 / 1.505 |
 | MAP01 MD3, blend 17 tics into 35 | 0.475 | 0.484 |
 | MAP02 MD2, keyframe 1 lean / blend | -0.447 / 0.475 | -0.446 / 0.484 |
+
+# Sprite flips
+
+`node uzdoom/flipparity.mjs [--port P] [--api vulkan|opengl|both]` draws a four-colour sprite (red, green, blue, yellow
+by quarter) plain, XFLIP, YFLIP and both, and an eight-rotation sprite (each rotation a colour beside a white half)
+facing east plain, SPRITEFLIP and SPRITEFLIP with XFLIP, from a player south of them. Each sprite is read by the colour
+in each quarter, so a mirror, an upside-down picture and the rotation seen all show; ours must read as UZDoom's. UZDoom's
+OpenGL now and then shows the room without its sprites, so a picture with none readable is taken again, up to three times.
+
+| Build | plain, XFLIP, rotation, SPRITEFLIP, SPRITEFLIP+XFLIP, YFLIP, XFLIP+YFLIP |
+| --- | --- |
+| UZDoom OpenGL | RGBY GRYB OWOW WBWB BWBW BYRG YBGR |
+| ours Vulkan, and legacy GL | the same |
+| ours without the flip renderer work | RGBY RGBY OWOW OWOW OWOW RGBY RGBY |
+
+# Mirror and light flags
+
+`node uzdoom/mirrorlightparity.mjs [--port P] [--api vulkan|opengl|both]` reads three maps. MAP01 puts three solid
+sprites behind the player, in front of a line mirror (Line_Mirror): red plain, yellow INVISIBLEINMIRRORS, blue
+ONLYVISIBLEINMIRRORS. MAP02 puts them in front of the player with no mirror. MAP03 has two grey sprites beside a red
+PointLight in a black room, plain and NODYNAMICLIGHTING. The colour reader leaves out runs under 16 columns wide, which
+drops the player's own small reflection.
+
+| Map | UZDoom OpenGL | ours Vulkan, and legacy GL | ours without the hooks |
+| --- | --- | --- | --- |
+| MAP01, mirror | RB | RB | RYB |
+| MAP02, direct | RY | RY | RYB |
+| MAP03, light | lit unlit | lit unlit | lit lit |

@@ -36,14 +36,36 @@ player's own actor is still moved to its ghost's pose once a gametic (`CLIENT_Mo
 ## Hiding the legacy copy
 
 Where the client also holds the server's legacy actor for a mirrored id, that actor is hidden rather
-than destroyed, since the server can still address it by NetID: `RF_INVISIBLE`,
-`STFL_SNAPGHOSTHIDDEN` (its `Tick` returns at once), and `MF_NOSECTOR` and `MF_NOBLOCKMAP` where it
+than destroyed, since the server can still address it by NetID: `STFL_SNAPGHOSTHIDDEN` (its `Tick`
+returns at once, and the GL sprite path, the render copy's `visible` and the crosshair skip it), and
+`MF_NOSECTOR` and `MF_NOBLOCKMAP` where it
 did not already have them, recorded so the reveal clears only those. `HideEnteredLegacy`, called on
 the packet path right after `ApplyDelta`, sets the flags for the ids that just entered; the unlink
 and relink wait for the frame loop. One relink brackets both bits, since `LinkToWorld` reads the
 flags, and `P_DelSector_List` frees the `touching_sectorlist` the unlink saved: a relink that
 `MF_NOSECTOR` makes skip the sector lists would otherwise leave the actor in every sector's touching
 list, where a later sweep still finds it.
+
+Its render flags stay the server's: an `RF_INVISIBLE` set to hide it read as the actor's own to every
+client `CheckFlag` and `A_CheckFlag` (decorateflags' snapshot config).
+
+## The legacy copy follows its mirror
+
+Below level 3 the hidden legacy copy is what a client's scripts and DECORATE reach, by TID, net id or
+pointer, and level 1 suppresses the commands that moved it, level 2 those that animated and killed
+it. So once a gametic `ghost_FollowLegacy` gives each one its mirror's sampled position (through
+`CLIENT_MoveThing`, as a legacy MoveThing did, which holds the server's box floor), angle, pitch and velocity, the mirror's state assigned
+without running its action, and the wire's corpse bit as a death or a raise (`ComputeLegacyLife`,
+`ComputeLegacyDeathFlags`, `ComputeLegacyRaisedFlags`, `ComputeLegacyDeathHealth`). Without it a
+client read a placed barrel's angle as 0, a walker's position as where it spawned, and a killed
+monster as alive. A remote player's own actor takes its angle the same tic even when it has not moved.
+A mirror with a hidden legacy copy never turns solid either (`ComputeMirrorMayCollide`): the copy,
+following it, already blocks the player, and both in the blockmap made a client's searches find the actor
+twice (netacsqueries). At level 3 the mirror is all there is, and it collides as before.
+When a ghost leaves, the server having removed its actor, the legacy copy goes with it
+(`ComputeLeaveDestroysLegacy`): kept hidden, an exploded rocket outlived the server's for good, since a
+client never explodes a server's missile itself. Inventory is the exception, since a pickup also leaves
+the wire: it ticks again, undrawn, for the legacy pickup commands to take.
 
 When a ghost leaves, its legacy copy stays hidden, since the entity is gone on the server and
 showing it would bring it back; clearing every mirror reveals every hidden actor, whose own state is
@@ -217,6 +239,12 @@ Lookups:
   mirror rather than dropped.
 - `MirrorPlayerNum`: the player a mirror stands in for, or -1, since a mirror's NetID is 0. The
   game copy's sprite path reads it for a player mirror's skin, a mirror carrying no `player_t`.
+- `MirrorCount`, `MirrorAt`: the mirrors this client holds and the k-th with its snapshot id, for the
+  bridge's `world.actors`, which lists them under that id: a mirror sits in `STAT_INFO`, below where a
+  default `TThinkerIterator` starts.
+- `ActorBehindMirror`: the client's own actor a mirror draws (its legacy copy, or a player's pawn at the
+  reserved id), or NULL when it holds none or the actor is no mirror. ACS handles use it so no handle
+  names a mirror.
 - `SpeedForClass`: a class's default speed in units per tic, for the replay's glide census.
 
 Sounds, spawns and respawns:
@@ -366,9 +394,12 @@ ghost of one class.
 
 ## Engine hooks
 
-The stock call sites, each a `[Kaori-Chani]` line. Seven files call this header:
+The stock call sites, each a `[Kaori-Chani]` line but the bridge's and ACS handles'. Nine files call this header:
 - `features/gamecopy/gamecopy.cpp`: `GhostFrame` in `FillNow`, and `MirrorPlayerNum` in the sprite
   path for a player mirror's skin.
+- `mcp_rpc.cpp`: `MirrorCount`, `MirrorAt` and `MirrorPlayerNum` in `world.actors`, a `[Doruk-Aksoy]` line.
+- `features/acs-handles/acshandles.cpp`: `ActorBehindMirror` in `HandleFor`, which gives a mirror's actor
+  the handle instead (a `[Doruk-Aksoy]` line).
 - `cl_main.cpp`: `LevelUnloaded` at the connection's map load (`SVCC_MAPLOAD`), on quitting a
   network game and at a map change; `GhostsFromNetwork` when snapshot traffic starts and stops;
   `CosmeticEvents` for `SVC2_SNAPCOSMETIC`; `ResolveThroughMirror` in the client's actor lookup; and

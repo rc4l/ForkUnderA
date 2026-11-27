@@ -5577,6 +5577,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 					flagset = FLAGSET_RENDERFLAGS;
 				else if ( (void*)flagp == (void*)&self->BounceFlags )
 					flagset = FLAGSET_BOUNCEFLAGS;
+				else if ( (void*)flagp == (void*)&self->renderflags2 )
+					flagset = FLAGSET_RENDERFLAGS2;
 				else if ( (void*)flagp == (void*)&self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 

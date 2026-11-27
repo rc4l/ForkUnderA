@@ -45,3 +45,13 @@ TEST(FlagRehome, FullVolDeathMovesToFlags3)
 	EXPECT_EQ(0x00010000u, out.flags8);
 	EXPECT_EQ(0x8u, ComputeRehomedSaveFlags({ 0x8, 0, 0x2 }).flags3);
 }
+
+TEST(FlagRehome, LightMultAlphaLeavesRenderflagsForRenderflags2)
+{
+	const SavedRenderFlags out = ComputeRehomedSaveRenderFlags(0x00080000 | 0x8000 | 0x10);
+	EXPECT_EQ(0x8000u | 0x10u, out.renderflags);
+	EXPECT_EQ(kRenderFlags2LightMultAlpha, out.renderflags2);
+	const SavedRenderFlags plain = ComputeRehomedSaveRenderFlags(0x8000);
+	EXPECT_EQ(0x8000u, plain.renderflags);
+	EXPECT_EQ(0u, plain.renderflags2);
+}

@@ -139,6 +139,7 @@ void Draw()
 	if (!s_frameActive)
 		return;
 
+	CollectTicBoxes(s_physicalVerts, s_attackVerts);
 	CollectBlasts(s_blastVerts);
 
 	if (s_physicalVerts.Size() == mark.physical &&

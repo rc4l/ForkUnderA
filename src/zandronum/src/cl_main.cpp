@@ -6042,6 +6042,10 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->BounceFlags = flags;
 		break;
+	case FLAGSET_RENDERFLAGS2:
+
+		actor->renderflags2 = ActorRenderFlags2::FromInt (flags);
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;

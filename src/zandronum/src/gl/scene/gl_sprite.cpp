@@ -70,6 +70,7 @@ const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/g
 #include "gamemode.h"
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
+#include "features/sprites/computation/spriteframe_compute.h"	// [Doruk-Aksoy] ComputeSpriteVFlip, ComputeMirrorHidesSprite
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 #include "features/gamecopy/tintsubject.h"	// [rc4l] TintSubjectOf
@@ -586,7 +587,11 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 		P_CheckPlayerSprite(thing, spritenum, spritescaleX, spritescaleY);
 	}
 
-	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha)) 
+	// [Doruk-Aksoy] A client's legacy copy the snapshot draws a mirror for is hidden by this bit, not by RF_INVISIBLE, which stays the server's.
+	if (thing->STFlags & STFL_SNAPGHOSTHIDDEN)
+		return;
+
+	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
 	{
 		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision)
 			return; 
@@ -595,6 +600,10 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 	// If this thing is in a map section that's not in view it can't possibly be visible
 	// [Doruk-Aksoy] unless it is a wide actor offered from a sector under it that the walk reached.
 	if (!footprint && !(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7)))) return;
+
+	// [Doruk-Aksoy] UZDoom's mirror flags.
+	if (zx::sprites::ComputeMirrorHidesSprite(gl_SpriteView().PortalIsMirror(), (thing->renderflags2 & RF2_INVISIBLEINMIRRORS) != 0,
+		(thing->renderflags2 & RF2_ONLYVISIBLEINMIRRORS) != 0)) return;
 
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.
@@ -668,7 +677,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 		angle_t ang = R_PointToAngle(thingx, thingy);
 
 		bool mirror;
-		FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, ang - thing->angle, &mirror);
+		FTextureID patch = gl_GetActorSpriteFrame(spritenum, thing->frame, ang - thing->angle, thing->renderflags, &mirror);
 		if (!patch.isValid()) return;
 		int type = thing->renderflags & RF_SPRITETYPEMASK;
 		gltexture = FMaterial::ValidateTexture(patch, (type == RF_FACESPRITE), false);
@@ -709,6 +718,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 			}
 		}
 
+		zx::sprites::ComputeSpriteVFlip((thing->renderflags & RF_YFLIP) != 0, vt, vb);
 		r.Scale(FIXED2FLOAT(spritescaleX),FIXED2FLOAT(spritescaleY));
 
 		float rightfac=-r.left;
