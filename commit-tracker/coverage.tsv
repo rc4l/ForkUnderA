@@ -16083,7 +16083,7 @@ c7fe3de4b033e6ae32c82ba5466fddc516d812b5	2022-06-22T05:55:19Z	Avoid creating new
 ed134c9b196eeaa3a2f96cd671fde23a36941e32	2022-06-22T05:55:19Z	Improve the builder syntax so that fewer temp variables are required to build vulkan objects	pending		/
 a0259e8e0037269633ce0711172d5535b156020d	2022-06-22T05:55:19Z	Hide experimental ray query behind vk_raytrace	pending		/
 e3d7afa2d55432761eb226778b90e661d711dc3c	2022-06-22T07:26:53Z	- added missing return	pending		/
-593627f0499ce3cda972368fe07dacaa00eac68d	2022-06-22T07:36:04Z	Add +ONLYVISIBLEINMIRRORS and +INVISIBLEINMIRRORS actor flags. The former makes the actor only visible in reflections, while the latter makes the actor not cast reflections in mirrors.	pending		/
+593627f0499ce3cda972368fe07dacaa00eac68d	2022-06-22T07:36:04Z	Add +ONLYVISIBLEINMIRRORS and +INVISIBLEINMIRRORS actor flags. The former makes the actor only visible in reflections, while the latter makes the actor not cast reflections in mirrors.	adapted	GL portals and the backend's mirror walks; the backend's reflective floors and ceilings redraw the frame's sprites and hold neither flag yet; no software renderer path	7ac2173bd
 aaf9618e61e0df556c91cf220ea73d26220c7610	2022-06-22T08:30:09Z	- make sure ticdup is initialized.	pending		/
 8c244f6f850eeb5a5dede7f887f3f1ba87b3d8bc	2022-06-22T09:11:29Z	- use static_assert to make 32 bit builds fail.	pending		/
 67127e4cced0f7c90cafda7837d46771e27b382f	2022-06-23T05:47:04Z	Bugfix for retro software mode mirrors not working	pending		/
@@ -18642,7 +18642,7 @@ f5cf4908bbf9964e4fca7eb365fe8b7912ae31e5	2025-12-02T19:59:01Z	fix some more stuf
 29b996e48045c2403c38f1f400b8ce306904d62d	2025-12-02T20:13:10Z	Prevent Inventory from being client-sided	pending		/
 149573fcad2b4d4a94deeb89dfef33d1122d9a10	2025-12-03T16:51:15Z	Fixed death cam not working with A_SkullPop	pending		/
 4a811a7933bd7796a2a8aec626f6f079bae28b25	2025-12-04T04:08:22Z	Fix string oob in C_ParseCmdLineParams	pending		/
-f4b1532fefe2df399f5c604f1bfd6c09026b3ab1	2025-12-04T18:42:14Z	Added flags to disable dynamic lighting effects for actors, particles and vthinkers. * +NODYNAMICLIGHTING for actors, works on models and weapon sprites/models * SPF_NODYNAMICLIGHTING for particles/vthinkers	pending		/
+f4b1532fefe2df399f5c604f1bfd6c09026b3ab1	2025-12-04T18:42:14Z	Added flags to disable dynamic lighting effects for actors, particles and vthinkers. * +NODYNAMICLIGHTING for actors, works on models and weapon sprites/models * SPF_NODYNAMICLIGHTING for particles/vthinkers	adapted	actors' sprites, models and the weapon on GL and the backend; SPF_NODYNAMICLIGHTING is for ZScript particles and vthinkers, never ours	7ac2173bd
 091432532f4582f3480e1e63219b1eb20d00eeaf	2025-12-05T06:02:38Z	Adding yscale to skymist layer. Can control through mapinfo and Level.ChangeSkyMist() zscript function.	pending		/
 4efc213be9dddca107ca9fee66e6a5dd71c43e3e	2025-12-06T15:07:43Z	Added support for client-side pointer handling in ACS functions	pending		/
 d0ed2705341608ef642db8a7145bfbee01dabae2	2025-12-06T21:43:07Z	Add support for new mapinfo keys `freeaim`, `jumping`, `crouching`	pending		/
