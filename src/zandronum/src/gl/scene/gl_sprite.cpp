@@ -70,7 +70,7 @@ const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/g
 #include "gamemode.h"
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
-#include "features/sprites/computation/spriteframe_compute.h"	// [Doruk-Aksoy] ComputeSpriteVFlip
+#include "features/sprites/computation/spriteframe_compute.h"	// [Doruk-Aksoy] ComputeSpriteVFlip, ComputeMirrorHidesSprite
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 #include "features/gamecopy/tintsubject.h"	// [rc4l] TintSubjectOf
@@ -596,6 +596,10 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 	// If this thing is in a map section that's not in view it can't possibly be visible
 	// [Doruk-Aksoy] unless it is a wide actor offered from a sector under it that the walk reached.
 	if (!footprint && !(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7)))) return;
+
+	// [Doruk-Aksoy] UZDoom's mirror flags.
+	if (zx::sprites::ComputeMirrorHidesSprite(gl_SpriteView().PortalIsMirror(), (thing->renderflags2 & RF2_INVISIBLEINMIRRORS) != 0,
+		(thing->renderflags2 & RF2_ONLYVISIBLEINMIRRORS) != 0)) return;
 
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.

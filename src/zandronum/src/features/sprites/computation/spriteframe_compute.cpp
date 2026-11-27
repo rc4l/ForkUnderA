@@ -29,4 +29,9 @@ void ComputeSpriteVFlip(bool yflip, float &vt, float &vb)
 	vb = t;
 }
 
+bool ComputeMirrorHidesSprite(bool inMirror, bool invisibleInMirrors, bool onlyVisibleInMirrors)
+{
+	return inMirror ? invisibleInMirrors : onlyVisibleInMirrors;
+}
+
 }} // namespace zx::sprites

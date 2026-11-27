@@ -18,6 +18,9 @@ bool ComputeSpriteDrawnMirror(bool rotationMirror, bool xflip, bool spriteFlip);
 // [Doruk-Aksoy] A sprite's top and bottom texture coordinates, swapped for RF_YFLIP as UZDoom's HWSprite::Process.
 void ComputeSpriteVFlip(bool yflip, float &vt, float &vb);
 
+// [Doruk-Aksoy] Whether a view leaves an actor out for its mirror flags, as UZDoom's HWSprite::Process: RF2_INVISIBLEINMIRRORS inside a mirror, RF2_ONLYVISIBLEINMIRRORS outside one.
+bool ComputeMirrorHidesSprite(bool inMirror, bool invisibleInMirrors, bool onlyVisibleInMirrors);
+
 }} // namespace zx::sprites
 
 #endif // ZX_SPRITEFRAME_COMPUTE_H

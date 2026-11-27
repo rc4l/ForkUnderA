@@ -995,6 +995,7 @@ void TakeActor(AActor &live, ActorRecord &out)
 	player_t &me = players[consoleplayer];
 	out.cameraIcon = !(me.cheats & CF_CHASECAM) && me.camera != NULL && me.camera->player != NULL && &live == me.camera->player->pIcon;
 	out.bobTic = live.FloatBobPhase + level.maptime;
+	out.fillcolor = (live.RenderStyle.Flags & STYLEF_ColorIsFixed) ? live.fillcolor : 0;
 	out.attackRadius = live.GetAttackRadius();
 	out.attackHeight = live.GetAttackHeight();
 	const zx::gamecopy::TintSubject tint = zx::gamecopy::TintSubjectOf(&live);

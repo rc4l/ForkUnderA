@@ -116,7 +116,9 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 
 void gl_SetDynSpriteLight(AActor *thing, particle_t *particle)
 {
-	if (thing != NULL)
+	// [Doruk-Aksoy] UZDoom's NODYNAMICLIGHTING leaves an actor, and a player's weapon, to the sector's light alone.
+	if (thing != NULL && (thing->renderflags2 & RF2_NODYNAMICLIGHTING)) gl_RenderState.SetDynLight(0.f, 0.f, 0.f);
+	else if (thing != NULL)
 	{
 		gl_SetDynSpriteLight(thing, thing->x, thing->y, thing->z + (thing->height >> 1), thing->subsector);
 	}

@@ -1267,7 +1267,7 @@ public:
 	BYTE			FloatBobPhase;
 	ActorRenderFlags	renderflags;		// Different rendering flags
 	FRenderStyle	RenderStyle;		// Style to draw this actor with
-	DWORD			fillcolor;			// Color to draw when STYLE_Shaded
+	ActorRenderFlags2	renderflags2;	// [Doruk-Aksoy] UZDoom's second render word (see RF2_* above), in fillcolor's old place since the render copy reads it every tic.
 	DWORD			Translation;
 	float			renderradius;			// [Doruk-Aksoy] DECORATE's RenderRadius (uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41): 0 leaves its reach to its model, above 0 it reaches at least that far, below 0 it is never drawn.
 	angle_t			roll;	// This was fixed_t before, which is probably wrong
@@ -1360,7 +1360,7 @@ public:
 	ActorFlags8		flags8;			// [Doruk-Aksoy] UZDoom's flags8 (see MF8_* above).
 	ActorFlags9		flags9;			// [Doruk-Aksoy] UZDoom's flags9 (see MF9_* above).
 	DWORD			fua_flags;		// [Doruk-Aksoy] ZandroX's own flags (see FUAF_* above).
-	ActorRenderFlags2	renderflags2;	// [Doruk-Aksoy] UZDoom's second render word (see RF2_* above).
+	DWORD			fillcolor;			// Color to draw when STYLE_Shaded [Doruk-Aksoy] cold, as the render copy reads it only for a style that draws with it.
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
