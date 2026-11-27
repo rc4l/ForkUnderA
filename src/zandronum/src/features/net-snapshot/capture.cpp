@@ -2845,6 +2845,15 @@ static void snap_RecordStop(const char* pszReason)
 		pszReason, g_recordRecords, (double)g_recordBytes / (1024.0 * 1024.0));
 }
 
+// Taken during static initialization: TIC_GetRawCounter needs nothing initialized first, and
+// a file-scope const costs a load where a function-local static costs MSVC's guard.
+static const tictime_raw_t g_msEpoch = TIC_GetRawCounter();
+
+unsigned int zx::netsnapshot::NowMS()
+{
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - g_msEpoch, 1000);
+}
+
 static void snap_RecordCapture(unsigned int spanTics, const TArray<BYTE>& raw, unsigned int zstdSize)
 {
 	if (g_recordFile == NULL)
@@ -2855,7 +2864,7 @@ static void snap_RecordCapture(unsigned int spanTics, const TArray<BYTE>& raw, u
 	const unsigned int storedSize = storeCompressed ? zstdSize : raw.Size();
 
 	snap_RecordWrite32((DWORD)gametic);
-	snap_RecordWrite32((DWORD)I_MSTime());
+	snap_RecordWrite32((DWORD)NowMS());
 	snap_RecordWrite16((WORD)(spanTics > 0xFFFF ? 0xFFFF : spanTics));
 	snap_RecordWrite32(raw.Size());
 	snap_RecordWrite32(storedSize);
@@ -3924,7 +3933,7 @@ static void snap_SendToClients()
 
 	// The presence dump, once every fua_snap_debug_presencelog seconds.
 	static unsigned int s_presenceDueMS = 0;
-	const unsigned int presenceNowMS = I_MSTime();
+	const unsigned int presenceNowMS = NowMS();
 	const bool bPresenceDue = (fua_snap_debug_presencelog > 0)
 		&& ((int)(presenceNowMS - s_presenceDueMS) >= 0);
 	if (bPresenceDue)

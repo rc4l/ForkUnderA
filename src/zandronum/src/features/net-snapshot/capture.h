@@ -39,6 +39,10 @@ class AActor;
 
 namespace zx { namespace netsnapshot {
 
+// The module's milliseconds, one clock for every figure it prints, stamps or records: the
+// monotonic counter (i_tictime) since this process first read it.
+unsigned int NowMS();
+
 // True when the snapshot channel has taken over this update class for this
 // actor, so no legacy command is sent (players: SuppressesLegacyPlayer).
 bool SuppressesLegacy( const AActor *pActor, int updateClass );

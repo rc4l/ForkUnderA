@@ -18,7 +18,7 @@
 #include "doomdef.h"			// CLIENT_PREDICTION_TICS
 #include "doomstat.h"			// consoleplayer, gametic
 #include "c_cvars.h"
-#include "i_system.h"			// I_MSTime
+#include "features/net-snapshot/capture.h"	// NowMS, the module's clock
 #include "actor.h"
 #include "d_player.h"
 #include "cl_demo.h"			// CLIENTDEMO_IsPlaying, the buffered column
@@ -69,7 +69,7 @@ static unsigned int	g_predGapHist[SNAP_PRED_GAPBUCKETS];
 static unsigned int	g_predGapSamples = 0;
 static unsigned int	g_predGapWorst = 0;
 
-// Not `== 0`: I_MSTime can legitimately return a small value early in a
+// Not `== 0`: NowMS can legitimately return a small value early in a
 // session, and a zero-means-absent flag reads the first correction as a gap
 // from the beginning of time.
 static unsigned int	g_predLastCorrectionMS = 0;
@@ -299,7 +299,7 @@ void zx::netsnapshot::LocalPredArrival()
 		return;
 
 	const unsigned int tick = CLIENT_GetLastConsolePlayerUpdateTick();
-	const unsigned int nowMS = I_MSTime();
+	const unsigned int nowMS = NowMS();
 
 	if (g_predHaveLastCorrection)
 	{
@@ -478,7 +478,7 @@ void zx::netsnapshot::LocalPredSample(unsigned int predictionTics)
 	if (predictionTics > g_predDepthMax)
 		g_predDepthMax = predictionTics;
 
-	const unsigned int nowMS = I_MSTime();
+	const unsigned int nowMS = NowMS();
 	if (g_predHaveLastReport == false)
 	{
 		g_predLastReport = nowMS;

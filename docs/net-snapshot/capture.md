@@ -168,6 +168,8 @@ The property slots:
   slot's NetID and generation, which is the whole dirty test, and then its `SnapProps`,
   read past the guards because the set is a struct the size of a wire record.
 - `PropForget`: the table at a level change.
+- `NowMS`: the module's milliseconds, one clock for every figure it prints, stamps or
+  records, taken from the monotonic counter since this process first read it.
 - `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
   to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.
 - `PropsToTell`, `PropsMarkedIds`: a set is told once to each client that holds the entity,

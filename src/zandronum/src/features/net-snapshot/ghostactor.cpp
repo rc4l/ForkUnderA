@@ -2178,7 +2178,7 @@ static unsigned int g_ghostSolidMax = 0;
 static QWORD g_ghostSolidCorpseAccum = 0;
 static unsigned int g_ghostCensusFrames = 0;
 static unsigned int g_ghostNearMax = 0;
-static unsigned int g_ghostReportMS = 0;	// [Kaori-Chani] I_MSTime's width, so it wraps with it
+static unsigned int g_ghostReportMS = 0;	// [Kaori-Chani] NowMS's width, so it wraps with it
 
 static void ghost_Report();
 
@@ -2220,7 +2220,7 @@ void zx::netsnapshot::GhostFrame()
 	ghost_Init();
 
 	// Everything is sampled at now on the deltas' clock, once a frame.
-	const unsigned int renderMS = I_MSTime();
+	const unsigned int renderMS = NowMS();
 
 	// [Kaori-Chani] The tic's end on that clock, and this frame's fraction of it: r_TicFrac
 	// is set after the fill, so reading it here would give the frame before.
@@ -2980,9 +2980,9 @@ void zx::netsnapshot::GhostFrame()
 	// After this frame's mirrors exist, so a sound finds the one just created.
 	ghost_AttachPointSounds();
 
-	// [Kaori-Chani] Both at I_MSTime's width, so the subtraction wraps with it; widening to
+	// [Kaori-Chani] Both at NowMS's width, so the subtraction wraps with it; widening to
 	// 64 bits first breaks that.
-	const unsigned int nowMS2 = I_MSTime();
+	const unsigned int nowMS2 = NowMS();
 	if (g_ghostReportMS == 0)
 		g_ghostReportMS = nowMS2;
 	const unsigned int reportMS = (fua_snap_stats > 0) ? (unsigned int)fua_snap_stats * 1000 : 5000;
@@ -4133,7 +4133,7 @@ DEV_MODE_CCMD(fua_csnap_ghostinfo)
 		return;
 	}
 
-	const unsigned int nowMS = I_MSTime();
+	const unsigned int nowMS = NowMS();
 
 	// Selection sort over the nearest `want`: this is a console command, and
 	// keeping it allocation-free matters more than the asymptotics.

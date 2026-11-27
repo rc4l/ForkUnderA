@@ -15,7 +15,6 @@
 #include "p_local.h"
 #include "s_sound.h"
 #include "s_sndseq.h"
-#include "i_system.h"
 #include "i_tictime.h"
 #include "c_cvars.h"
 #include "network.h"
@@ -233,7 +232,7 @@ void zx::netsnapshot::OnSnapshot( BYTESTREAM_s * pByteStream )
 	char err[192];
 	SnapApplyStats stats;
 	const tictime_raw_t _ad0 = TIC_GetRawCounter( );
-	const unsigned int arrivalMS = I_MSTime( );
+	const unsigned int arrivalMS = NowMS( );
 	const unsigned int missingBack = client_SnapGapDistance( seq, static_cast<int>( s_lastAckSeq ),
 	s_ackHistory );
 	SetDatagramGapBehind( ComputeAckSettled( static_cast<unsigned int>( seq ), ackLag,

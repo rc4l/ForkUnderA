@@ -20,7 +20,6 @@
 #include "features/net-snapshot/capture.h"		// BranchedThisTic / BranchCensus
 #include "features/net-snapshot/computation/ack_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
-#include "i_system.h"		// I_MSTime, for the join fill timer
 #include "sv_main.h"		// [Kaori-Chani] SERVER_IsValidClient, for the health summary
 
 using namespace zx::netsnapshot;
@@ -2103,11 +2102,11 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 	// its holding the world, by acked delivery.
 	if ((cl.fillStartMS == 0) && (cl.fillReported == false) && (worldCount > 0)
 		&& (cl.believedCount == 0))
-		cl.fillStartMS = I_MSTime();
+		cl.fillStartMS = NowMS();
 	else if ((cl.fillStartMS != 0) && (cl.believedCount >= worldCount))
 	{
-		const unsigned int now = I_MSTime();
-		// [Kaori-Chani] Unsigned subtraction stays right across I_MSTime's 49.7-day wrap,
+		const unsigned int now = NowMS();
+		// [Kaori-Chani] Unsigned subtraction stays right across NowMS's 49.7-day wrap,
 		// where a comparison guard would read 0.
 		Printf("[snap] JOIN FILL: client %u reached %u of %u entities in %u ms\n",
 			client, cl.believedCount, worldCount,

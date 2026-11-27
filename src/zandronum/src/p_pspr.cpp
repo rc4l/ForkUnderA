@@ -523,7 +523,7 @@ void P_FireWeapon (player_t *player, FState *state)
 		&& ( player->mo != NULL ))
 	{
 		zx::netsnapshot::NoteLocalFire( (int)( player->mo->x >> FRACBITS ),
-			(int)( player->mo->y >> FRACBITS ), I_MSTime( ));
+			(int)( player->mo->y >> FRACBITS ));
 	}
 
 	weapon->bAltFire = false;
