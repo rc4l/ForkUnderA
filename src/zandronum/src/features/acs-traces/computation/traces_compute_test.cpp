@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 using namespace zx::acstraces;
@@ -15,6 +16,14 @@ namespace {
 
 const int64_t kOne = 65536;
 const Shooter kMonster = { false, false, false, false };
+
+// [Doruk-Aksoy] Each name one up and no name left none, one type for every remap test so ComputeRemapTracerNames has a single instantiation to cover.
+struct NextName
+{
+	int32_t operator()(int32_t name) const { return name == 0 ? 0 : name + 1; }
+};
+
+using RuleTest = std::function<bool(const Rule &)>;
 
 RawHit Raw(int type)
 {
@@ -285,7 +294,7 @@ TEST(AcsTraces, TracersSaveWithTheirHitsAndTexturesRemap)
 	s.Create(40);
 	s.SetResult(40, Numbered(10), { Numbered(200), Numbered(300) });
 
-	ComputeRemapTracerNames(s, [](int32_t name) { return name + 1; });
+	ComputeRemapTracerNames(s, NextName());
 	EXPECT_EQ(s.Find(40)->last.v[kTrHitTexture], 10 + kTrHitTexture + 1);
 	EXPECT_EQ(s.Find(40)->hits[1].v[kTrHitTexture], 300 + kTrHitTexture + 1);
 
@@ -398,13 +407,14 @@ TEST(AcsTraces, TheFirstMatchingRuleDecidesAndNoneStops)
 		{ kKindAny, kActContinue, { kTqTexture, 9, 1 } },
 	};
 	int tested = 0;
-	const auto tid5 = [&](const Rule &r) { ++tested; return r.filter.a == 5; };
+	// [Doruk-Aksoy] Every test is one std::function type, so ComputeRuleAction has a single instantiation to cover.
+	const RuleTest tid5 = [&](const Rule &r) { ++tested; return r.filter.a == 5; };
 	EXPECT_EQ(ComputeRuleAction(rules, kKindActor, tid5), kActRecord);
 	EXPECT_EQ(tested, 1);
-	const auto none = [](const Rule &) { return false; };
+	const RuleTest none = [](const Rule &) { return false; };
 	EXPECT_EQ(ComputeRuleAction(rules, kKindActor, none), kActSkip);
 	EXPECT_EQ(ComputeRuleAction(rules, kKindWall, none), kActStop);
-	EXPECT_EQ(ComputeRuleAction(rules, kKindWall, [](const Rule &) { return true; }), kActContinue);
+	EXPECT_EQ(ComputeRuleAction(rules, kKindWall, RuleTest([](const Rule &) { return true; })), kActContinue);
 	EXPECT_EQ(ComputeRuleAction(std::vector<Rule>(), kKindWall, none), kActStop);
 }
 
@@ -495,7 +505,7 @@ TEST(AcsTraces, RulesSaveWithTheirNamesAndAnOldRunHasNone)
 	s.AddRule(6, Rule{ kKindActor, kActStop, { zx::acsqueries::kFqClass, 300, 1 } });
 	s.AddRule(6, Rule{ kKindWall, kActRecord, { kTqTexture, 400, 0 } });
 	s.AddRule(6, Rule{ kKindWall, kActSkip, { kTqSpecial, 80, 1 } });
-	ComputeRemapTracerNames(s, [](int32_t name) { return name == 0 ? 0 : name + 1; });
+	ComputeRemapTracerNames(s, NextName());
 	EXPECT_EQ(s.Find(6)->rules[0].filter.a, 301);
 	EXPECT_EQ(s.Find(6)->rules[1].filter.a, 401);
 	EXPECT_EQ(s.Find(6)->rules[2].filter.a, 80);
