@@ -3932,13 +3932,15 @@ static void snap_SendToClients()
 
 	const unsigned int budget = snap_EffectiveBudget();
 
-	// The presence dump, once every fua_snap_debug_presencelog seconds.
-	static unsigned int s_presenceDueMS = 0;
-	const unsigned int presenceNowMS = NowMS();
+	// The presence dump, once every fua_snap_debug_presencelog seconds, kept on the raw
+	// counter so the deadline compare needs no wrap handling at any width.
+	static tictime_raw_t s_presenceDueRaw = 0;
+	const tictime_raw_t presenceNowRaw = TIC_GetRawCounter();
 	const bool bPresenceDue = (fua_snap_debug_presencelog > 0)
-		&& ((int)(presenceNowMS - s_presenceDueMS) >= 0);
+		&& (presenceNowRaw >= s_presenceDueRaw);
 	if (bPresenceDue)
-		s_presenceDueMS = presenceNowMS + (unsigned int)fua_snap_debug_presencelog * 1000u;
+		s_presenceDueRaw = presenceNowRaw
+			+ (tictime_raw_t)fua_snap_debug_presencelog * tictime_rawFrequency;
 
 	// An empty world is legal and still builds a frame, its entities all
 	// leaving, so element zero of an empty TArray is not taken.
