@@ -5,7 +5,7 @@
 // usage:  node scenarios/netacsqueries.mjs
 import { PCD, SCRIPT } from "../src/acs.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
-import { withNetCopies, addPlayerStarts, netJudge, answerFor } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, answerFor, onSnapshots } from "../src/netacs.mjs";
 import { G, FQ, fn, global, keep, run, find, filter, logScript, TID, ROOM1, WANT, buildAcsQueriesPk3, judgeQueries } from "./acsqueries.mjs";
 
 // [Doruk-Aksoy] 9 kills the imp on the server alone, as a client's damage stays its own; 10 keeps each client's handles for the filters; q1 and q2 then run
@@ -55,6 +55,6 @@ export const judgeNetplay = netJudge({ steps: STEPS, late: LATE, after: AFTER, j
   passed: "every machine's blockmap and class queries find in its own world what each filter keeps, with its own ids, cap and held queries" });
 
 const MONSTERS = { sv_nomonsters: 0 };
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1, serverCvars: MONSTERS }, { name: "ping100", players: 1, observers: 1, lag: "100,100", serverCvars: MONSTERS }];
+export const CONFIGS = onSnapshots([{ name: "lan", players: 1, observers: 1, serverCvars: MONSTERS }, { name: "ping100", players: 1, observers: 1, lag: "100,100", serverCvars: MONSTERS }]);
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsqueries", wad: buildNetQueriesPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);
