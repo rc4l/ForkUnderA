@@ -101,9 +101,10 @@ public:
 		return true;
 	}
 
+	// [Doruk-Aksoy] A client's snapshot mirror only draws the hidden copy scripts read, so no query finds it.
 	bool Matches(AActor *actor)
 	{
-		return ComputeQueryMatch(q.filters, order, [&](const Filter &f) { return Test(f, size_t(&f - q.filters.data()), actor); });
+		return (actor->NetworkFlags & NETFL_MIRROR) == 0 && ComputeQueryMatch(q.filters, order, [&](const Filter &f) { return Test(f, size_t(&f - q.filters.data()), actor); });
 	}
 
 	const Query &q;

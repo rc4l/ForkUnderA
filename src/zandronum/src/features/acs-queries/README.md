@@ -13,6 +13,8 @@ ACS actor queries: actors found in the blockmap or by class, filtered, sorted an
 - A run looks up its filters' classes and handles once, then tests each actor in
   `ComputeQueryFilterOrder`'s order; `FQ_FLAG` looks its flag up once per class it meets. Results are
   sorted by `ComputeQuerySort` (stable, capped at 1024) before any actor is given a handle.
+- On a snapshot-netcode client, no query finds a mirror (`NETFL_MIRROR`), the render shim drawn for an
+  actor whose hidden copy is the one scripts read.
 - Scripts save their queries from SAVEVER 4540, as one run of ints (`ComputeFlattenQueries`) with class
   and flag names saved as names; a damaged run loads as no queries.
 
@@ -36,5 +38,7 @@ ACS actor queries: actors found in the blockmap or by class, filtered, sorted an
   surviving a new game and the load. It fails with `ReadIds` taken out.
 - `fuactl scenarios netacsqueries`: the blockmap and class queries, the cap and a held query as CLIENTSIDE
   copies on the player's client, an observer and a late joiner, then on the server, each in its own world
-  with its own ids; `FQ_PLAYER` finds every player in the game. Leaving the imp's `SVC_KILLTHING` unsent
-  (`fua_debug_netdrop=55`) fails the clients' alive and dead filters.
+  with its own ids; `FQ_PLAYER` finds every player in the game. It runs on the snapshot netcode at
+  `fua_snap_nolegacy 2`, where taking out the `NETFL_MIRROR` skip finds every barrel twice on a client;
+  with snapshots off, leaving the imp's `SVC_KILLTHING` unsent (`fua_debug_netdrop=55`) fails the
+  clients' alive and dead filters.
