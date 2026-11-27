@@ -223,3 +223,16 @@ TEST(AcsQueries, ADamagedSaveLoadsNothing)
 	const std::vector<int32_t> twice = { 2, 7, 0, 0, 0, 0, 7, 0, 0, 0, 0 };
 	EXPECT_FALSE(ComputeUnflattenQueries(twice.data(), twice.size(), out));
 }
+
+TEST(AcsQueries, SavedNamesKeepOnePlaceEachAndNoneStaysNone)
+{
+	std::vector<int32_t> names;
+	EXPECT_EQ(ComputeInternName(names, 40), 1);
+	EXPECT_EQ(ComputeInternName(names, 7), 2);
+	EXPECT_EQ(ComputeInternName(names, 40), 1);
+	EXPECT_EQ(ComputeInternName(names, 0), 0);
+	EXPECT_EQ(names, (std::vector<int32_t>{ 40, 7 }));
+	EXPECT_EQ(ComputeNameAt(names, 2), 7);
+	EXPECT_EQ(ComputeNameAt(names, 0), 0);
+	EXPECT_EQ(ComputeNameAt(names, 3), 0);
+}

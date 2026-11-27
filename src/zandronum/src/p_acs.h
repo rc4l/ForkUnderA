@@ -48,6 +48,7 @@
 #include "sv_commands.h"
 #include "features/acs-strings/computation/stringpool_compute.h"
 #include "features/acs-queries/computation/queries_compute.h"
+#include "features/acs-traces/computation/traces_compute.h"
 
 #define LOCAL_SIZE				20
 #define NUM_MAPVARS				128
@@ -1112,6 +1113,7 @@ protected:
 	FBehavior	    *activeBehavior;
 	int				InModuleScriptNumber;
 	zx::acsqueries::ScriptQueries fua_queries;	// [Doruk-Aksoy] features/acs-queries: this script's queries, freed with it
+	zx::acstraces::ScriptTracers fua_tracers;	// [Doruk-Aksoy] features/acs-traces: this script's tracers, freed with it
 	bool			fua_clientside;	// [Doruk-Aksoy] features/acs-random: a CLIENTSIDE script, whose named streams are apart from every other script's
 	FString			activefontname; // [TP]
 

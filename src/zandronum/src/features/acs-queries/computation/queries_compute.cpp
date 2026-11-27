@@ -218,6 +218,22 @@ int32_t ComputeHighestId(const ScriptQueries &queries)
 	return highest;
 }
 
+int32_t ComputeInternName(std::vector<int32_t> &names, int32_t name)
+{
+	if (name == 0)
+		return 0;
+	const auto at = std::find(names.begin(), names.end(), name);
+	if (at != names.end())
+		return int32_t(at - names.begin() + 1);
+	names.push_back(name);
+	return int32_t(names.size());
+}
+
+int32_t ComputeNameAt(const std::vector<int32_t> &names, int32_t index)
+{
+	return index >= 1 && size_t(index) <= names.size() ? names[size_t(index) - 1] : 0;
+}
+
 std::vector<int32_t> ComputeFlattenQueries(const ScriptQueries &queries)
 {
 	std::vector<int32_t> out;

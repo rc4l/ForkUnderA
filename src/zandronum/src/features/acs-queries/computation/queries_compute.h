@@ -165,6 +165,12 @@ int32_t ComputeHighestId(const ScriptQueries &queries);
 std::vector<int32_t> ComputeFlattenQueries(const ScriptQueries &queries);
 bool ComputeUnflattenQueries(const int32_t *data, size_t count, ScriptQueries &queries);
 
+// [Doruk-Aksoy] A name's 1-based place in a savegame's name list, added when new; name 0 stays 0.
+int32_t ComputeInternName(std::vector<int32_t> &names, int32_t name);
+
+// [Doruk-Aksoy] The name at a 1-based place in a savegame's name list, 0 outside it.
+int32_t ComputeNameAt(const std::vector<int32_t> &names, int32_t index);
+
 // [Doruk-Aksoy] Maps every name a filter holds (class and flag names) through `map`.
 template <class Map>
 void ComputeRemapQueryNames(ScriptQueries &queries, Map map)
