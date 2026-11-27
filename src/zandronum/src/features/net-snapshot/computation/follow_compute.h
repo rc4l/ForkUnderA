@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+//-----------------------------------------------------------------------------
+//
 // Copyright (C) 2026 Doruk-Aksoy
 //
-// [Doruk-Aksoy] How a client's hidden legacy copy of a mirrored actor follows its mirror's life, below legacy suppression level 3.
+// Filename: follow_compute.h
+//
+// Description: How a client's hidden legacy copy of a mirrored actor follows
+// its mirror's life below legacy suppression level 3, and the render words a
+// mirror takes from that copy. Pure: ghostactor.cpp gathers the inputs.
+//
+//-----------------------------------------------------------------------------
 
 #ifndef __SNAP_FOLLOW_COMPUTE_H__
 #define __SNAP_FOLLOW_COMPUTE_H__
