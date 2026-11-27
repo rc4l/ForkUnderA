@@ -96,8 +96,9 @@ COLUMNS = [
 ]
 OPEN = ['capture.cpp', 'apply.cpp']
 
-# Unit tests are not parts: they declare nothing and are reached by no one.
-TEST_RE = re.compile(r'_test\.cpp$')
+# Unit tests are not parts: they declare nothing and are reached by no one. A wire test's
+# _nettest.cpp is one of them, routed to zandrox_tests_net rather than zandrox_tests.
+TEST_RE = re.compile(r'_(net)?test\.cpp$')
 
 
 def read(rel):
