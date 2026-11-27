@@ -24,6 +24,7 @@ under Customize Controls → FUA.
 |---|---|---|
 | `cl_fua_hitbox` | off | master toggle; the rest gray out behind it. A dev-mode setting: a client of a server without `sv_cheats` is refused it |
 | `cl_fua_hitbox_actors` / `_missiles` | on | which actors get boxes |
+| `cl_fua_hitbox_onetic` | on | draw actors spawned and destroyed inside one tic, such as a weapon's one-tic hitbox (see below) |
 | `cl_fua_hitbox_attackbox` | on | draw the attack box when it differs |
 | `cl_fua_hitbox_explosions` | on | draw explosion regions |
 | `cl_fua_hitbox_self` | on | include the camera's actor — your own body, or the player you are spectating |
@@ -58,8 +59,8 @@ reaches them — `P_RadiusAttack` records the region directly.
 ## Explosions are events, not objects
 
 `P_RadiusAttack` runs and returns inside a single tic, so there is no actor to hang the
-visualization on — regions go into a bounded store (`computation/blastrecords_compute.h`)
-and are drawn for ~1 second.
+visualization on — regions go into a bounded store (`computation/blastrecords_compute.h`, the
+shared `recordstore_compute.h`) and are drawn for ~1 second.
 
 `A_Explode` and `A_RadiusThrust` return early in client mode
 (`thingdef_codeptr.cpp:1113`/`1180`), so a client never runs `P_RadiusAttack` at all. That is
@@ -83,6 +84,26 @@ they are not. Two things the wireframe deliberately cannot show: the `P_CheckSig
 requirement, and that the effective radius is per-target (each target's own attack radius is
 subtracted from the distance).
 
+## One-tic actors are events too
+
+A weapon acts in `P_PlayerThink`, before `DThinker::RunThinkers`, and a fresh thinker ticks in the
+tic it was spawned (`TickThinkers`). So an actor a weapon spawns with a one-tic spawn state (MM8BDM
+classes use them as hitboxes, such as Toad Man's leap crush, spawned under him each tic of the
+fall) is destroyed inside the tic that made it. Every copy of the game is taken between tics, so no
+copy ever holds it and no box was drawn. Frozen (`freeze`) such actors never tick and pile up, which
+is why they showed only then.
+
+`AActor::fua_spawnTic` is the `gametic` an actor was spawned in. `AActor::Destroy` offers each
+actor to `NoteDestroyed`, which keeps the boxes of one spawned in that same tic
+(`ComputeTicBoxWanted`): a missile, solid or shootable, never `+NOINTERACTION`, so the zero-tic
+helpers mods spawn by the dozen stay out. The record holds where its tic began (`PrevX`) and where
+it went, reaches the frames through the handoff as a blast does, and is drawn by the frames of the
+copy of that tic's end, whose level time is one more (`P_Ticker`'s `level.time++`,
+`ComputeTicBoxShown`), interpolated like a live actor, under the same actor/missile and attack-box
+toggles. The level time and not `gametic` is the clock: `gametic` goes on through a pause, where the
+copy still shows the last tic that ran, and those boxes with it. An actor a script spawns
+after its thinkers have run lives to the tic's end and is in that copy, so the record leaves it out.
+
 ## Attack-extent replication is debug-only
 
 `AActor::SetHitSize` is normally unnetworked — the attack extent is server-authoritative.
@@ -99,14 +120,20 @@ so existing traffic is byte-for-byte unchanged. See also
 
 - `boxedges_compute` — box edges as a `GL_LINES` vertex list, the blast prism, and the
   `fulldamagedistance` clamp mirrored from `P_RadiusAttack`.
-- `blastrecords_compute` — the bounded, insertion-ordered blast store.
+- `recordstore_compute` — the bounded, insertion-ordered store of expiring events.
+- `blastrecords_compute` — a blast's record and the blasts' store.
+- `ticboxes_compute` — a one-tic actor's record, which going actors are kept and which frames show them.
 - `vizgate_compute` — `ResolveLineWidth`.
 
 `hitboxviz.{h,cpp}` is the engine glue every build has:
 - the cvars and the `fua_hitbox` CCMD;
-- the boxes and blasts;
+- the boxes, the one-tic actors' records and the blasts;
 - the backend's collection (`CollectBackendFrame`, `BackendLines`);
 - the server's side.
+
+`ticboxgame.cpp` is the one-tic actors' game half: `NoteDestroyed` reads the live actor a tic destroys
+and hands a plain record to `PushTicBox`, so the renderer's files never read the game
+(`tools/boundary-rules.json` excludes it from `renderer-reads-the-copy`, as it does the damage tint's).
 
 `hitboxviz_gl.cpp` is GL's half: per-scene collection and the GL draw. Only builds with GL
 compile it, so a build without GL (the server, the browser) still has the backend's overlay.
@@ -149,7 +176,9 @@ and are not implemented.
 - `p_map.cpp` — record/broadcast in `P_RadiusAttack` (right after the `fulldamagedistance`
   clamp, so the drawing can't disagree with the simulation); debug-only send in
   `AActor::SetHitSize`.
-- `p_setup.cpp` — `ClearBlasts()` in `P_SetupLevel`, so regions don't survive a map change.
+- `p_setup.cpp` — `ClearRecords()` in `P_SetupLevel`, so regions and one-tic boxes don't survive a map change.
+- `actor.h` — `fua_spawnTic`, among the cold fields; `p_mobj.cpp` — `AActor::StaticSpawn` sets it,
+  `AActor::Destroy` calls `NoteDestroyed` first, while the actor still stands where it went.
 - `network.h`, `network_enums.h`, `sv_commands.{h,cpp}`, `cl_main.cpp`,
   `protocolspec/spec.misc.txt`, `protocolspec/spec.things.txt` — `SVC2_DEBUGEXPLOSION` and the
   two optional hit-size fields.

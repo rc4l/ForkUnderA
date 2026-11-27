@@ -41,6 +41,7 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/decals/decals.h"   // [rc4l] a missile's mark
+#include "features/hitboxviz/hitboxviz.h"   // [MGOOOOOO] NoteDestroyed
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -5269,6 +5270,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	actor->x = actor->PrevX = ix;
 	actor->y = actor->PrevY = iy;
 	actor->z = actor->PrevZ = iz;
+	actor->fua_spawnTic = gametic;   // [MGOOOOOO] features/hitboxviz: one gone this same tic is drawn from its record
 
 	// [CK] Desync issues occur due to not having marked spawning actors with
 	// the proper lastX/Y/Z, this will hopefully fix the floating glitch where
@@ -5721,6 +5723,9 @@ bool AActor::IsActive( void ) const
 
 void AActor::Destroy ()
 {
+	// [MGOOOOOO] features/hitboxviz: an actor spawned this same tic leaves its box for the tic's frames, while it still stands where it went.
+	zx::hitboxviz::NoteDestroyed( this );
+
 	// [Kaori-Chani] features/net-snapshot: the cosmetic events mark goes with the actor.
 	zx::netsnapshot::ForgetCosmetic( this );
 
