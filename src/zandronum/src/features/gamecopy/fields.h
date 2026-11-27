@@ -82,8 +82,8 @@ ZX_ACTOR_FIELD(scaleX)
 ZX_ACTOR_FIELD(scaleY)
 ZX_ACTOR_FIELD(RenderStyle)
 ZX_ACTOR_FIELD(renderflags)
+ZX_ACTOR_FIELD(renderflags2)
 ZX_ACTOR_FIELD(alpha)
-ZX_ACTOR_FIELD(fillcolor)
 ZX_ACTOR_FIELD(Translation)
 ZX_ACTOR_FIELD(flags)
 ZX_ACTOR_FIELD(flags2)
@@ -117,6 +117,7 @@ ZX_ACTOR_DERIVED(int, playerIndex)           // [rc4l] its player's number, -1 f
 ZX_ACTOR_DERIVED(bool, inventory)
 ZX_ACTOR_DERIVED(bool, cameraIcon)           // [rc4l] the camera player's icon, hidden outside the chase camera
 ZX_ACTOR_DERIVED(int, bobTic)                // [rc4l] FloatBobPhase plus the level's tic
+ZX_ACTOR_DERIVED(DWORD, fillcolor)            // [Doruk-Aksoy] the stencil colour, read only for a style that draws with it (STYLEF_ColorIsFixed), since it sits in the cold fields
 ZX_ACTOR_DERIVED(fixed_t, attackRadius)
 ZX_ACTOR_DERIVED(fixed_t, attackHeight)
 ZX_ACTOR_DERIVED(bool, playerBody)           // [rc4l] a player's own body, the only actor its floor tints

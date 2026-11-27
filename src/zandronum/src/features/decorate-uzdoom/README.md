@@ -61,8 +61,11 @@ to `RF2_LIGHTMULTALPHA`, since its old bit is UZDoom's `DONTFLIP`, and a save be
 `ComputeRehomedSaveRenderFlags`. `XFLIP`, `YFLIP` and `SPRITEFLIP` are drawn as UZDoom draws them, on GL and the
 backend alike: one actor frame pick (`gl_GetActorSpriteFrame`) serves GL, the derived sprites and the tic pieces, and
 `ComputeSpriteVFlip` swaps the texture's top and bottom. `DONTFLIP` is a name only, as in UZDoom, whose hardware
-renderer never reads it. The other `RF_`/`RF2_` names are declared but not yet settable: each comes with its renderer
-work.
+renderer never reads it. The render copy takes `renderflags2`, which holds `fillcolor`'s old place on the render line (features/actor-layout). A mirror
+leaves out `INVISIBLEINMIRRORS` and the view outside one leaves out `ONLYVISIBLEINMIRRORS` (`ComputeMirrorHidesSprite`),
+a mirror being GL's portal or the backend's mirror walk; the backend's reflective floors and ceilings redraw the frame's
+own sprites, so they hold neither flag yet. `NODYNAMICLIGHTING` leaves an actor's sprite, model and a player's weapon
+to the sector's light. The other `RF_`/`RF2_` names are declared but not yet settable: each comes with its renderer work.
 
 ## Gameplay flags
 
@@ -120,6 +123,10 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
 - Render words: `actor.h` (UZDoom's `RF_`/`RF2_`, `renderflags2`), `p_mobj.cpp` (`AActor::Serialize`'s `renderflags2` and
   its remap), `version.h` (4539), `network.h` (`FLAGSET_RENDERFLAGS2`), `cl_main.cpp`, `sv_commands.cpp`,
   `thingdef/thingdef_codeptr.cpp`, `thingdef/thingdef_data.cpp` (`LIGHTMULTALPHA`), `features/gamecopy/lights.cpp`.
+- Mirror and light flags: `actor.h` (`renderflags2` and `fillcolor` swap places), `features/gamecopy/fields.h` and
+  `gamecopy.cpp` (`renderflags2`, and `fillcolor` read only for a stencil style), `features/sprites/spritebuild.cpp` (`ViewRejects`),
+  `features/levelmesh/pointlight.cpp` (`ActorLight`), `gl/scene/gl_sprite.cpp`, `gl/scene/gl_spritelight.cpp`, and their rows
+  in `thingdef/thingdef_data.cpp`.
 - Sprite flips: `features/materials/spriteframe.{h,cpp}` (`gl_GetActorSpriteFrame`), `gl/scene/gl_sprite.cpp`,
   `features/sprites/spritebuild.cpp` (`DeriveSprite`, `TicPieceHolds`), `features/sprites/computation/spriteframe_compute`,
   and their rows in `thingdef/thingdef_data.cpp`.
@@ -136,13 +143,16 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
 - `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
-  log, so each expectation is UZDoom's own: 49 of 49 pass there.
+  log, so each expectation is UZDoom's own: 50 of 50 pass there.
 - `fuactl scenarios decorateflags` (`tools/fuactl/scenarios/decorateflags.mjs`): the moved flags read back at map start,
   from this build's save, from a save an older build wrote (`--old PATH` or `FUACTL_OLD_ENGINE`), and on a server, its
   player, observer and late joiner. It fails with the remap left out, and online with `SetThingFlags` dropped.
 - `tools/flag_bits_snapshot.py` (CI): every DECORATE flag's bit, refusing a moved one until SAVEVER is bumped.
-- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (49 of 49 pass there); each
+- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (50 of 50 pass there); each
   behaviour check fails with its flag taken out.
 - `node uzdoom/flipparity.mjs` (from `tools/fuactl`): a four-colour sprite plain, XFLIP, YFLIP and both, and an
   eight-rotation sprite plain, SPRITEFLIP and SPRITEFLIP with XFLIP, each read by its quarters' colours in UZDoom's
   picture and ours on each API.
+- `node uzdoom/mirrorlightparity.mjs`: sprites before a line mirror and in direct view, plain, INVISIBLEINMIRRORS and
+  ONLYVISIBLEINMIRRORS, read by colour, and two grey sprites beside a red light, plain and NODYNAMICLIGHTING, read as lit
+  or not, each against UZDoom's picture.

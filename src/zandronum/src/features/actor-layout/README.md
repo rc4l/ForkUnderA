@@ -16,6 +16,10 @@ access trace says otherwise. On the three laps a monster now touches ~8 lines ev
   pulling in the next actor's first line, and the thinker loop waited on it. `DThinker::TickThinkers` now fetches the next
   thinker's hot lines while one ticks (`TickBytes`, two more lines on a server), and the render copy fetches the lines
   `TakeActor` reads a few actors ahead (`CopyBytes`).
+- **The second render word.** The render copy reads `renderflags2` every tic, so it holds line 4's place of `fillcolor`,
+  which moved to the cold fields: the copy reads the stencil colour only for a style that draws with it
+  (`STYLEF_ColorIsFixed`). On Sunder MAP11 (6,029 actors) a cold read of it took the actor take's median p95 from 0.307
+  to 0.369 ms; in fillcolor's place it reads 0.253 against 0.252 without it, interleaved three rounds.
 - **Water levels.** `UpdateWaterLevel` ran on every move and wrote `waterlevel` and `boomwaterlevel` each time, zeros on a
   dry map. It now measures into a local and stores each only when it changes (`ComputeWaterStore`), with both on line 2.
   They stay two fields: DECORATE reads `waterlevel` as a native int at its offset.

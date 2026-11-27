@@ -67,3 +67,13 @@ TEST(SpriteFrame, YFlipSwapsTopAndBottom)
 	EXPECT_EQ(vt, 0.75f);
 	EXPECT_EQ(vb, 0.25f);
 }
+
+TEST(SpriteFrame, MirrorFlagsHideInsideOrOutsideAMirror)
+{
+	EXPECT_FALSE(ComputeMirrorHidesSprite(false, false, false));
+	EXPECT_FALSE(ComputeMirrorHidesSprite(true, false, false));
+	EXPECT_FALSE(ComputeMirrorHidesSprite(false, true, false));
+	EXPECT_TRUE(ComputeMirrorHidesSprite(true, true, false));
+	EXPECT_TRUE(ComputeMirrorHidesSprite(false, false, true));
+	EXPECT_FALSE(ComputeMirrorHidesSprite(true, false, true));
+}

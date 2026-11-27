@@ -55,6 +55,8 @@ void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void
 // [rc4l] gl_SetDynSpriteLight for an actor, summed the way GL sums it.
 void ActorLight(const zx::gamecopy::ActorRecord &self, float out[3])
 {
+	// [Doruk-Aksoy] UZDoom's NODYNAMICLIGHTING leaves an actor, and a player's weapon, to the sector's light alone.
+	if (self.renderflags2 & RF2_NODYNAMICLIGHTING) return;
 	PointLight(self.x, self.y, self.z + (self.height >> 1), self.subsector, self.who, true, out);
 }
 
