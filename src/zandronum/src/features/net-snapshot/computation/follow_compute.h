@@ -25,6 +25,9 @@ uint32_t ComputeLegacyDeathFlags(uint32_t flags, uint32_t corpse, uint32_t clear
 // [Doruk-Aksoy] Whether a copy whose ghost left, its actor removed on the server, is destroyed: anything but inventory, which a pickup also takes off the wire while the legacy pickup commands still handle it.
 bool ComputeLeaveDestroysLegacy(bool isInventory);
 
+// [Doruk-Aksoy] Whether a mirror may turn solid and enter the blockmap: only where no hidden legacy copy holds its id (level 3), since that copy follows it, blocks the player already, and the blockmap searches would find the actor twice.
+bool ComputeMirrorMayCollide(bool legacyHidden);
+
 // [Doruk-Aksoy] A copy's flag word once raised: `corpse` taken off and the `restored` bits put back as its class has them.
 uint32_t ComputeLegacyRaisedFlags(uint32_t flags, uint32_t classFlags, uint32_t corpse, uint32_t restored);
 

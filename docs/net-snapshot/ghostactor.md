@@ -59,6 +59,9 @@ without running its action, and the wire's corpse bit as a death or a raise (`Co
 `ComputeLegacyDeathFlags`, `ComputeLegacyRaisedFlags`, `ComputeLegacyDeathHealth`). Without it a
 client read a placed barrel's angle as 0, a walker's position as where it spawned, and a killed
 monster as alive. A remote player's own actor takes its angle the same tic even when it has not moved.
+A mirror with a hidden legacy copy never turns solid either (`ComputeMirrorMayCollide`): the copy,
+following it, already blocks the player, and both in the blockmap made a client's searches find the actor
+twice (netacsqueries). At level 3 the mirror is all there is, and it collides as before.
 When a ghost leaves, the server having removed its actor, the legacy copy goes with it
 (`ComputeLeaveDestroysLegacy`): kept hidden, an exploded rocket outlived the server's for good, since a
 client never explodes a server's missile itself. Inventory is the exception, since a pickup also leaves
