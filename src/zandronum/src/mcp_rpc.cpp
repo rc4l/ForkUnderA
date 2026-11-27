@@ -47,6 +47,7 @@
 #include "r_data/colormaps.h" // [rc4l] FDynamicColormap, for world.sectorstate
 #include "g_shared/a_pickups.h" // [rc4l] AInventory, which world.actors leaves out when carried
 #include "features/mcp-bridge/computation/netrpc_compute.h"
+#include "features/net-snapshot/ghostactor.h"	// [Doruk-Aksoy] MirrorCount, MirrorAt, MirrorPlayerNum, for world.actors
 #include "features/net-session/netrole.h"
 #include "features/net-protocol/lineflags.h"
 #include "mcp_sample.h"
@@ -749,13 +750,40 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		// [rc4l] The synced actors by network id (args netid, limit, players, all for client-only ones too, owned for carried inventory too), to compare one instance's world with another's.
 		long limit = 1024, netid = -1;
-		bool onlyPlayers = false, all = false, owned = false;
+		bool onlyPlayers = false, all = false, owned = false, allMirrors = false;
 		GetInt( args, "limit", limit );
 		GetInt( args, "netid", netid );
 		GetBool( args, "players", onlyPlayers );
 		GetBool( args, "all", all );
 		GetBool( args, "owned", owned );
+		// [Doruk-Aksoy] mirrors: every snapshot mirror too, beside the legacy copy that holds its id below level 3.
+		GetBool( args, "mirrors", allMirrors );
 		std::vector<zx::mcp::WorldActorRow> rows;
+		// [Doruk-Aksoy] One actor's row under `id`, its player `playerNum`, a mirror marked.
+		auto take = [&]( AActor *mo, unsigned id, int playerNum, bool mirror )
+		{
+				zx::mcp::WorldActorRow r;
+				r.netId = id;
+				r.mirror = mirror;
+				r.cls = ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
+				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z );
+				r.prevX = FIXED2DBL( mo->PrevX ); r.prevY = FIXED2DBL( mo->PrevY ); r.prevZ = FIXED2DBL( mo->PrevZ );
+				r.floorZ = FIXED2DBL( mo->floorz ); r.floorClip = FIXED2DBL( mo->floorclip );
+				r.velX = FIXED2DBL( mo->velx ); r.velY = FIXED2DBL( mo->vely ); r.velZ = FIXED2DBL( mo->velz );
+				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
+				r.health = mo->health;
+				r.player = playerNum;
+				r.scaleX = FIXED2DBL( mo->scaleX ); r.scaleY = FIXED2DBL( mo->scaleY );
+				int drawnSprite = mo->sprite;
+				fixed_t drawnScaleX = mo->scaleX, drawnScaleY = mo->scaleY;
+				if ( mo->player != NULL ) P_CheckPlayerSprite( mo, drawnSprite, drawnScaleX, drawnScaleY );
+				r.drawnScaleX = FIXED2DBL( drawnScaleX ); r.drawnScaleY = FIXED2DBL( drawnScaleY );
+				r.translation = mo->Translation;
+				r.renderFlags = mo->renderflags;
+				r.renderFlags2 = mo->renderflags2;
+				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
+				rows.push_back( r );
+		};
 		if ( InLevel() )
 		{
 			TThinkerIterator<AActor> it;
@@ -767,24 +795,19 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				if ( onlyPlayers && mo->player == NULL ) continue;
 				// [rc4l] Inventory a player carries is in no place, and only the server gives it a network id.
 				if ( !owned && mo->IsKindOf( RUNTIME_CLASS( AInventory )) && static_cast<AInventory *>( mo )->Owner != NULL ) continue;
-				zx::mcp::WorldActorRow r;
-				r.netId = mo->NetID;
-				r.cls = ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
-				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z );
-				r.prevX = FIXED2DBL( mo->PrevX ); r.prevY = FIXED2DBL( mo->PrevY ); r.prevZ = FIXED2DBL( mo->PrevZ );
-				r.floorZ = FIXED2DBL( mo->floorz ); r.floorClip = FIXED2DBL( mo->floorclip );
-				r.velX = FIXED2DBL( mo->velx ); r.velY = FIXED2DBL( mo->vely ); r.velZ = FIXED2DBL( mo->velz );
-				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
-				r.health = mo->health;
-				r.player = ( mo->player != NULL ) ? (int)( mo->player - players ) : -1;
-				r.scaleX = FIXED2DBL( mo->scaleX ); r.scaleY = FIXED2DBL( mo->scaleY );
-				int drawnSprite = mo->sprite;
-				fixed_t drawnScaleX = mo->scaleX, drawnScaleY = mo->scaleY;
-				if ( mo->player != NULL ) P_CheckPlayerSprite( mo, drawnSprite, drawnScaleX, drawnScaleY );
-				r.drawnScaleX = FIXED2DBL( drawnScaleX ); r.drawnScaleY = FIXED2DBL( drawnScaleY );
-				r.translation = mo->Translation;
-				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
-				rows.push_back( r );
+				take( mo, mo->NetID, ( mo->player != NULL ) ? (int)( mo->player - players ) : -1, false );
+			}
+			// [Doruk-Aksoy] A snapshot client's mirrors sit in STAT_INFO with NetID 0, where the walk above never looks: each listed under its snapshot id, the server's NetID.
+			for ( unsigned int k = 0; k < zx::netsnapshot::MirrorCount(); k++ )
+			{
+				unsigned int id = 0;
+				AActor *m = zx::netsnapshot::MirrorAt( k, id );
+				if ( m == NULL || ( netid >= 0 && id != (unsigned)netid ) ) continue;
+				AActor *legacy = g_ActorNetIDList.findPointerByID( (unsigned short)id );
+				if ( !zx::mcp::ComputeListsMirror( legacy != NULL && legacy != m, allMirrors ) ) continue;
+				const int playerNum = zx::netsnapshot::MirrorPlayerNum( m );
+				if ( onlyPlayers && playerNum < 0 ) continue;
+				take( m, id, playerNum, true );
 			}
 		}
 		zx::mcp::ComputeSortActorRows( rows );

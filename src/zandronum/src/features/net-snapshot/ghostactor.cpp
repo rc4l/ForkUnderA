@@ -1375,6 +1375,20 @@ int zx::netsnapshot::MirrorPlayerNum(const AActor* pActor)
 	return -1;
 }
 
+unsigned int zx::netsnapshot::MirrorCount()
+{
+	return g_mirrorIds.Size();
+}
+
+AActor* zx::netsnapshot::MirrorAt(unsigned int k, unsigned int& id)
+{
+	id = 0;
+	if ((g_mirror == NULL) || (k >= g_mirrorIds.Size()))
+		return NULL;
+	id = g_mirrorIds[k];
+	return g_mirror[id];
+}
+
 AActor* zx::netsnapshot::MirrorForNetID(unsigned int id, bool bCount)
 {
 	if (g_mirror == NULL)

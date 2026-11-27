@@ -72,9 +72,12 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
 - `ping`, `capabilities` (self-describing), `console.exec {text}` (held while the engine starts, as after a `wad_reload`, and run in order once it is up, since the console stores a command then as a thinker the title's first demo throws away; answers `{"held":true}`)
 - **Determinism**: `sim.tic`, `sim.hash`, `sim.seed {op:get|set,value}`, `sim.pause`, `sim.resume`,
   `sim.step {tics}`, `sim.snapshot {slot}`, `sim.restore {slot}`
-- **Structured state**: `state.player`, `state.actors {limit}`; `world.actors {netid, limit, players, all, owned}`
+- **Structured state**: `state.player`, `state.actors {limit}`; `world.actors {netid, limit, players, all, owned, mirrors}`
   lists the synced actors in network id order (`netrpc_compute`), with positions and velocities to a
-  thousandth of a map unit, so two instances of one netgame can be compared actor by actor.
+  thousandth of a map unit and both render words, so two instances of one netgame can be compared actor by actor.
+  A snapshot client's mirrors, parked in `STAT_INFO` with NetID 0, are listed under their snapshot id
+  (`MirrorCount`, `MirrorAt`), marked `mirror`: where no legacy copy holds the id, or every one with `mirrors`
+  (`ComputeListsMirror`).
   `world.sectorstate {first, count}`, `world.sidestate {first, count}` and `world.linestate {first, count}`
   page through every sector's plane heights, light, colour, fade, flats, gravity, friction, special,
   reflection, scale and rotation, every sidedef's textures, light and flags, and every line's alpha and the
