@@ -476,6 +476,11 @@ async function eachVulkanLaunch({ name, wad, maps, iwad, port, size, side }, bod
   return { lines, failed };
 }
 
+// [Doruk-Aksoy] How long compareCounter waits out a hold of `tics`: twice their game time, and never under the 30 s every wait had.
+export function holdWaitMs(tics) {
+  return Math.max(30000, Math.ceil((2000 * tics) / 35));
+}
+
 // [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
 // [Doruk-Aksoy] `holdTics` is how long it stands at each vantage, longer for something that takes the level a while, such as monsters crossing it.
 // [rc4l] `counter` may be a list, each judged from its own command's answer.
@@ -484,7 +489,8 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
     for (const v of vantages) {
       await c.rpc("sim.resume", {}).catch(() => {});
       await c.rpc("player.setpos", v.at);
-      await cap.waitTics(c, holdTics);
+      // [Doruk-Aksoy] Twice the hold's game time, so a hold past half a minute (monsters crossing a big map) is not cut off.
+      await cap.waitTics(c, holdTics, { timeoutMs: scaled(holdWaitMs(holdTics)) });
     }
     const judged = [];
     for (const k of [counter].flat()) judged.push(judgeCounter(map, await cap.exec(c, k.command, { quietMs: 400 }), k));

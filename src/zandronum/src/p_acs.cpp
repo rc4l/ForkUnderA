@@ -35,6 +35,7 @@
 ** real way to test it.
 */
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include <assert.h>
 #include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
 #include "features/handoff/gamethread.h"   // [rc4l] AskMain
@@ -12156,6 +12157,7 @@ scriptwait:
 		case PCD_SETLINEBLOCKING:
 			{
 				int line;
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 				FLineIdIterator itr(STACK(2));
 				while ((line = itr.Next()) >= 0)
@@ -12196,6 +12198,7 @@ scriptwait:
 		case PCD_SETLINEMONSTERBLOCKING:
 			{
 				int line;
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 				FLineIdIterator itr(STACK(2));
 				while ((line = itr.Next()) >= 0)

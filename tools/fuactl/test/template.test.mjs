@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, portAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, writeTemplateFile, FILL_CHECK, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, holdWaitMs, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, portAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, writeTemplateFile, FILL_CHECK, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -458,4 +458,9 @@ test("othersAfterClosing waits for engines that are closing", async () => {
   assert.equal(staying, 2);
   assert.equal(clock, 1500);
   assert.equal(await othersAfterClosing({ count: () => 0 }), 0);
+});
+
+test("a counter's hold is waited out for twice its game time, never under 30 s", () => {
+  assert.equal(holdWaitMs(35), 30000);
+  assert.equal(holdWaitMs(35 * 34), 68000);
 });

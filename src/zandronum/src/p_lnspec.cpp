@@ -34,6 +34,7 @@
 ** or false if it could not perform the desired action.
 */
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include "doomstat.h"
 #include "p_local.h"
 #include "p_lnspec.h"
@@ -2884,6 +2885,7 @@ FUNC(LS_Line_SetBlocking)
 		if (arg2 & 1) clearflags |= flagtrans[i];
 	}
 
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 	FLineIdIterator itr(arg0);
 	int line;
 	while ((line = itr.Next()) >= 0)
@@ -3435,6 +3437,7 @@ FUNC(LS_ClearForceField)
 			if (line->backsector != NULL && line->special == ForceField)
 			{
 				line->flags &= ~(ML_BLOCKING|ML_BLOCKEVERYTHING);
+				zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 				line->special = 0;
 				line->sidedef[0]->SetTexture(side_t::mid, FNullTextureID());
 				line->sidedef[1]->SetTexture(side_t::mid, FNullTextureID());
@@ -3462,6 +3465,7 @@ FUNC(LS_GlassBreak)
 	bool quest1, quest2;
 
 	ln->flags &= ~(ML_BLOCKING|ML_BLOCKEVERYTHING);
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 
 	// [BC] If we're the server, update this line's blocking.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
