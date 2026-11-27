@@ -4,6 +4,7 @@
 #include "features/acs-traces/acstraces.h"
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 #include "actor.h"
@@ -17,6 +18,7 @@
 #include "p_tags.h"
 #include "p_trace.h"
 #include "r_defs.h"
+#include "r_sky.h"
 #include "r_state.h"
 #include "tables.h"
 #include "textures/textures.h"
@@ -24,8 +26,9 @@
 #include "features/acs-handles/acshandles.h"
 #include "features/acs-queries/acsqueries.h"
 
-// [Doruk-Aksoy] The SAVEVER from which scripts save their tracers.
+// [Doruk-Aksoy] The SAVEVER from which scripts save their tracers, and from which tracers save their rules.
 static const int kTracerSaveVersion = 4541;
+static const int kTracerRulesSaveVersion = 4542;
 extern int SaveVersion;
 
 namespace zx { namespace acstraces {
@@ -108,8 +111,10 @@ Hit HitOf(const FTraceResults &res, const Fixed3 &dir)
 	r.lineId = res.Line != NULL ? tagManager.GetFirstLineID(res.Line) : 0;
 	r.side = res.Side;
 	r.tier = res.Tier;
-	r.sector = SectorOf(res.Sector);
-	r.sectorTag = res.Sector != NULL ? tagManager.GetFirstSectorTag(&sectors[res.Sector->sectornum]) : 0;
+	// [Doruk-Aksoy] Trace() leaves an actor hit's sector as the last wall's, so it is the actor's own.
+	const sector_t *sector = res.HitType == TRACE_HitActor && res.Actor != NULL ? res.Actor->Sector : res.Sector;
+	r.sector = SectorOf(sector);
+	r.sectorTag = sector != NULL ? tagManager.GetFirstSectorTag(&sectors[sector->sectornum]) : 0;
 	r.ffloorSector = ControlSectorOf(res.ffloor);
 	r.crossedWater = SectorOf(res.CrossedWater);
 	r.crossed3DWater = ControlSectorOf(res.Crossed3DWater);
@@ -120,6 +125,81 @@ Hit HitOf(const FTraceResults &res, const Fixed3 &dir)
 int32_t ToAcs(fixed_t value)
 {
 	return acsfields::ComputeFixedToAcs(zx::raw(value));
+}
+
+// [Doruk-Aksoy] Whether a hit is sky, as Trace()'s TRACE_NoSky judges it.
+bool IsSky(const FTraceResults &res)
+{
+	if (res.HitType == TRACE_HitFloor || res.HitType == TRACE_HitCeiling)
+		return res.HitTexture == skyflatnum;
+	return res.HitType == TRACE_HitWall && res.Tier == TIER_Upper && res.Line != NULL && res.Line->backsector != NULL
+		&& res.Line->frontsector->GetTexture(sector_t::ceiling) == skyflatnum && res.Line->backsector->GetTexture(sector_t::ceiling) == skyflatnum;
+}
+
+// [Doruk-Aksoy] One fua_Trace: the tracer's rules, their actor filters looked up once, and the hits they keep.
+struct RuleTrace
+{
+	explicit RuleTrace(const std::vector<Rule> &r, const Fixed3 &d, bool sky) : rules(r), dir(d), noSky(sky), filters(r.size())
+	{
+		for (size_t i = 0; i < rules.size(); ++i)
+		{
+			if (ComputeRuleFilterArg(rules[i].filter.kind) == acsqueries::kArgInvalid || rules[i].filter.kind >= kTqLineFlag || rules[i].filter.kind == 0)
+				continue;
+			filters[i].reset(new acsqueries::ActorFilters(std::vector<acsqueries::Filter>(1, rules[i].filter)));
+			// [Doruk-Aksoy] A rule whose handle's actor is gone never matches.
+			if (!filters[i]->Resolve())
+				filters[i].reset();
+		}
+	}
+
+	bool Test(const Rule &rule, const FTraceResults &res)
+	{
+		const size_t i = size_t(&rule - rules.data());
+		switch (rule.filter.kind)
+		{
+		case kTqLineFlag:
+		case kTqSpecial: return res.Line != NULL && ComputeLineFilterMatch(rule.filter, res.Line->flags, res.Line->special);
+		case kTqTexture: return (TextureOf(res) == rule.filter.a) == (rule.filter.b != 0);
+		default: return res.Actor != NULL && filters[i] != NULL && filters[i]->Matches(res.Actor);
+		}
+	}
+
+	ETraceStatus Decide(const FTraceResults &res)
+	{
+		// [Doruk-Aksoy] A client's snapshot mirror only draws the actor scripts read, so no rule ever sees one.
+		if (res.HitType == TRACE_HitActor && res.Actor != NULL && (res.Actor->NetworkFlags & NETFL_MIRROR))
+			return TRACE_Skip;
+		decided = true;
+		lastType = res.HitType;
+		lastDistance = res.Distance;
+		// [Doruk-Aksoy] With TRF_NOSKY the sky is no hit: the trace ends there and keeps nothing of it.
+		if (noSky && IsSky(res))
+			return TRACE_Stop;
+		const int kind = ComputeHitKind(res.HitType, res.Tier);
+		const int action = ComputeRuleAction(rules, kind, [&](const Rule &r) { return Test(r, res); });
+		ComputeRuleRecord(run, action, HitOf(res, dir));
+		return ETraceStatus(ComputeRuleStatus(action, kind));
+	}
+
+	// [Doruk-Aksoy] Whether the rules already saw the hit the trace ended on.
+	bool Saw(const FTraceResults &res) const
+	{
+		return decided && res.HitType == lastType && res.Distance == lastDistance;
+	}
+
+	const std::vector<Rule> &rules;
+	const Fixed3 dir;
+	const bool noSky;
+	std::vector<std::unique_ptr<acsqueries::ActorFilters>> filters;
+	RuleRun run;
+	bool decided = false;
+	int lastType = TRACE_HitNone;
+	fixed_t lastDistance = 0;
+};
+
+ETraceStatus CheckRules(FTraceResults &res, void *userdata)
+{
+	return static_cast<RuleTrace *>(userdata)->Decide(res);
 }
 
 } // namespace
@@ -151,7 +231,8 @@ void TracerClear(ScriptTracers &tracers, int32_t id)
 int LineTrace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t h, int32_t angle, int32_t distance, int32_t pitch,
 	int flags, int32_t offsetZ, int32_t offsetForward, int32_t offsetSide)
 {
-	if (!tracers.Clear(id))
+	// [Doruk-Aksoy] A new trace drops the last one's hits but keeps the rules.
+	if (!tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
 		return 0;
 	AActor *t1 = h == 0 ? activator : acshandles::ActorOf(h);
 	if (t1 == NULL || distance <= 0)
@@ -170,11 +251,66 @@ int LineTrace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t h, 
 	LineTraceData data = { t1, (flags & kTrfThruActors) != 0, (flags & kTrfThruSpecies) != 0 };
 	FTraceResults res;
 	const fixed_t sx = fixed_t::FromRaw(start.x), sy = fixed_t::FromRaw(start.y);
-	Trace(sx, sy, fixed_t::FromRaw(start.z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
+	::Trace(sx, sy, fixed_t::FromRaw(start.z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
 		fixed_t::FromRaw(distance), masks.actors, masks.lines, t1, res, masks.trace, CheckLineTrace, &data);
 	const Hit hit = HitOf(res, dir);
 	tracers.SetResult(id, hit, hit.v[kTrHitType] != kHitNone ? std::vector<Hit>(1, hit) : std::vector<Hit>());
 	return hit.v[kTrHitType];
+}
+
+bool TraceRule(ScriptTracers &tracers, int32_t id, int kind, int action, int count, int filter, int32_t a, int32_t b, const char *name)
+{
+	if (count < 1)
+		filter = 0;
+	const acsqueries::ArgKind arg = ComputeRuleFilterArg(filter);
+	if (arg != acsqueries::kArgNone && arg != acsqueries::kArgInvalid && count < 2)
+		return false;
+	Rule rule = { kind, action, { filter, arg == acsqueries::kArgNone ? 0 : a, count >= 3 ? b : ComputeRuleFilterDefaultB(filter) } };
+	bool known = true;
+	if (arg == acsqueries::kArgName)
+	{
+		if (name == NULL || *name == 0)
+			return false;
+		rule.filter.a = FName(name).GetIndex();
+		known = filter == kTqTexture ? TexMan.CheckForTexture(name, FTexture::TEX_Any).Exists() : acsqueries::FilterNameKnown(filter, name);
+	}
+	else if (arg == acsqueries::kArgHandle)
+		known = acshandles::ActorOf(a) != NULL;
+	return tracers.AddRule(id, rule) && known;
+}
+
+int Trace(ScriptTracers &tracers, int32_t id, int32_t x, int32_t y, int32_t z, int32_t dx, int32_t dy, int32_t dz, int32_t distance, int flags, int32_t ignore)
+{
+	if (!tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
+		return 0;
+	AActor *skip = ignore != 0 ? acshandles::ActorOf(ignore) : NULL;
+	Fixed3 dir;
+	if ((ignore != 0 && skip == NULL) || distance <= 0 || !ComputeTraceUnit(dx, dy, dz, dir))
+		return 0;
+	// [Doruk-Aksoy] TRF_BLOCKSELF needs an actor to be blocked as, so it counts only with an ignored one; the rules stand in for the THRU flags.
+	if (skip == NULL)
+		flags &= ~kTrfBlockSelf;
+	const Shooter shooter = skip == NULL ? Shooter{ false, false, false, false } : Shooter{
+		(skip->flags & MF_MISSILE) != 0 || (skip->BounceFlags & BOUNCE_MBF) != 0,
+		(skip->flags3 & MF3_NOBLOCKMONST) != 0 || ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (skip->flags & MF_FRIENDLY)),
+		skip->player != NULL,
+		(skip->flags & MF_FLOAT) != 0,
+	};
+	TraceMasks masks = ComputeLineTraceMasks(flags, shooter);
+	if (flags & kTrfFuaAllLines)
+		masks.lines = kMlEveryLine;
+	const Tracer *tracer = tracers.Find(id);
+	RuleTrace run(tracer->rules, dir, (flags & kTrfNoSky) != 0);
+	FTraceResults res;
+	const fixed_t sx = fixed_t::FromRaw(x), sy = fixed_t::FromRaw(y);
+	::Trace(sx, sy, fixed_t::FromRaw(z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
+		fixed_t::FromRaw(distance), masks.actors, masks.lines, skip, res, masks.trace, CheckRules, &run);
+	// [Doruk-Aksoy] Trace() ends on a floor or ceiling without asking, so the rules decide that hit here.
+	if (!run.run.aborted && res.HitType != TRACE_HitNone && !run.Saw(res))
+		run.Decide(res);
+	const Hit last = run.run.aborted ? ComputeEmptyHit() : HitOf(res, dir);
+	tracers.SetResult(id, last, run.run.hits);
+	return int(run.run.hits.size());
 }
 
 int TraceHitCount(const ScriptTracers &tracers, int32_t id)
@@ -235,6 +371,7 @@ void SerializeScript(FArchive &arc, ScriptTracers &tracers)
 			tracers.tracers.clear();
 		return;
 	}
+	const bool withRules = arc.IsStoring() || SaveVersion >= kTracerRulesSaveVersion;
 	std::vector<int32_t> names;
 	std::vector<int32_t> flat;
 	if (arc.IsStoring())
@@ -246,7 +383,7 @@ void SerializeScript(FArchive &arc, ScriptTracers &tracers)
 	acsqueries::SerializeNamedRun(arc, names, flat);
 	if (arc.IsStoring())
 		return;
-	if (!ComputeUnflattenTracers(flat.data(), flat.size(), tracers))
+	if (!ComputeUnflattenTracers(flat.data(), flat.size(), tracers, withRules))
 	{
 		Printf(TEXTCOLOR_ORANGE "ACS traces: a script's saved tracers are damaged, so it starts with none.\n");
 		tracers.tracers.clear();

@@ -9,15 +9,17 @@
 |---|---|---|
 | 24050 | `fua_TracerCreate()` | a tracer id, or 0 when the script already holds 16 |
 | 24051 | `fua_TracerFree(int t)` | nothing; also happens when the script ends |
-| 24052 | `fua_TracerClear(int t)` | nothing; drops the tracer's hits |
+| 24052 | `fua_TracerClear(int t)` | nothing; drops the tracer's rules and hits |
+| 24053 | `fua_TraceRule(int t, int hit, int action [, int filter [, a [, b]]])` | 1 once added; 0 for a bad call, an unknown class, flag or texture, or a handle to no actor |
 | 24055 | `fua_LineTrace(int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])` | the hit type, `TRACE_HitNone` (0) for nothing |
+| 24056 | `fua_Trace(int t, fixed x, fixed y, fixed z, fixed dx, fixed dy, fixed dz, fixed distance [, int flags [, int ignore]])` | how many hits the rules kept |
 | 24057 | `fua_TraceHitCount(int t)` | how many hits the tracer kept from its last trace |
 | 24058 | `fua_TraceResult(int t, int prop [, int hit])` | a `TR_` property of a hit, or of the trace's end with no `hit` |
 | 24059 | `fua_TraceResultStr(int t, int prop [, int hit])` | the hit texture's name for `TR_HitTexture`, "" otherwise |
 | 24060 | `fua_LineInfo(int line, int prop)` | an `LI_` property of a line by index, 0 for none |
 | 24061 | `fua_SectorInfo(int sector, int prop)` | an `SI_` property of a sector by index, 0 for none |
 
-24053, 24054 and 24056 are kept for the tracer rules.
+24054 is kept for a callback function.
 
 ## Usage
 
@@ -91,6 +93,65 @@ if( fua_LineTrace( t, 0, GetActorAngle( 0 ), 2048.0, GetActorPitch( 0 ), 0, 41.0
 - **Each machine traces its own world;** nothing is sent.
 - Left out of UZDoom's `LineTrace`: `TRF_BLOCKSELF`'s test of `BLOCKASPLAYER`, a flag ZandroX doesn't have,
   and the portal count, as ZandroX has no line portals.
+
+## Tracer rules
+
+`fua_Trace` is ZScript's `LineTracer.Trace`: a trace from a map point along a direction (any length, made
+unit length), where the tracer's rules decide each hit in place of a `TraceCallback`. Each hit is checked
+against the rules in the order they were added and the first match decides; with no match the trace
+stops there, as ZScript's default callback does. It returns how many hits the rules kept.
+
+```
+int t = fua_TracerCreate();
+fua_TraceRule( t, TR_ACTOR, TRACE_Record, FQ_SHOOTABLE ); // keep every shootable actor and go on
+fua_TraceRule( t, TR_ACTOR, TRACE_Skip );                 // pass anything else
+fua_TraceRule( t, TR_WALL, TRACE_Stop );                  // the first wall ends it
+int n = fua_Trace( t, x, y, z, dx, dy, dz, 4096.0, 0, fua_GetActorHandle( 0 ) );
+for( int i = 0; i < n; i++ )
+    if( fua_TraceResult( t, TR_HitType, i ) == TRACE_HitActor )
+    {
+        fua_SetActivatorHandle( fua_TraceResult( t, TR_HitActor, i ) );
+        Thing_Damage2( 0, 20, "Normal" );
+    }
+```
+
+| Hit kind | Matches |
+|---|---|
+| `TR_ANY` (64) | every hit |
+| `TR_FLOOR`, `TR_CEILING` (65, 66) | a floor or ceiling |
+| `TR_WALL` (67) | a wall, a line that blocks the trace, or with `TRF_FUA_ALLLINES` any line crossed |
+| `TR_ACTOR` (68) | an actor |
+| `TR_3DFLOOR` (69) | a 3D floor's side, which is not a `TR_WALL` |
+
+| Action | Value | Effect |
+|---|---|---|
+| `TRACE_Stop` | 0 | keep the hit and end the trace there |
+| `TRACE_Continue` | 1 | go on; the trace ends on this hit if nothing follows |
+| `TRACE_Skip` | 2 | go on as if it weren't there |
+| `TRACE_Abort` | 3 | end the trace with nothing, every kept hit dropped |
+| `TRACE_Record` | 4 | keep the hit and go on |
+
+A rule's filter is any `FQ_` actor filter of [queries](Actor_queries.md) but `FQ_2D` and `FQ_EDGES`, or one
+of these for lines, floors and ceilings; `b` 0 turns a `TQ_` filter round:
+
+| Filter | Argument | Matches |
+|---|---|---|
+| `TQ_LINEFLAG` (48) | line flags | a line with all of them set |
+| `TQ_SPECIAL` (49) | special | a line with that special |
+| `TQ_TEXTURE` (50) | texture name | a wall, floor or ceiling showing that texture |
+
+- **A floor or ceiling always ends the trace,** since nothing lies past it; `TRACE_Stop` and
+  `TRACE_Record` keep it, and `TRACE_Abort` still drops everything.
+- **With `TRF_NOSKY`, the sky ends the trace and is never kept.**
+- **`flags` takes the `TRF_` flags that choose what is hit:** `TRF_ALLACTORS`, `TRF_SOLIDACTORS`,
+  `TRF_BLOCKUSE`, `TRF_THRUBLOCK`, `TRF_THRUHITSCAN`, `TRF_NOSKY`, `TRF_FUA_PHYSICALSIZE`, and
+  `TRF_FUA_ALLLINES` (2097152), which reports every line crossed so `TQ_` filters can pick them out.
+  `TRF_BLOCKSELF` counts only with an `ignore` actor to be blocked as; the rules do what
+  `TRF_THRUACTORS` and `TRF_THRUSPECIES` do.
+- **`ignore` is a handle the trace passes through,** such as the shooter, which a trace started inside it
+  would otherwise hit first.
+- **A tracer holds up to 32 rules,** kept until `fua_TracerClear` and saved with it. `fua_LineTrace`
+  ignores them and keeps them for the next `fua_Trace`.
 
 ## Implementation notes
 

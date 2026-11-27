@@ -5947,12 +5947,14 @@ enum EACSFunctions
 	ACSF_fua_FindActorsOfClass,			// (int q, str cls [, bool subclasses [, fixed x, fixed y, fixed z]])
 	ACSF_fua_FoundActor,				// (int q, int i)
 	ACSF_fua_FoundCount,				// (int q)
-	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers; 24053, 24054 and 24056 come with the tracer rules.
+	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers, decided by their rules; 24054 comes with the callback.
 	ACSF_fua_TracerCreate = 24050,		// ()
 	ACSF_fua_TracerFree,				// (int t)
 	ACSF_fua_TracerClear,				// (int t)
+	ACSF_fua_TraceRule,					// (int t, int hit, int action [, int filter [, a [, b]]])
 	ACSF_fua_LineTrace = 24055,			// (int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])
-	ACSF_fua_TraceHitCount = 24057,		// (int t)
+	ACSF_fua_Trace,						// (int t, fixed x, fixed y, fixed z, fixed dx, fixed dy, fixed dz, fixed distance [, int flags [, int ignore]])
+	ACSF_fua_TraceHitCount,				// (int t)
 	ACSF_fua_TraceResult,				// (int t, int prop [, int hit])
 	ACSF_fua_TraceResultStr,			// (int t, int prop [, int hit])
 	ACSF_fua_LineInfo,					// (int line, int prop)
@@ -5969,7 +5971,8 @@ static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF
 static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
 static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
 static_assert(ACSF_fua_QueryCreate == zx::acsqueries::kQueryCreate && ACSF_fua_FoundCount == zx::acsqueries::kFoundCount, "the fua_ query functions keep their numbers");
-static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_TracerClear == zx::acstraces::kTracerClear && ACSF_fua_LineTrace == zx::acstraces::kLineTrace
+static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_TraceRule == zx::acstraces::kTraceRule && ACSF_fua_LineTrace == zx::acstraces::kLineTrace
+	&& ACSF_fua_Trace == zx::acstraces::kTrace
 	&& ACSF_fua_TraceHitCount == zx::acstraces::kTraceHitCount && ACSF_fua_SectorInfo == zx::acstraces::kSectorInfo, "the fua_ trace functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
@@ -7636,6 +7639,14 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_TracerClear:
 			zx::acstraces::TracerClear( fua_tracers, args[0] );
 			break;
+
+		case ACSF_fua_TraceRule:
+			return zx::acstraces::TraceRule( fua_tracers, args[0], args[1], args[2], argCount - 3, argCount > 3 ? args[3] : 0, argCount > 4 ? args[4] : 0,
+				argCount > 5 ? args[5] : 0, argCount > 4 && zx::acstraces::ComputeRuleFilterArg( args[3] ) == zx::acsqueries::kArgName ? FBehavior::StaticLookupString( args[4] ) : NULL );
+
+		case ACSF_fua_Trace:
+			return zx::acstraces::Trace( fua_tracers, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+				argCount > 8 ? args[8] : 0, argCount > 9 ? args[9] : 0 );
 
 		case ACSF_fua_LineTrace:
 			return zx::acstraces::LineTrace( fua_tracers, args[0], activator, args[1], args[2], args[3], args[4],

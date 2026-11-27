@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 using namespace zx::acstraces;
@@ -15,6 +16,14 @@ namespace {
 
 const int64_t kOne = 65536;
 const Shooter kMonster = { false, false, false, false };
+
+// [Doruk-Aksoy] Each name one up and no name left none, one type for every remap test so ComputeRemapTracerNames has a single instantiation to cover.
+struct NextName
+{
+	int32_t operator()(int32_t name) const { return name == 0 ? 0 : name + 1; }
+};
+
+using RuleTest = std::function<bool(const Rule &)>;
 
 RawHit Raw(int type)
 {
@@ -285,13 +294,13 @@ TEST(AcsTraces, TracersSaveWithTheirHitsAndTexturesRemap)
 	s.Create(40);
 	s.SetResult(40, Numbered(10), { Numbered(200), Numbered(300) });
 
-	ComputeRemapTracerNames(s, [](int32_t name) { return name + 1; });
+	ComputeRemapTracerNames(s, NextName());
 	EXPECT_EQ(s.Find(40)->last.v[kTrHitTexture], 10 + kTrHitTexture + 1);
 	EXPECT_EQ(s.Find(40)->hits[1].v[kTrHitTexture], 300 + kTrHitTexture + 1);
 
 	const std::vector<int32_t> flat = ComputeFlattenTracers(s);
 	ScriptTracers back;
-	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back));
+	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, true));
 	ASSERT_EQ(back.Count(), 2u);
 	EXPECT_EQ(back.Find(11)->hits.size(), 0u);
 	EXPECT_EQ(back.Find(11)->last.v[kTrHitLine], -1);
@@ -311,7 +320,7 @@ TEST(AcsTraces, ADamagedSaveLoadsNothing)
 
 	const auto refused = [&](std::vector<int32_t> bad) {
 		ScriptTracers out = keep;
-		return !ComputeUnflattenTracers(bad.data(), bad.size(), out) && out.Count() == 1 && out.Find(99) != nullptr;
+		return !ComputeUnflattenTracers(bad.data(), bad.size(), out, true) && out.Count() == 1 && out.Find(99) != nullptr;
 	};
 	EXPECT_TRUE(refused({}));
 	EXPECT_TRUE(refused({ 17 }));
@@ -332,8 +341,200 @@ TEST(AcsTraces, ADamagedSaveLoadsNothing)
 	EXPECT_TRUE(refused(twice));
 	std::vector<int32_t> shortLast = { 1, 2, 0 };
 	EXPECT_TRUE(refused(shortLast));
+	EXPECT_TRUE(refused(std::vector<int32_t>(good.begin(), good.begin() + 2 + kTrPropCount + 1 + 3)));
 
 	ScriptTracers out;
-	EXPECT_TRUE(ComputeUnflattenTracers(good.data(), good.size(), out));
+	EXPECT_TRUE(ComputeUnflattenTracers(good.data(), good.size(), out, true));
 	EXPECT_EQ(out.Find(2)->hits.size(), 1u);
+}
+
+TEST(AcsTraces, EachHitHasOneKindAndA3DFloorSideIsNotAWall)
+{
+	EXPECT_EQ(ComputeHitKind(kHitFloor, kTierUpper), kKindFloor);
+	EXPECT_EQ(ComputeHitKind(kHitCeiling, kTierMiddle), kKindCeiling);
+	EXPECT_EQ(ComputeHitKind(kHitWall, kTierLower), kKindWall);
+	EXPECT_EQ(ComputeHitKind(kHitWall, kTierFFloor), kKind3DFloor);
+	EXPECT_EQ(ComputeHitKind(kHitActor, kTierFFloor), kKindActor);
+	EXPECT_EQ(ComputeHitKind(kHitNone, kTierMiddle), 0);
+}
+
+TEST(AcsTraces, RuleKindsActionsAndFiltersAreTheirOwnNumbers)
+{
+	EXPECT_TRUE(ComputeRuleKindValid(kKindAny));
+	EXPECT_TRUE(ComputeRuleKindValid(kKind3DFloor));
+	EXPECT_FALSE(ComputeRuleKindValid(kHitActor));
+	EXPECT_FALSE(ComputeRuleKindValid(kKind3DFloor + 1));
+	EXPECT_TRUE(ComputeRuleActionValid(kActStop));
+	EXPECT_TRUE(ComputeRuleActionValid(kActRecord));
+	EXPECT_FALSE(ComputeRuleActionValid(kActRecord + 1));
+	EXPECT_FALSE(ComputeRuleActionValid(-1));
+
+	EXPECT_EQ(ComputeRuleFilterArg(0), zx::acsqueries::kArgNone);
+	EXPECT_EQ(ComputeRuleFilterArg(kTqLineFlag), zx::acsqueries::kArgNumber);
+	EXPECT_EQ(ComputeRuleFilterArg(kTqSpecial), zx::acsqueries::kArgNumber);
+	EXPECT_EQ(ComputeRuleFilterArg(kTqTexture), zx::acsqueries::kArgName);
+	EXPECT_EQ(ComputeRuleFilterArg(zx::acsqueries::kFqClass), zx::acsqueries::kArgName);
+	EXPECT_EQ(ComputeRuleFilterArg(zx::acsqueries::kFqSight), zx::acsqueries::kArgHandle);
+	EXPECT_EQ(ComputeRuleFilterArg(zx::acsqueries::kFq2D), zx::acsqueries::kArgInvalid);
+	EXPECT_EQ(ComputeRuleFilterArg(zx::acsqueries::kFqEdges), zx::acsqueries::kArgInvalid);
+	EXPECT_EQ(ComputeRuleFilterArg(kTqTexture + 1), zx::acsqueries::kArgInvalid);
+
+	EXPECT_EQ(ComputeRuleFilterDefaultB(kTqSpecial), 1);
+	EXPECT_EQ(ComputeRuleFilterDefaultB(zx::acsqueries::kFqFlag), 1);
+	EXPECT_EQ(ComputeRuleFilterDefaultB(zx::acsqueries::kFqTid), 0);
+}
+
+TEST(AcsTraces, FiltersFitTheKindsTheyCanTest)
+{
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindWall, 0));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindActor, zx::acsqueries::kFqTid));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindAny, zx::acsqueries::kFqTid));
+	EXPECT_FALSE(ComputeRuleFilterFits(kKindWall, zx::acsqueries::kFqTid));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindWall, kTqSpecial));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKind3DFloor, kTqLineFlag));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindAny, kTqLineFlag));
+	EXPECT_FALSE(ComputeRuleFilterFits(kKindFloor, kTqSpecial));
+	EXPECT_FALSE(ComputeRuleFilterFits(kKindActor, kTqLineFlag));
+	EXPECT_TRUE(ComputeRuleFilterFits(kKindFloor, kTqTexture));
+	EXPECT_FALSE(ComputeRuleFilterFits(kKindActor, kTqTexture));
+}
+
+TEST(AcsTraces, TheFirstMatchingRuleDecidesAndNoneStops)
+{
+	const std::vector<Rule> rules = {
+		{ kKindActor, kActRecord, { zx::acsqueries::kFqTid, 5, 0 } },
+		{ kKindActor, kActSkip, { 0, 0, 0 } },
+		{ kKindAny, kActContinue, { kTqTexture, 9, 1 } },
+	};
+	int tested = 0;
+	// [Doruk-Aksoy] Every test is one std::function type, so ComputeRuleAction has a single instantiation to cover.
+	const RuleTest tid5 = [&](const Rule &r) { ++tested; return r.filter.a == 5; };
+	EXPECT_EQ(ComputeRuleAction(rules, kKindActor, tid5), kActRecord);
+	EXPECT_EQ(tested, 1);
+	const RuleTest none = [](const Rule &) { return false; };
+	EXPECT_EQ(ComputeRuleAction(rules, kKindActor, none), kActSkip);
+	EXPECT_EQ(ComputeRuleAction(rules, kKindWall, none), kActStop);
+	EXPECT_EQ(ComputeRuleAction(rules, kKindWall, RuleTest([](const Rule &) { return true; })), kActContinue);
+	EXPECT_EQ(ComputeRuleAction(std::vector<Rule>(), kKindWall, none), kActStop);
+}
+
+TEST(AcsTraces, ActionsTellTraceWhatToDoAndRecordingSkips)
+{
+	EXPECT_EQ(ComputeRuleStatus(kActStop, kKindWall), kTraceStop);
+	EXPECT_EQ(ComputeRuleStatus(kActContinue, kKindActor), kTraceContinue);
+	EXPECT_EQ(ComputeRuleStatus(kActSkip, kKind3DFloor), kTraceSkip);
+	EXPECT_EQ(ComputeRuleStatus(kActRecord, kKindWall), kTraceSkip);
+	EXPECT_EQ(ComputeRuleStatus(kActAbort, kKindActor), kTraceAbort);
+}
+
+TEST(AcsTraces, AFloorOrCeilingEndsTheTraceUnlessItAborts)
+{
+	EXPECT_EQ(ComputeRuleStatus(kActSkip, kKindFloor), kTraceStop);
+	EXPECT_EQ(ComputeRuleStatus(kActRecord, kKindCeiling), kTraceStop);
+	EXPECT_EQ(ComputeRuleStatus(kActContinue, kKindFloor), kTraceStop);
+	EXPECT_EQ(ComputeRuleStatus(kActAbort, kKindCeiling), kTraceAbort);
+}
+
+TEST(AcsTraces, LineFiltersTestFlagsAndSpecialsAndTurnRoundWithB)
+{
+	using zx::acsqueries::Filter;
+	EXPECT_TRUE(ComputeLineFilterMatch(Filter{ kTqLineFlag, 0x9, 1 }, 0xB, 0));
+	EXPECT_FALSE(ComputeLineFilterMatch(Filter{ kTqLineFlag, 0x9, 1 }, 0x8, 0));
+	EXPECT_TRUE(ComputeLineFilterMatch(Filter{ kTqLineFlag, 0x9, 0 }, 0x8, 0));
+	EXPECT_TRUE(ComputeLineFilterMatch(Filter{ kTqSpecial, 80, 1 }, 0, 80));
+	EXPECT_FALSE(ComputeLineFilterMatch(Filter{ kTqSpecial, 80, 1 }, 0, 12));
+	EXPECT_TRUE(ComputeLineFilterMatch(Filter{ kTqSpecial, 80, 0 }, 0, 12));
+}
+
+TEST(AcsTraces, StopsAndRecordsKeepHitsUntilAnAbortDropsThem)
+{
+	RuleRun run;
+	ComputeRuleRecord(run, kActRecord, Numbered(1));
+	ComputeRuleRecord(run, kActSkip, Numbered(2));
+	ComputeRuleRecord(run, kActContinue, Numbered(3));
+	ComputeRuleRecord(run, kActStop, Numbered(4));
+	ASSERT_EQ(run.hits.size(), 2u);
+	EXPECT_EQ(run.hits[1].v[0], 4);
+	ComputeRuleRecord(run, kActAbort, Numbered(5));
+	EXPECT_TRUE(run.aborted);
+	EXPECT_TRUE(run.hits.empty());
+	ComputeRuleRecord(run, kActStop, Numbered(6));
+	EXPECT_TRUE(run.hits.empty());
+
+	RuleRun full;
+	for (int i = 0; i < 70; ++i)
+		ComputeRuleRecord(full, kActRecord, Numbered(i));
+	EXPECT_EQ(full.hits.size(), kMaxHits);
+	EXPECT_EQ(full.hits.back().v[0], 63);
+}
+
+TEST(AcsTraces, ADirectionBecomesUnitLength)
+{
+	Fixed3 dir;
+	ASSERT_TRUE(ComputeTraceUnit(3 << 16, 0, -(4 << 16), dir));
+	EXPECT_EQ(dir.x, 39322);
+	EXPECT_EQ(dir.y, 0);
+	EXPECT_EQ(dir.z, -52429);
+	ASSERT_TRUE(ComputeTraceUnit(0, 7, 0, dir));
+	EXPECT_EQ(dir.y, 65536);
+	EXPECT_FALSE(ComputeTraceUnit(0, 0, 0, dir));
+}
+
+TEST(AcsTraces, ATracerTakesThirtyTwoFittingRulesAndClearingDropsThem)
+{
+	ScriptTracers s;
+	s.Create(4);
+	const Rule good = { kKindWall, kActRecord, { kTqSpecial, 80, 1 } };
+	EXPECT_FALSE(s.AddRule(9, good));
+	EXPECT_FALSE(s.AddRule(4, Rule{ kHitWall, kActStop, { 0, 0, 0 } }));
+	EXPECT_FALSE(s.AddRule(4, Rule{ kKindWall, kActRecord + 1, { 0, 0, 0 } }));
+	EXPECT_FALSE(s.AddRule(4, Rule{ kKindActor, kActStop, { zx::acsqueries::kFq2D, 0, 0 } }));
+	EXPECT_FALSE(s.AddRule(4, Rule{ kKindWall, kActStop, { zx::acsqueries::kFqTid, 3, 0 } }));
+	for (size_t i = 0; i < kMaxRules; ++i)
+		EXPECT_TRUE(s.AddRule(4, good));
+	EXPECT_FALSE(s.AddRule(4, good));
+	EXPECT_EQ(s.Find(4)->rules.size(), kMaxRules);
+	EXPECT_TRUE(s.Clear(4));
+	EXPECT_TRUE(s.Find(4)->rules.empty());
+}
+
+TEST(AcsTraces, RulesSaveWithTheirNamesAndAnOldRunHasNone)
+{
+	ScriptTracers s;
+	s.Create(6);
+	s.AddRule(6, Rule{ kKindActor, kActStop, { zx::acsqueries::kFqClass, 300, 1 } });
+	s.AddRule(6, Rule{ kKindWall, kActRecord, { kTqTexture, 400, 0 } });
+	s.AddRule(6, Rule{ kKindWall, kActSkip, { kTqSpecial, 80, 1 } });
+	ComputeRemapTracerNames(s, NextName());
+	EXPECT_EQ(s.Find(6)->rules[0].filter.a, 301);
+	EXPECT_EQ(s.Find(6)->rules[1].filter.a, 401);
+	EXPECT_EQ(s.Find(6)->rules[2].filter.a, 80);
+
+	const std::vector<int32_t> flat = ComputeFlattenTracers(s);
+	ScriptTracers back;
+	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, true));
+	ASSERT_EQ(back.Find(6)->rules.size(), 3u);
+	EXPECT_EQ(back.Find(6)->rules[1].action, kActRecord);
+	EXPECT_EQ(back.Find(6)->rules[1].filter.b, 0);
+	EXPECT_FALSE(ComputeUnflattenTracers(flat.data(), flat.size(), back, false));
+
+	// [Doruk-Aksoy] A run saved before rules: one tracer, its last hit and no kept hits.
+	std::vector<int32_t> old = { 1, 6 };
+	const Hit empty = ComputeEmptyHit();
+	old.insert(old.end(), empty.v, empty.v + kTrPropCount);
+	old.push_back(0);
+	ScriptTracers fromOld;
+	ASSERT_TRUE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, false));
+	EXPECT_TRUE(fromOld.Find(6)->rules.empty());
+	EXPECT_FALSE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, true));
+
+	std::vector<int32_t> badRule = flat;
+	badRule[badRule.size() - 5] = kHitWall;
+	EXPECT_FALSE(ComputeUnflattenTracers(badRule.data(), badRule.size(), back, true));
+	std::vector<int32_t> cut = flat;
+	cut.pop_back();
+	EXPECT_FALSE(ComputeUnflattenTracers(cut.data(), cut.size(), back, true));
+	std::vector<int32_t> tooMany = flat;
+	tooMany[tooMany.size() - 16] = int32_t(kMaxRules) + 1;
+	EXPECT_FALSE(ComputeUnflattenTracers(tooMany.data(), tooMany.size(), back, true));
 }

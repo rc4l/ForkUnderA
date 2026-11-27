@@ -73,87 +73,6 @@ bool OfClass(AActor *actor, const PClass *type, bool subclasses)
 	return subclasses ? actor->IsKindOf(type) : actor->GetClass() == type;
 }
 
-// [Doruk-Aksoy] One run of a query: its filters' classes and actors looked up once, each actor then tested in cost order.
-class Run
-{
-public:
-	explicit Run(const Query &query)
-		: q(query), order(ComputeQueryFilterOrder(query.filters)), shape(ComputeQueryShape(query.filters)),
-		  classes(query.filters.size(), NULL), refs(query.filters.size(), NULL), flags(query.filters.size())
-	{
-	}
-
-	// [Doruk-Aksoy] False when a handle filter's actor is gone, so the query matches nothing.
-	bool Resolve()
-	{
-		for (size_t i = 0; i < q.filters.size(); ++i)
-		{
-			const Filter &f = q.filters[i];
-			if (f.kind == kFqClass || f.kind == kFqNotClass)
-			{
-				classes[i] = PClass::FindClass(FName(ENamedName(f.a)));
-				if (!IsActorClass(classes[i]))
-					classes[i] = NULL;
-			}
-			else if (ComputeFilterArg(f.kind) == kArgHandle && (refs[i] = acshandles::ActorOf(f.a)) == NULL)
-				return false;
-		}
-		return true;
-	}
-
-	// [Doruk-Aksoy] A client's snapshot mirror only draws the hidden copy scripts read, so no query finds it.
-	bool Matches(AActor *actor)
-	{
-		return (actor->NetworkFlags & NETFL_MIRROR) == 0 && ComputeQueryMatch(q.filters, order, [&](const Filter &f) { return Test(f, size_t(&f - q.filters.data()), actor); });
-	}
-
-	const Query &q;
-	const std::vector<size_t> order;
-	const RangeShape shape;
-
-private:
-	bool Test(const Filter &f, size_t i, AActor *actor)
-	{
-		switch (f.kind)
-		{
-		case kFqClass: return classes[i] != NULL && OfClass(actor, classes[i], f.b != 0);
-		case kFqNotClass: return classes[i] == NULL || !OfClass(actor, classes[i], f.b != 0);
-		case kFqAlive: return actor->health > 0;
-		case kFqDead: return actor->health <= 0;
-		case kFqMonster: return (actor->flags3 & MF3_ISMONSTER) != 0;
-		case kFqPlayer: return actor->player != NULL && actor->player->mo == actor;
-		case kFqMissile: return (actor->flags & MF_MISSILE) != 0;
-		case kFqShootable: return (actor->flags & MF_SHOOTABLE) != 0;
-		case kFqFlag:
-		{
-			FFlagDef *fd = Flag(i, actor->GetClass(), NameOf(f.a));
-			return fd != NULL && (CheckActorFlag(actor, fd) != 0) == (f.b != 0);
-		}
-		case kFqTid: return actor->tid == f.a;
-		case kFqFriendly: return refs[i]->IsFriend(actor);
-		case kFqHostile: return refs[i]->IsHostile(actor);
-		case kFqSight: return P_CheckSight(refs[i], actor);
-		case kFqExclude: return actor != refs[i];
-		default: return true;
-		}
-	}
-
-	// [Doruk-Aksoy] Filter i's flag for a class, looked up once per class a run meets.
-	FFlagDef *Flag(size_t i, const PClass *type, const char *name)
-	{
-		for (const auto &known : flags[i])
-			if (known.first == type)
-				return known.second;
-		FFlagDef *fd = FlagOf(type, name);
-		flags[i].push_back(std::make_pair(type, fd));
-		return fd;
-	}
-
-	std::vector<const PClass *> classes;
-	std::vector<AActor *> refs;
-	std::vector<std::vector<std::pair<const PClass *, FFlagDef *>>> flags;
-};
-
 // [Doruk-Aksoy] The candidates sorted and capped, kept as the query's results by handle.
 int Keep(Query &q, std::vector<Candidate> &found)
 {
@@ -172,6 +91,72 @@ double DistanceOf(AActor *actor, const double centre[3], RangeShape shape)
 }
 
 } // namespace
+
+ActorFilters::ActorFilters(const std::vector<Filter> &f)
+	: filters(f), order(ComputeQueryFilterOrder(f)), shape(ComputeQueryShape(f)), classes(f.size(), NULL), refs(f.size(), NULL), flags(f.size())
+{
+}
+
+bool ActorFilters::Resolve()
+{
+	for (size_t i = 0; i < filters.size(); ++i)
+	{
+		const Filter &f = filters[i];
+		if (f.kind == kFqClass || f.kind == kFqNotClass)
+		{
+			classes[i] = PClass::FindClass(FName(ENamedName(f.a)));
+			if (!IsActorClass(classes[i]))
+				classes[i] = NULL;
+		}
+		else if (ComputeFilterArg(f.kind) == kArgHandle && (refs[i] = acshandles::ActorOf(f.a)) == NULL)
+			return false;
+	}
+	return true;
+}
+
+// [Doruk-Aksoy] A client's snapshot mirror only draws the hidden copy scripts read, so no filter keeps it.
+bool ActorFilters::Matches(AActor *actor)
+{
+	return (actor->NetworkFlags & NETFL_MIRROR) == 0 && ComputeQueryMatch(filters, order, [&](const Filter &f) { return Test(size_t(&f - filters.data()), actor); });
+}
+
+bool ActorFilters::Test(size_t i, AActor *actor)
+{
+	const Filter &f = filters[i];
+	switch (f.kind)
+	{
+	case kFqClass: return classes[i] != NULL && OfClass(actor, classes[i], f.b != 0);
+	case kFqNotClass: return classes[i] == NULL || !OfClass(actor, classes[i], f.b != 0);
+	case kFqAlive: return actor->health > 0;
+	case kFqDead: return actor->health <= 0;
+	case kFqMonster: return (actor->flags3 & MF3_ISMONSTER) != 0;
+	case kFqPlayer: return actor->player != NULL && actor->player->mo == actor;
+	case kFqMissile: return (actor->flags & MF_MISSILE) != 0;
+	case kFqShootable: return (actor->flags & MF_SHOOTABLE) != 0;
+	case kFqFlag:
+	{
+		FFlagDef *fd = Flag(i, actor->GetClass());
+		return fd != NULL && (CheckActorFlag(actor, fd) != 0) == (f.b != 0);
+	}
+	case kFqTid: return actor->tid == f.a;
+	case kFqFriendly: return refs[i]->IsFriend(actor);
+	case kFqHostile: return refs[i]->IsHostile(actor);
+	case kFqSight: return P_CheckSight(refs[i], actor);
+	case kFqExclude: return actor != refs[i];
+	default: return true;
+	}
+}
+
+// [Doruk-Aksoy] Filter i's flag for a class, looked up once per class it meets.
+FFlagDef *ActorFilters::Flag(size_t i, const PClass *type)
+{
+	for (const auto &known : flags[i])
+		if (known.first == type)
+			return known.second;
+	FFlagDef *fd = FlagOf(type, NameOf(filters[i].a));
+	flags[i].push_back(std::make_pair(type, fd));
+	return fd;
+}
 
 int32_t QueryCreate(ScriptQueries &queries)
 {
@@ -209,11 +194,16 @@ bool QueryFilter(ScriptQueries &queries, int32_t id, int kind, int count, int32_
 		if (name == NULL || *name == 0)
 			return false;
 		f.a = FName(name).GetIndex();
-		known = kind == kFqFlag ? FlagExists(name) : IsActorClass(PClass::FindClass(FName(name)));
+		known = FilterNameKnown(kind, name);
 	}
 	else if (arg == kArgHandle)
 		known = acshandles::ActorOf(a) != NULL;
 	return queries.AddFilter(id, f) && known;
+}
+
+bool FilterNameKnown(int kind, const char *name)
+{
+	return kind == kFqFlag ? FlagExists(name) : IsActorClass(PClass::FindClass(FName(name)));
 }
 
 void QuerySort(ScriptQueries &queries, int32_t id, int mode, int32_t max)
@@ -227,7 +217,7 @@ int FindActors(ScriptQueries &queries, int32_t id, int32_t x, int32_t y, int32_t
 	if (q == NULL)
 		return 0;
 	q->results.clear();
-	Run run(*q);
+	ActorFilters run(q->filters);
 	if (radius < 0 || !run.Resolve())
 		return 0;
 	const double centre[3] = { x / 65536.0, y / 65536.0, z / 65536.0 };
@@ -237,7 +227,7 @@ int FindActors(ScriptQueries &queries, int32_t id, int32_t x, int32_t y, int32_t
 	std::vector<Candidate> found;
 	while (AActor *actor = it.Next())
 	{
-		const double distance = DistanceOf(actor, centre, run.shape);
+		const double distance = DistanceOf(actor, centre, run.Shape());
 		if (distance <= range && run.Matches(actor))
 			found.push_back(Candidate{ actor, distance, found.size() });
 	}
@@ -251,7 +241,7 @@ int FindActorsOfClass(ScriptQueries &queries, int32_t id, const char *cls, bool 
 		return 0;
 	q->results.clear();
 	const PClass *type = cls != NULL ? PClass::FindClass(cls) : NULL;
-	Run run(*q);
+	ActorFilters run(q->filters);
 	if (!IsActorClass(type) || !run.Resolve())
 		return 0;
 	const double from[3] = { centre ? centre[0] / 65536.0 : 0, centre ? centre[1] / 65536.0 : 0, centre ? centre[2] / 65536.0 : 0 };
@@ -263,7 +253,7 @@ int FindActorsOfClass(ScriptQueries &queries, int32_t id, const char *cls, bool 
 		if ((actor->ObjectFlags & OF_EuthanizeMe) || !OfClass(actor, type, subclasses) ||
 			(actor->IsKindOf(RUNTIME_CLASS(AInventory)) && static_cast<AInventory *>(actor)->Owner != NULL) || !run.Matches(actor))
 			continue;
-		found.push_back(Candidate{ actor, centre ? DistanceOf(actor, from, run.shape) : 0.0, found.size() });
+		found.push_back(Candidate{ actor, centre ? DistanceOf(actor, from, run.Shape()) : 0.0, found.size() });
 	}
 	return Keep(*q, found);
 }

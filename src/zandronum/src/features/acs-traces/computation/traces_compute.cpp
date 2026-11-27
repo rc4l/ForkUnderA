@@ -4,6 +4,7 @@
 #include "features/acs-traces/computation/traces_compute.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "features/fixed64/computation/fixed64_scale_compute.h"
 
@@ -158,6 +159,100 @@ int32_t ComputeInfoProp(const int32_t *values, int count, int prop)
 	return prop >= 0 && prop < count ? values[prop] : 0;
 }
 
+int ComputeHitKind(int type, int tier)
+{
+	switch (type)
+	{
+	case kHitFloor: return kKindFloor;
+	case kHitCeiling: return kKindCeiling;
+	case kHitWall: return tier == kTierFFloor ? kKind3DFloor : kKindWall;
+	case kHitActor: return kKindActor;
+	default: return 0;
+	}
+}
+
+bool ComputeRuleKindValid(int kind)
+{
+	return kind >= kKindAny && kind <= kKind3DFloor;
+}
+
+bool ComputeRuleActionValid(int action)
+{
+	return action >= kActStop && action <= kActRecord;
+}
+
+acsqueries::ArgKind ComputeRuleFilterArg(int filter)
+{
+	switch (filter)
+	{
+	case 0: return acsqueries::kArgNone;
+	case kTqLineFlag:
+	case kTqSpecial: return acsqueries::kArgNumber;
+	case kTqTexture: return acsqueries::kArgName;
+	default: return acsqueries::ComputeIsShapeFilter(filter) ? acsqueries::kArgInvalid : acsqueries::ComputeFilterArg(filter);
+	}
+}
+
+int32_t ComputeRuleFilterDefaultB(int filter)
+{
+	return filter >= kTqLineFlag && filter <= kTqTexture ? 1 : acsqueries::ComputeFilterDefaultB(filter);
+}
+
+bool ComputeRuleFilterFits(int kind, int filter)
+{
+	if (filter == 0)
+		return true;
+	if (filter == kTqTexture)
+		return kind != kKindActor;
+	if (filter == kTqLineFlag || filter == kTqSpecial)
+		return kind == kKindWall || kind == kKind3DFloor || kind == kKindAny;
+	return kind == kKindActor || kind == kKindAny;
+}
+
+TraceStatus ComputeRuleStatus(int action, int kind)
+{
+	// [Doruk-Aksoy] Past a floor or ceiling there is only the void, where every later line would report the same plane again.
+	if ((kind == kKindFloor || kind == kKindCeiling) && action != kActAbort)
+		return kTraceStop;
+	switch (action)
+	{
+	case kActContinue: return kTraceContinue;
+	case kActSkip:
+	case kActRecord: return kTraceSkip;
+	case kActAbort: return kTraceAbort;
+	default: return kTraceStop;
+	}
+}
+
+bool ComputeLineFilterMatch(const acsqueries::Filter &filter, uint32_t flags, int special)
+{
+	const bool hit = filter.kind == kTqLineFlag ? (flags & uint32_t(filter.a)) == uint32_t(filter.a) : special == filter.a;
+	return hit == (filter.b != 0);
+}
+
+void ComputeRuleRecord(RuleRun &run, int action, const Hit &hit)
+{
+	if (run.aborted)
+		return;
+	if (action == kActAbort)
+	{
+		run.aborted = true;
+		run.hits.clear();
+	}
+	else if ((action == kActStop || action == kActRecord) && run.hits.size() < kMaxHits)
+		run.hits.push_back(hit);
+}
+
+bool ComputeTraceUnit(int32_t dx, int32_t dy, int32_t dz, Fixed3 &dir)
+{
+	const double x = dx, y = dy, z = dz;
+	const double length = std::sqrt(x * x + y * y + z * z);
+	if (length == 0)
+		return false;
+	dir = Fixed3{ std::llround(x / length * 65536), std::llround(y / length * 65536), std::llround(z / length * 65536) };
+	return true;
+}
+
 const Hit *ComputeTracerHit(const Tracer &tracer, int index)
 {
 	if (index == -1)
@@ -169,7 +264,7 @@ bool ScriptTracers::Create(int32_t id)
 {
 	if (tracers.size() >= kMaxTracersPerScript || Find(id) != nullptr)
 		return false;
-	tracers.push_back(Tracer{ id, ComputeEmptyHit(), {} });
+	tracers.push_back(Tracer{ id, ComputeEmptyHit(), {}, {} });
 	return true;
 }
 
@@ -199,7 +294,20 @@ bool ScriptTracers::Free(int32_t id)
 
 bool ScriptTracers::Clear(int32_t id)
 {
-	return SetResult(id, ComputeEmptyHit(), {});
+	if (!SetResult(id, ComputeEmptyHit(), {}))
+		return false;
+	Find(id)->rules.clear();
+	return true;
+}
+
+bool ScriptTracers::AddRule(int32_t id, const Rule &rule)
+{
+	Tracer *t = Find(id);
+	if (t == nullptr || t->rules.size() >= kMaxRules || !ComputeRuleKindValid(rule.kind) || !ComputeRuleActionValid(rule.action)
+		|| ComputeRuleFilterArg(rule.filter.kind) == acsqueries::kArgInvalid || !ComputeRuleFilterFits(rule.kind, rule.filter.kind))
+		return false;
+	t->rules.push_back(rule);
+	return true;
 }
 
 bool ScriptTracers::SetResult(int32_t id, const Hit &last, const std::vector<Hit> &hits)
@@ -231,11 +339,20 @@ std::vector<int32_t> ComputeFlattenTracers(const ScriptTracers &tracers)
 		out.push_back(int32_t(t.hits.size()));
 		for (const Hit &h : t.hits)
 			out.insert(out.end(), h.v, h.v + kTrPropCount);
+		out.push_back(int32_t(t.rules.size()));
+		for (const Rule &r : t.rules)
+		{
+			out.push_back(r.kind);
+			out.push_back(r.action);
+			out.push_back(r.filter.kind);
+			out.push_back(r.filter.a);
+			out.push_back(r.filter.b);
+		}
 	}
 	return out;
 }
 
-bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers)
+bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, bool withRules)
 {
 	size_t at = 0;
 	// [Doruk-Aksoy] The next int, if one is left and it lies in [lo, hi].
@@ -268,6 +385,16 @@ bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &t
 			if (!hit(h))
 				return false;
 		read.SetResult(id, last, kept);
+		int32_t rules = 0;
+		if (withRules && !take(0, int32_t(kMaxRules), rules))
+			return false;
+		for (int32_t j = 0; j < rules; ++j)
+		{
+			Rule r;
+			if (!take(INT32_MIN, INT32_MAX, r.kind) || !take(INT32_MIN, INT32_MAX, r.action) || !take(INT32_MIN, INT32_MAX, r.filter.kind)
+				|| !take(INT32_MIN, INT32_MAX, r.filter.a) || !take(INT32_MIN, INT32_MAX, r.filter.b) || !read.AddRule(id, r))
+				return false;
+		}
 	}
 	if (at != count)
 		return false;
