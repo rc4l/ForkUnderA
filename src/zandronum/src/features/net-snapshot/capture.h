@@ -48,8 +48,10 @@ unsigned int NowMS();
 bool SuppressesLegacy( const AActor *pActor, int updateClass );
 
 // Called by SERVER_SendClientPacket once an unreliable datagram is launched,
-// with its payload size and its size on the wire, which only that site sees.
-void NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd);
+// with its payload size, its size on the wire and the launch's time on the raw
+// counter (compression included), which only that site sees.
+void NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd,
+	QWORD launchRaw);
 
 // Called when a snapshot command is queued for a client, so the wire accounting
 // can tell which datagrams carried one.

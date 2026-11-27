@@ -139,7 +139,10 @@ Legacy suppression (see [Gating legacy](design.md#gating-legacy)):
 
 Wire accounting:
 - `NoteSnapshotQueued`, `ConsumeSnapshotQueued`, `NoteUnreliablePacket`: which datagrams carried a
-  snapshot, and their payload against their size on the wire.
+  snapshot, their payload against their size on the wire, and how long each launch took with the
+  transport's compression in it, which the `[snap] wire` line gives per tic and per datagram beside
+  `net_zstd_level`. The pump line's `perclient` stops before the launch, so it never includes
+  compression.
 - `CountLegacy*` (4): legacy traffic by command, reliable flushes and resends, and the reliable send
   time, for Phase 6's reclassify order.
 

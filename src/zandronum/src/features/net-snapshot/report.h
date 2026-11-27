@@ -190,6 +190,7 @@ extern QWORD g_wireSentBytes;	// after Huffman/Zstandard
 extern unsigned int g_wirePackets;
 extern unsigned int g_wireZstdPackets;
 extern unsigned int g_wirePeak;
+extern QWORD g_wireLaunchRaw;	// [Kaori-Chani] the launches' time, compression included
 extern QWORD g_freshAccum;
 extern QWORD g_resendAccum;
 extern QWORD g_resendByteAccum;

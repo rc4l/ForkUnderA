@@ -3726,6 +3726,7 @@ QWORD		g_wireSentBytes = 0;		// after Huffman/Zstandard
 unsigned int	g_wirePackets = 0;
 unsigned int	g_wireZstdPackets = 0;
 unsigned int	g_wirePeak = 0;
+QWORD		g_wireLaunchRaw = 0;		// [Kaori-Chani] the launches' time, compression included
 QWORD		g_freshAccum = 0;
 QWORD		g_resendAccum = 0;
 QWORD		g_resendByteAccum = 0;
@@ -4108,13 +4109,15 @@ bool zx::netsnapshot::ConsumeSnapshotQueued(unsigned int client)
 	return had;
 }
 
-void zx::netsnapshot::NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd)
+void zx::netsnapshot::NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes,
+	bool usedZstd, QWORD launchRaw)
 {
 	if ((snap_GateOn() == false) || (payloadBytes == 0))
 		return;
 
 	g_wirePayloadBytes += payloadBytes;
 	g_wireSentBytes += wireBytes;
+	g_wireLaunchRaw += launchRaw;
 	++g_wirePackets;
 	if (usedZstd)
 		++g_wireZstdPackets;

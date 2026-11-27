@@ -48,6 +48,7 @@ extern FILE *Logfile;
 
 EXTERN_CVAR(Int, fua_snap_stats)
 EXTERN_CVAR(Int, fua_snap_nolegacy)
+EXTERN_CVAR(Int, net_zstd_level)
 EXTERN_CVAR(Bool, fua_snap_movers)
 EXTERN_CVAR(Bool, fua_snap_soundids)
 EXTERN_CVAR(Bool, fua_snap_wirecensus)
@@ -1181,11 +1182,17 @@ void zx::netsnapshot::snap_MaybeReport()
 			const int headroom = (ratio > 0.0)
 				? (int)((double)mtu * ratio) - SNAP_PACKET_OVERHEAD : 0;
 
+			// [Kaori-Chani] The launch's time, the transport's compression included, per game tic
+			// over every client and per datagram, beside the level that bought it.
+			const double launchMS = snap_RawToMS(g_wireLaunchRaw);
 			snap_Say("[snap] wire: %.0fB payload -> %.0fB sent (%.2fx, peak %uB, zstd %u/%u) "
-				"| %.1f kB/s actual | chunk could be ~%dB at sv_maxpacketsize %u\n",
+				"| %.1f kB/s actual | chunk could be ~%dB at sv_maxpacketsize %u"
+				" | launch %.3f ms/tic, %.1f us a datagram at net_zstd_level %d\n",
 				payload, wire, ratio, g_wirePeak, g_wireZstdPackets, g_wirePackets,
 				((double)(QWORD)g_wireSentBytes / 1024.0) / gameSec,
-				(headroom > 64) ? headroom : 64, mtu);
+				(headroom > 64) ? headroom : 64, mtu,
+				launchMS / (gameSec * (double)TICRATE),
+				1000.0 * launchMS / (double)g_wirePackets, (int)net_zstd_level);
 		}
 
 		// `chunks` built and datagrams `launched` must be equal, or chunks
@@ -1587,6 +1594,7 @@ void zx::netsnapshot::snap_MaybeReport()
 		g_wirePackets = 0;
 		g_wireZstdPackets = 0;
 		g_wirePeak = 0;
+		g_wireLaunchRaw = 0;
 		g_chunkDatagrams = 0;
 		g_chunkFrames = 0;
 		g_freshAccum = 0;
