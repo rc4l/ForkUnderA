@@ -92,6 +92,7 @@ FGameConfigFile::FGameConfigFile (FIWadManager *iwad_man)
 
 	OkayToWrite = false;	// Do not allow saving of the config before DoGameSetup()
 	bModSetup = false;
+	FuaLastVersion = zx::configmigrate::ComputeConfigVersion( );	// [Doruk-Aksoy] No resets until DoGlobalSetup reads the config's version.
 	pathname = GetConfigPath (true);
 	ChangePathName (pathname);
 	LoadConfigFile ();
@@ -389,13 +390,19 @@ void FGameConfigFile::DoGlobalSetup ()
 	// [Doruk-Aksoy] Settings this fork put back to their defaults, once for configs saved before the change.
 	if (SetSection ("LastRun"))
 	{
-		const int last = zx::configmigrate::ComputeConfigLastVersion( GetValueForKey( "Version-fua" ));
-		for ( const char *name : zx::configmigrate::ComputeConfigResets( last ))
-		{
-			FBaseCVar *var = FindCVar( name, NULL );
-			if ( var != NULL )
-				var->ResetToDefault( );
-		}
+		FuaLastVersion = zx::configmigrate::ComputeConfigLastVersion( GetValueForKey( "Version-fua" ));
+		ResetFuaDefaults( );
+	}
+}
+
+// [Doruk-Aksoy] features/config-migrate: every cvar with a reset newer than the config's Version-fua goes back to its default.
+void FGameConfigFile::ResetFuaDefaults ()
+{
+	for ( const char *name : zx::configmigrate::ComputeConfigResets( FuaLastVersion ))
+	{
+		FBaseCVar *var = FindCVar( name, NULL );
+		if ( var != NULL )
+			var->ResetToDefault( );
 	}
 }
 
@@ -456,6 +463,9 @@ void FGameConfigFile::DoGameSetup (const char *gamename)
 			}
 		}
 	}
+	// [Doruk-Aksoy] The resets again once the game's own sections are read, where most archived cvars live (net_zstd_level), then never again this run.
+	ResetFuaDefaults( );
+	FuaLastVersion = zx::configmigrate::ComputeConfigVersion( );
 	OkayToWrite = true;
 }
 

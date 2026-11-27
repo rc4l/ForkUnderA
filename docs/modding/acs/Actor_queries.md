@@ -64,6 +64,91 @@ for( int i = 0; i < n; i++ )
   loop resumes it.
 - **Each machine queries its own world;** nothing is sent.
 
+## Examples
+
+Each example is a whole library: compile it with zt-bcc, add it to `LOADACS` and run its scripts with
+`pukename`.
+
+The nearest live imp, by asking for one result sorted by distance:
+
+```bcs
+#library "fuanear"
+#import "zcommon.bcs"
+
+script "NearestImp" ( void ) {
+   int q = fua_QueryCreate();
+   fua_QueryFilter( q, FQ_CLASS, "DoomImp" );
+   fua_QueryFilter( q, FQ_ALIVE );
+   fua_QuerySort( q, FQ_NEAREST, 1 );
+   if ( fua_FindActors( q, GetActorX( 0 ), GetActorY( 0 ), GetActorZ( 0 ), 2048.0 ) ) {
+      Log( s: "nearest imp ", d: fua_GetField( fua_FoundActor( q, 0 ), "tid" ) );
+   }
+   else {
+      Log( s: "no imp near" );
+   }
+   fua_QueryFree( q );
+}
+```
+
+<!-- example
+pukename NearestImp => /nearest imp 31/
+pukename Place 900 680 128
+pukename NearestImp => /nearest imp 33/
+-->
+
+A blast that hurts every live monster the player can see within 512 units:
+
+```bcs
+#library "fuablast"
+#import "zcommon.bcs"
+
+script "Blast" ( void ) {
+   int me = fua_GetActorHandle( 0 );
+   int q = fua_QueryCreate();
+   fua_QueryFilter( q, FQ_MONSTER );
+   fua_QueryFilter( q, FQ_ALIVE );
+   fua_QueryFilter( q, FQ_SIGHT, me );
+   int n = fua_FindActors( q, GetActorX( 0 ), GetActorY( 0 ), GetActorZ( 0 ), 512.0 );
+   for ( int i = 0; i < n; ++i ) {
+      if ( fua_SetActivatorHandle( fua_FoundActor( q, i ) ) ) {
+         Thing_Damage2( 0, 30, "Fire" );
+      }
+   }
+   fua_SetActivatorHandle( me );
+   fua_QueryFree( q );
+   Log( s: "blasted ", d: n );
+}
+```
+
+<!-- example
+pukename Blast => /blasted 0/
+pukename Place 400 680 0
+pukename Blast => /blasted 3/
+pukename Health => /drv imps 30 30 30/
+-->
+
+## Best practices
+
+- **One query, reused.** Filters stay until `fua_QueryClear`, so a script that checks every tic creates
+  its query once, before the loop, and runs it each tic; `fua_QueryClear( q, kind )` drops only the
+  filters of one kind, such as an `FQ_EXCLUDE` that changes.
+- **Free what you create,** or let the script end: a script holds at most 16 queries.
+- **Narrow with filters, not loops.** `FQ_ALIVE`, `FQ_CLASS` and the rest run in the engine, cheap ones
+  first and line of sight last, for much less than a script loop testing each result.
+- **Cap the result.** `fua_QuerySort( q, FQ_NEAREST, n )` keeps only the `n` nearest, which is all a
+  targeting script needs.
+- **Prefer `fua_FindActors`** over `fua_FindActorsOfClass`: it reads the blockmap around the centre,
+  where the class search walks every actor of that class on the map.
+- **Results are handles.** An actor a result names can go between the query and the loop's use of it;
+  functions given its handle then do nothing.
+
+## Online
+
+A server script finds actors in the server's world; a clientside script finds them in its client's, which
+the server keeps in step, so the same query gives the same actors once updates have arrived. `FQ_PLAYER`
+finds every player in the game. Damage and kills belong in server scripts: a client's damage only reaches
+actors that exist on that client alone.
+
 ## Implementation notes
 
 [`src/zandronum/src/features/acs-queries/`](../../../src/zandronum/src/features/acs-queries/README.md).

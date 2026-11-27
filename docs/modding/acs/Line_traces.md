@@ -192,6 +192,115 @@ script "PierceShot" ( void )
 - **An actor a callback removes** is passed by if the trace reaches it.
 - Many decisions need no callback: record every hit with a rule and walk the list after the trace.
 
+## Examples
+
+Each example is a whole library: compile it with zt-bcc, add it to `LOADACS` and run its scripts with
+`pukename`.
+
+A laser sight: where the player's aim meets a wall, and how far it is:
+
+```bcs
+#library "fualaser"
+#import "zcommon.bcs"
+
+script "Laser" ( void ) {
+   int t = fua_TracerCreate();
+   int hit = fua_LineTrace( t, 0, GetActorAngle( 0 ), 4096.0, GetActorPitch( 0 ), 0, 41.0 );
+   if ( hit == TRACE_HitWall ) {
+      Log( s: "wall ", s: fua_TraceResultStr( t, TR_HitTexture ), s: " at ", d: fua_TraceResult( t, TR_Distance ) >> 16 );
+   }
+   else if ( hit == TRACE_HitActor ) {
+      Log( s: "aiming at tid ", d: fua_GetField( fua_TraceResult( t, TR_HitActor ), "tid" ) );
+   }
+}
+```
+
+<!-- example
+pukename Laser => /wall STARTAN2 at 960/
+pukename Place 100 680 0
+pukename Laser => /aiming at tid 31/
+-->
+
+A rail that goes through every monster in its path and stops at the first wall, hurting each one it
+passed:
+
+```bcs
+#library "fuarail"
+#import "zcommon.bcs"
+
+script "Rail" ( void ) {
+   int me = fua_GetActorHandle( 0 );
+   int t = fua_TracerCreate();
+   fua_TraceRule( t, TR_ACTOR, TRACE_Record, FQ_SHOOTABLE );
+   fua_TraceRule( t, TR_ACTOR, TRACE_Skip );
+   fua_TraceRule( t, TR_WALL, TRACE_Stop );
+   int n = fua_Trace( t, GetActorX( 0 ), GetActorY( 0 ), GetActorZ( 0 ) + 32.0, 1.0, 0.0, 0.0, 4096.0, 0, me );
+   int monsters = 0;
+   for ( int i = 0; i < n; ++i ) {
+      if ( fua_TraceResult( t, TR_HitType, i ) == TRACE_HitActor && fua_SetActivatorHandle( fua_TraceResult( t, TR_HitActor, i ) ) ) {
+         Thing_Damage2( 0, 20, "Normal" );
+         ++monsters;
+      }
+   }
+   fua_SetActivatorHandle( me );
+   Log( s: "rail hit ", d: monsters );
+}
+```
+
+<!-- example
+pukename Place 100 680 0
+pukename Rail => /rail hit 3/
+pukename Health => /drv imps 40 40 40/
+-->
+
+A shot whose power each monster's health uses up, decided hit by hit in a callback:
+
+```bcs
+#library "fuapierc"
+#import "zcommon.bcs"
+
+int power;
+
+int Pierce( int t, int ctx ) {
+   power -= fua_GetField( fua_TraceResult( t, TR_HitActor ), "health" );
+   return power > 0 ? TRACE_Record : TRACE_Stop;
+}
+
+script "PierceShot" ( int strength ) {
+   int t = fua_TracerCreate();
+   fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
+   fua_TraceRule( t, TR_WALL, TRACE_Stop );
+   fua_TraceCallback( t, Pierce );
+   power = strength;
+   int n = fua_Trace( t, GetActorX( 0 ), GetActorY( 0 ), GetActorZ( 0 ) + 32.0, 1.0, 0.0, 0.0, 4096.0, 0, fua_GetActorHandle( 0 ) );
+   Log( s: "pierced ", d: n );
+}
+```
+
+<!-- example
+pukename Place 100 680 0
+pukename PierceShot 100 => /pierced 2/
+pukename PierceShot 200 => /pierced 4/
+-->
+
+## Best practices
+
+- **Rules before callbacks.** A rule decides in the engine; a callback is an ACS call per hit it gets.
+  Give the callback only the hits rules can't decide, and record the rest.
+- **Pass the shooter as `ignore`,** or a trace started inside it hits it first.
+- **One tracer per job, kept.** A tracer keeps its rules across traces, so a weapon script that fires
+  every tic sets them once; a script holds at most 16 tracers.
+- **Read results right after the trace,** or check handles before use: an actor a trace hit can be gone a
+  few tics later.
+- **Hit size, not body size.** Actors are hit where hitscans would hit them; add `TRF_FUA_PHYSICALSIZE`
+  when a trace should see their movement box.
+
+## Online
+
+Each machine traces its own copy of the map and its actors, so a clientside trace (a laser dot, a
+footstep's surface) sees what that client draws, and nothing is sent. Damage a trace decides on belongs
+in a server script, which holds every actor's health.
+
 ## Implementation notes
 
 [`src/zandronum/src/features/acs-traces/`](../../../src/zandronum/src/features/acs-traces/README.md).

@@ -309,8 +309,7 @@ static	void			network_ParseLumpAuthenticationMode( FScanner &sc, LumpAuthenticat
 //	CONSOLE VARIABLES
 
 // [KI] Ported from zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
-// [Kaori-Chani] 1 rather than upstream's 12: a quarter of the time a datagram for under 1% more
-// bytes on a four-client MAP13 fight, where 12 slowed the server below 35 tics a second.
+// [Doruk-Aksoy] Default 1, not 3.3's 12: with four clients level 12 took ~9% of a server's tic for 7% fewer bytes (features/config-migrate resets saved 12s).
 CUSTOM_CVAR( Int, net_zstd_level, 1, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	// [SB] Clamp the value to the valid range of compression levels.

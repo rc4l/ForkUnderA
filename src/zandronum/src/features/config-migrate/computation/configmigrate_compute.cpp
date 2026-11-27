@@ -16,6 +16,7 @@ namespace
 	const ConfigReset kResets[] =
 	{
 		{ 1, "cl_fua_replay" },   // [Doruk-Aksoy] Instant replay turned default off, so configs that saved it on go back off.
+		{ 2, "net_zstd_level" },   // [Doruk-Aksoy] Packet compression dropped from 12 to 1, so configs that saved 12 take the cheaper level.
 	};
 	const size_t kResetCount = sizeof(kResets) / sizeof(kResets[0]);
 }

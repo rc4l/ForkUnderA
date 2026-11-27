@@ -69,3 +69,12 @@ TEST(ConfigMigrate, ReplayGoesBackOffForConfigsSavedBeforeItsDefaultChanged)
 
 	EXPECT_TRUE(ComputeConfigResets(version).empty());
 }
+
+TEST(ConfigMigrate, PacketCompressionGoesToItsCheapLevelForConfigsSavedBeforeVersionTwo)
+{
+	bool fromOne = false, fromTwo = false;
+	for (const char *name : ComputeConfigResets(1)) fromOne = fromOne || strcmp(name, "net_zstd_level") == 0;
+	for (const char *name : ComputeConfigResets(2)) fromTwo = fromTwo || strcmp(name, "net_zstd_level") == 0;
+	EXPECT_TRUE(fromOne);
+	EXPECT_FALSE(fromTwo);
+}
