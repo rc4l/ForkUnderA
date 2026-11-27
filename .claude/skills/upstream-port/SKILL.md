@@ -144,7 +144,7 @@ A port's behaviour is checked against a running UZDoom, not only its code: a sce
 both, and each side's log is judged. `fuactl uzdoom --file a.pk3 --map MAP01 --chain "wait 35;puke 1;wait 35;quit"`
 runs a UZDoom build (`FUACTL_UZDOOM`, else `UZDoom-build/Release/uzdoom.exe` beside the repository) with
 its window never activated, muted, on a fresh config, and prints where its log went; `src/uzdoom.mjs`
-(`runUzdoom`, `uzdoomScreenshot`) does the same for a harness; `tools/fuactl/uzdoom/` holds the light,
+(`runUzdoom`, `uzdoomScreenshot`) does the same for a harness or a scenario (`node scenarios/acsparity.mjs --uzdoom`); `tools/fuactl/uzdoom/` holds the light,
 model and OBJ harnesses and its README the results so far. Three traps it handles: UZDoom's `wait` only
 delays the rest of its own string, so the chain is one string; `+logfile` takes a bare name and writes
 `log-<name>.txt` in the working directory (a path prints "Could not start log"), so UZDoom runs in the

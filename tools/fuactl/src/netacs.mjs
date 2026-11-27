@@ -70,11 +70,12 @@ export async function runSteps(set, steps, { on = set.clients, by = set.clients[
 
 // [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, then `after` on every machine with it, each
 // machine's output merged over the rounds and its faults from `judge(logs, member)`; `by` "player" runs them from the first client, its pawn the activator,
-// and "server" from the server's console.
-export function netJudge({ steps, late = [], after = [], judge, passed, by = "player" }, deps = {}) {
+// and "server" from the server's console; `before(set)` readies the set first, such as a player's god mode turned off.
+export function netJudge({ steps, late = [], after = [], judge, passed, by = "player", before = async () => {} }, deps = {}) {
   const { join = addClient, waitTics = cap.waitTics, run = runSteps } = deps;
   return async (set, label) => {
     await waitTics(set.server.c, 35);
+    await before(set);
     const runner = by === "server" ? set.server : set.clients[0];
     const rounds = [await run(set, steps, { by: runner })];
     if (late.length || after.length) {

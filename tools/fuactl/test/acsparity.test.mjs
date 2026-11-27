@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHECKS, judgeParity, judgeNullDamage, parseParity, lineCoord, buildScript, buildAcsParityPk3, TERRAIN } from "../scenarios/acsparity.mjs";
+import { CHECKS, judgeParity, judgeNullDamage, judgeSectorDamage, judgeUzdoom, UZDOOM_CHAIN, sectorHealths, sectorDamageScript, SHARED_STEPS, OURS_STEPS, SET_SECTOR_DAMAGE, parseParity, lineCoord,
+  buildScript, buildAcsParityPk3, TERRAIN } from "../scenarios/acsparity.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
 const logOf = (values) => `parity ${values.map((v) => (typeof v === "string" ? `<${v}>` : v)).join(" ")}\n`;
@@ -18,6 +19,19 @@ test("UZDoom is judged by its own Ceil, which adds one to a whole number", () =>
   const uz = CHECKS.map((c) => ("uzdoom" in c ? c.uzdoom : c.want));
   assert.deepEqual(judgeParity(logOf(uz), "uzdoom"), []);
   assert.match(judgeParity(logOf(uz)).join(), /Ceil\(2\.0\) is 196608, not 131072/);
+});
+
+test("SetSectorDamage hurts 10 a beat while set and the unknown type warns once", () => {
+  const warn = "SetSectorDamage: sectors here hold only the built-in damage types, so 'ZxPlasma' does normal damage.";
+  assert.deepEqual(judgeSectorDamage("sectordamage 90 90", `${warn}\nsectordamage 80 70 70`), []);
+  assert.match(judgeSectorDamage("sectordamage 100 100", `${warn}\nsectordamage 80 70 70`).join(), /script 3 logged healths 100,100/);
+  assert.match(judgeSectorDamage("sectordamage 90 90", "sectordamage 80 70 70").join(), /warned 0 times/);
+  assert.match(judgeSectorDamage("", `${warn}\n${warn}\nsectordamage 80 70 70`).join(), /null.*warned 2 times/);
+  assert.deepEqual(sectorHealths("x sectordamage 1 -2"), [1, -2]);
+  assert.equal(SET_SECTOR_DAMAGE, 94);
+  assert.equal(OURS_STEPS[0].length, 5);
+  const words = sectorDamageScript(SHARED_STEPS).words();
+  assert.ok(words.includes(PCD.IFGOTO) && words.includes(SET_SECTOR_DAMAGE) && words.at(-1) === PCD.TERMINATE);
 });
 
 test("strings parse without their brackets, an empty one too", () => {
@@ -50,4 +64,13 @@ test("the pk3 holds the map, its named script and the terrain", () => {
   const text = buildAcsParityPk3().toString("latin1");
   assert.ok(text.includes("maps/MAP01.wad") && text.includes("terrain.txt") && text.includes("zxstrarg"));
   assert.match(TERRAIN, /floor CEIL3_5 ZxMud/);
+});
+
+test("UZDoom's acsparity log passes with UZDoom's answers and the healths ours logs", () => {
+  const values = CHECKS.map((c) => ("uzdoom" in c ? c.uzdoom : c.want));
+  const log = `parity ${values.map((v) => (typeof v === "string" ? `<${v}>` : v)).join(" ")}\nsectordamage 90 90\n`;
+  assert.deepEqual(judgeUzdoom(log), []);
+  assert.match(judgeUzdoom(log.replace("sectordamage 90 90", "sectordamage 100 100")).join(), /healths 100,100, not 90,90/);
+  assert.match(judgeUzdoom("").join(), /script 1 logged no checks/);
+  assert.doesNotMatch(UZDOOM_CHAIN, /puke 2/);
 });
