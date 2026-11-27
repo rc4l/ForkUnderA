@@ -17,6 +17,7 @@
 #include "name.h"
 #include "c_console.h"
 #include "c_dispatch.h"
+#include "features/net-snapshot/ghostactor.h"
 
 // [Doruk-Aksoy] The SAVEVER from which actors save their handle slot.
 static const int kHandleSaveVersion = 4533;
@@ -72,6 +73,9 @@ void ForgetSlots()
 
 int32_t HandleFor(AActor *actor)
 {
+	// [Doruk-Aksoy] A client's snapshot mirror only draws an actor, so no handle names one: it goes to the actor it draws, if the client holds it.
+	if (actor != NULL && (actor->NetworkFlags & NETFL_MIRROR))
+		actor = netsnapshot::ActorBehindMirror(actor);
 	if (actor == NULL)
 		return 0;
 	if (actor->fua_handleSlot == 0)

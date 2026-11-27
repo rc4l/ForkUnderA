@@ -137,3 +137,20 @@ test("onSnapshots puts every config's server on the snapshot netcode, keeping it
   assert.deepEqual(own.clientCvars, { x: 1 });
   assert.deepEqual(NET_CONFIGS.map((c) => [c.name, c.observers, c.serverCvars]), [["lan", 1, SNAP_SERVER_CVARS], ["ping100", 1, SNAP_SERVER_CVARS]]);
 });
+
+test("after the late joiner's round, `after` runs on every machine with it, and each machine is judged once on its merged output", async () => {
+  const { set } = fakeSet();
+  const late = { role: "latejoin", c: {} };
+  const runs = [];
+  const run = async (s, steps, opts) => {
+    const on = opts.on || s.clients;
+    runs.push([steps.map((x) => x.script), on.map((m) => m.role), opts.server ?? true]);
+    return new Map([...on.map((m) => [m, { [`t${steps[0].script}`]: m.role }]), ...(opts.server === false ? [] : [[s.server, { [`t${steps[0].script}`]: "server" }]])]);
+  };
+  const judged = [];
+  const judge = netJudge({ steps: [{ script: 1 }], late: [{ script: 2 }], after: [{ script: 3 }], judge: (l, m) => { judged.push([m.role, Object.keys(l).sort().join()]); return []; }, passed: "ok" },
+    { join: async (s) => { s.clients.push(late); return late; }, waitTics: async () => {}, run });
+  assert.deepEqual(await judge(set, "M"), { line: "PASS M: ok", failed: 0 });
+  assert.deepEqual(runs, [[[1], ["player", "observer"], true], [[2], ["latejoin"], false], [[3], ["player", "observer", "latejoin"], true]]);
+  assert.deepEqual(judged, [["player", "t1,t3"], ["observer", "t1,t3"], ["server", "t1,t3"], ["latejoin", "t2,t3"]]);
+});

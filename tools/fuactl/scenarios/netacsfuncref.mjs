@@ -5,7 +5,7 @@
 // usage:  node scenarios/netacsfuncref.mjs
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
-import { addPlayerStarts, runSteps, changeMap, judgeEach, result, NET_CONFIGS } from "../src/netacs.mjs";
+import { addPlayerStarts, runSteps, changeMap, judgeEach, mergeLogs, result, NET_CONFIGS } from "../src/netacs.mjs";
 import { buildAcsFuncRefPk3, judgeSteps } from "./acsfuncref.mjs";
 
 // [Doruk-Aksoy] Each map's steps: the scripts fixtures/acsfuncref runs there, each with its copy at 190N.
@@ -19,13 +19,6 @@ export const STARTS = [[64, 192], [128, 192], [192, 192]];
 
 export function buildNetFuncRefPk3() {
   return buildAcsFuncRefPk3({ withMap: (m) => addPlayerStarts(m, STARTS) });
-}
-
-// [Doruk-Aksoy] Each machine's output on every map, merged by tag.
-export function mergeLogs(rounds) {
-  const out = new Map();
-  for (const logs of rounds) for (const [m, l] of logs) out.set(m, { ...(out.get(m) || {}), ...l });
-  return out;
 }
 
 export async function judgeNetplay(set, label) {

@@ -699,6 +699,22 @@ bool zx::netsnapshot::RespawnBehindMirror(AActor* pActor, bool bFog)
 	return true;
 }
 
+AActor* zx::netsnapshot::ActorBehindMirror(const AActor* pMirror)
+{
+	if ((g_mirror == NULL) || (pMirror == NULL) || ((pMirror->NetworkFlags & NETFL_MIRROR) == 0))
+		return NULL;
+	for (unsigned int k = 0; k < g_mirrorIds.Size(); ++k)
+	{
+		const unsigned int id = g_mirrorIds[k];
+		if (g_mirror[id] != pMirror)
+			continue;
+		// [Doruk-Aksoy] A player's mirror sits at the player's reserved id, which its pawn holds too.
+		AActor* const pReal = g_ActorNetIDList.findPointerByID((unsigned short)id);
+		return ((pReal != NULL) && ((pReal->NetworkFlags & NETFL_MIRROR) == 0)) ? pReal : NULL;
+	}
+	return NULL;
+}
+
 // The server sends this entity's sounds, so a client playing them itself would double them.
 // True to skip: the role test, the counters and the switch all live here.
 bool zx::netsnapshot::GhostSoundHandled(AActor* pActor)

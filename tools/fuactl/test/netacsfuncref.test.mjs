@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { objectScripts, SCRIPTF } from "../src/acs.mjs";
 import { COPY, START } from "../src/netacs.mjs";
-import { MAPS, mergeLogs, buildNetFuncRefPk3 } from "../scenarios/netacsfuncref.mjs";
+import { mergeLogs } from "../src/netacs.mjs";
+import { MAPS, buildNetFuncRefPk3 } from "../scenarios/netacsfuncref.mjs";
 
 const fixture = (name) => objectScripts(fs.readFileSync(new URL(`../fixtures/acsfuncref/${name}.o`, import.meta.url)));
 

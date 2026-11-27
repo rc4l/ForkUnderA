@@ -82,6 +82,9 @@ void PropsStats(unsigned int & toMirror, unsigned int & held, bool reset);
 // hidden and only its sound and fog are made, at the ghost. True when it answered.
 bool RespawnBehindMirror(AActor *pActor, bool bFog);
 
+// [Doruk-Aksoy] The client's own actor a snapshot mirror draws, which scripts read, or NULL when it holds none or pMirror is no mirror.
+AActor* ActorBehindMirror(const AActor *pMirror);
+
 // A snapshot point sound for an entity with no mirror yet, moved onto the
 // mirror when it appears, if the S_Sound just made started it (bStarted).
 void PointSoundPending(unsigned int netID, fixed_t x, fixed_t y, fixed_t z,

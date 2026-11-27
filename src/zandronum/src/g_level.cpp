@@ -122,6 +122,7 @@
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SerializeLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetLevelInstances
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] ParkLevel, EnterLevel
+#include "features/acs-queries/acsqueries.h"   // [Doruk-Aksoy] EnterLevel
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] Deferred, for the music volume a tic sets
 
 void STAT_StartNewGame(const char *lev);
@@ -1650,6 +1651,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	level.starttime = gametic;
 	G_UnSnapshotLevel (!savegamerestore);	// [RH] Restore the state of the level.
 	zx::acshandles::EnterLevel ();	// [Doruk-Aksoy] a visit, for the handle table's release-oldest valve
+	zx::acsqueries::EnterLevel ();	// [Doruk-Aksoy] the full-script warning may show again
 
 	// [BB] If the snapshot was taken with less players than we have now (possible due to ingame joining),
 	// the new ones don't have a body. Just give them one.

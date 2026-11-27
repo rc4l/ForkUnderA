@@ -38,6 +38,7 @@
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] the handle table in savegames
+#include "features/acs-queries/acsqueries.h"   // [Doruk-Aksoy] the next query id in savegames
 #include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] the named random streams in savegames
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
@@ -4914,6 +4915,7 @@ void G_DoLoadGame ()
 	P_ReadACSDefereds (png);
 	// [Doruk-Aksoy] features/acs-handles: before the level is rebuilt, so its actors claim their slots.
 	zx::acshandles::ReadTable (png);
+	zx::acsqueries::ReadIds (png);	// [Doruk-Aksoy] features/acs-queries
 
 	// load a base level
 	// [rc4l] Re-occupy the slots the bots held BEFORE the matcher runs. Their data is already in
@@ -5220,6 +5222,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	zx::acsrandom::WriteStreams (stdfile);	// [Doruk-Aksoy] features/acs-random
 	P_WriteACSDefereds (stdfile);
 	zx::acshandles::WriteTable (stdfile);	// [Doruk-Aksoy] features/acs-handles
+	zx::acsqueries::WriteIds (stdfile);	// [Doruk-Aksoy] features/acs-queries
 
 	P_WriteACSVars(stdfile);
 
