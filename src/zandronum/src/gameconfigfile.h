@@ -70,6 +70,8 @@ private:
 	void ReadCVars (DWORD flags);
 
 	bool bModSetup;
+	int FuaLastVersion;	// [Doruk-Aksoy] features/config-migrate: the version the config was saved at, until DoGameSetup's resets use it up.
+	void ResetFuaDefaults ();
 	// [MobiusU9B] ReadCVars leaves a cvar already at its saved value alone, for ResetToSaved.
 	bool bOnlyChangedCVars = false;
 
