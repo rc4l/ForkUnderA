@@ -10,14 +10,12 @@ Ported from the `snapshot` branch of Kaori-Chani/ZanZan, from its `snap-ref-prem
 rewritten for `zx::Fixed`, and the shape to watch for is an unsigned value widened into a
 `fixed_t` without saying which sign it carries.
 
-**The format layer and the server layer are here so far**, with every header the rest will need.
-The client, the movers and the recorder follow as their own commits, and the hooks that call them
-after that. **Nothing calls into this module from stock code yet**, so the game plays exactly as it
-did without it.
+**Every server runs it by default** (`fua_snap 1`, `fua_snap_send 1`, `fua_snap_nolegacy 2`, until the snapshot carries what 3 stops); `fua_snap 0`
+is the legacy netcode.
 
-What is in the engine's build, precisely, because "nothing" was not true:
+What is in the engine's build, precisely:
 
-- The fourteen `computation/*_compute.cpp` units are compiled into the game and called by the
+- The fifteen `computation/*_compute.cpp` units are compiled into the game and called by the
   layers above them. `src/CMakeLists.txt` globs `*_compute.cpp` recursively so a new computation
   needs no CMake edit, and that glob reaches here too; `tests/CMakeLists.txt` globs the same
   pattern beside `*_test.cpp`, which is where each unit's coverage gate runs.
@@ -57,10 +55,11 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   `sv_snapshot`.
 - `clienttrack.{h,cpp}`: the per-client delta — what each client has been told, its ack ledger and
   the interest scheduling that decides what its next datagram carries. Was `sv_snapclient`.
-- `computation/`: fourteen pure units — the ack ledger, the animation census, the budget and chunk
+- `computation/`: fifteen pure units — the ack ledger, the animation census, the budget and chunk
   cuts, the catch-up clamp, the clock model, the interest tiers, the join's frame and map stamp, the
   gravity law and run steps, the mover write order, the replay's histogram, the ghost sampler, the
-  smoothing, the snapshot sound's body and the wall sweep — each with its colocated `*_test.cpp`.
+  smoothing, the snapshot sound's body, the wall sweep and how a hidden legacy copy follows its
+  mirror's life — each with its colocated `*_test.cpp`.
   - `ComputeAnchorStart`, in the smoothing unit, is the mirror interpolation rule's start pose, and
     both the live frame and the replay's analysis call it so that `fua_csnap_analyze ... anchor`
     measures what a client actually draws. Two things about it are deliberate and easy to undo by

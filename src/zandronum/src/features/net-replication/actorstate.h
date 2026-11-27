@@ -11,6 +11,9 @@ struct FState;
 
 namespace zx { namespace netreplication {
 
+// [Doruk-Aksoy] A non-player that died, on a server: its health to every client when the snapshot suppresses the KillThing that carried it (ComputeSendsDeathHealth).
+void SendDeathHealth(AActor *actor);
+
 // [rc4l] An actor took damage and lived, on a server: its health goes to every client at the tic's end (ComputeSendsWoundedHealth).
 void NoteDamaged(AActor *target);
 
