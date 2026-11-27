@@ -154,3 +154,12 @@ test("after the late joiner's round, `after` runs on every machine with it, and 
   assert.deepEqual(runs, [[[1], ["player", "observer"], true], [[2], ["latejoin"], false], [[3], ["player", "observer", "latejoin"], true]]);
   assert.deepEqual(judged, [["player", "t1,t3"], ["observer", "t1,t3"], ["server", "t1,t3"], ["latejoin", "t2,t3"]]);
 });
+
+test("netJudge readies the set with `before` once the level settled, before any step", async () => {
+  const { set } = fakeSet();
+  const order = [];
+  const judge = netJudge({ steps: [{ script: 1 }], judge: () => [], passed: "ok", before: async (s) => order.push(["before", s === set]) },
+    { waitTics: async () => order.push(["wait"]), run: async () => { order.push(["run"]); return new Map(); } });
+  await judge(set, "M");
+  assert.deepEqual(order, [["wait"], ["before", true], ["run"]]);
+});
