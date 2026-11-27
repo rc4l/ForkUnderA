@@ -166,6 +166,9 @@ struct RuleTrace
 
 	ETraceStatus Decide(const FTraceResults &res)
 	{
+		// [Doruk-Aksoy] A client's snapshot mirror only draws the actor scripts read, so no rule ever sees one.
+		if (res.HitType == TRACE_HitActor && res.Actor != NULL && (res.Actor->NetworkFlags & NETFL_MIRROR))
+			return TRACE_Skip;
 		decided = true;
 		lastType = res.HitType;
 		lastDistance = res.Distance;
