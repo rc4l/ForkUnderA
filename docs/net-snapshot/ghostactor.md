@@ -36,14 +36,33 @@ player's own actor is still moved to its ghost's pose once a gametic (`CLIENT_Mo
 ## Hiding the legacy copy
 
 Where the client also holds the server's legacy actor for a mirrored id, that actor is hidden rather
-than destroyed, since the server can still address it by NetID: `RF_INVISIBLE`,
-`STFL_SNAPGHOSTHIDDEN` (its `Tick` returns at once), and `MF_NOSECTOR` and `MF_NOBLOCKMAP` where it
+than destroyed, since the server can still address it by NetID: `STFL_SNAPGHOSTHIDDEN` (its `Tick`
+returns at once, and the GL sprite path, the render copy's `visible` and the crosshair skip it), and
+`MF_NOSECTOR` and `MF_NOBLOCKMAP` where it
 did not already have them, recorded so the reveal clears only those. `HideEnteredLegacy`, called on
 the packet path right after `ApplyDelta`, sets the flags for the ids that just entered; the unlink
 and relink wait for the frame loop. One relink brackets both bits, since `LinkToWorld` reads the
 flags, and `P_DelSector_List` frees the `touching_sectorlist` the unlink saved: a relink that
 `MF_NOSECTOR` makes skip the sector lists would otherwise leave the actor in every sector's touching
 list, where a later sweep still finds it.
+
+Its render flags stay the server's: an `RF_INVISIBLE` set to hide it read as the actor's own to every
+client `CheckFlag` and `A_CheckFlag` (decorateflags' snapshot config).
+
+## The legacy copy follows its mirror
+
+Below level 3 the hidden legacy copy is what a client's scripts and DECORATE reach, by TID, net id or
+pointer, and level 1 suppresses the commands that moved it, level 2 those that animated and killed
+it. So once a gametic `ghost_FollowLegacy` gives each one its mirror's sampled position (through
+`CLIENT_MoveThing`, as a legacy MoveThing did, which holds the server's box floor), angle, pitch and velocity, the mirror's state assigned
+without running its action, and the wire's corpse bit as a death or a raise (`ComputeLegacyLife`,
+`ComputeLegacyDeathFlags`, `ComputeLegacyRaisedFlags`, `ComputeLegacyDeathHealth`). Without it a
+client read a placed barrel's angle as 0, a walker's position as where it spawned, and a killed
+monster as alive. A remote player's own actor takes its angle the same tic even when it has not moved.
+When a ghost leaves, the server having removed its actor, the legacy copy goes with it
+(`ComputeLeaveDestroysLegacy`): kept hidden, an exploded rocket outlived the server's for good, since a
+client never explodes a server's missile itself. Inventory is the exception, since a pickup also leaves
+the wire: it ticks again, undrawn, for the legacy pickup commands to take.
 
 When a ghost leaves, its legacy copy stays hidden, since the entity is gone on the server and
 showing it would bring it back; clearing every mirror reveals every hidden actor, whose own state is

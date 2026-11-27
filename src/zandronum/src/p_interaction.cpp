@@ -852,6 +852,7 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 			// [Doruk-Aksoy] Stood on the floor it stepped onto, as the next tic's P_ZMovement would after this send, so the place sent is where it rests.
 			z = fixed_t::FromRaw( zx::netreplication::ComputeSettledDeathZ( z.Raw( ), floorz.Raw( ), ( flags & MF_NOGRAVITY ) != 0 ));
 			SERVERCOMMANDS_KillThing( this, source, inflictor );
+			zx::netreplication::SendDeathHealth( this );	// [Doruk-Aksoy] when the snapshot suppresses the KillThing above
 			SERVERCOMMANDS_MoveThingExactWhole( this, CM_X|CM_Y|CM_Z|CM_ANGLE );	// [Doruk-Aksoy] nothing trimmed: a client may not hold what was last sent
 		}
 		else

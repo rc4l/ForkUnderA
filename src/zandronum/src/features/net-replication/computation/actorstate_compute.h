@@ -14,6 +14,9 @@ namespace zx { namespace netreplication {
 // [rc4l] Whether a damaged actor's health goes to every client: a non-player still alive, since a player's goes with its own damage command and a death with the death.
 bool ComputeSendsWoundedHealth(bool isPlayer, int health);
 
+// [Doruk-Aksoy] Whether a death sends its health on its own: a non-player whose KillThing, which carried it, the snapshot suppresses (legacy suppression 2), so clients' copies read the server's dead health.
+bool ComputeSendsDeathHealth(bool isPlayer, bool killSuppressed);
+
 // [rc4l] Add a wounded actor's network id to the tic's pending list once, so a shotgun's seven pellets send one health; false for no id (a server-only actor) or one already pending.
 bool ComputeAddPendingHealth(std::vector<int> &pending, int netId);
 

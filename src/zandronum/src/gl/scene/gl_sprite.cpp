@@ -587,7 +587,11 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 		P_CheckPlayerSprite(thing, spritenum, spritescaleX, spritescaleY);
 	}
 
-	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha)) 
+	// [Doruk-Aksoy] A client's legacy copy the snapshot draws a mirror for is hidden by this bit, not by RF_INVISIBLE, which stays the server's.
+	if (thing->STFlags & STFL_SNAPGHOSTHIDDEN)
+		return;
+
+	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
 	{
 		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision)
 			return; 
