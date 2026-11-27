@@ -141,8 +141,9 @@ Wire accounting:
 - `NoteSnapshotQueued`, `ConsumeSnapshotQueued`, `NoteUnreliablePacket`: which datagrams carried a
   snapshot, their payload against their size on the wire, and how long each launch took with the
   transport's compression in it, which the `[snap] wire` line gives per tic and per datagram beside
-  `net_zstd_level`. The pump line's `perclient` stops before the launch, so it never includes
-  compression.
+  `net_zstd_level`. Most of it also falls inside the pump line's `perclient`: a full buffer is
+  launched where it fills (`SERVER_CheckClientBuffer`), inside the per-client pass, so only each
+  client's last datagram of a frame is launched after it.
 - `CountLegacy*` (4): legacy traffic by command, reliable flushes and resends, and the reliable send
   time, for Phase 6's reclassify order.
 
