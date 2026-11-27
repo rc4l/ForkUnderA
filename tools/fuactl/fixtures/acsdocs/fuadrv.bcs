@@ -1,0 +1,29 @@
+// [Doruk-Aksoy] fuactl scenarios acsdocs: the driver library the docs' example markers call to set the map up and read it back; compiled with the examples.
+#library "fuadrv"
+#import "zcommon.bcs"
+
+// [Doruk-Aksoy] Stands the player at (x, y) facing `angle` (a byte angle, 0 east, 64 north), level.
+script "Place" ( int x, int y, int angle ) {
+   SetActorPosition( 0, ( fixed ) ( x << 16 ), ( fixed ) ( y << 16 ), 0.0, false );
+   SetActorAngle( 0, ( fixed ) ( angle << 8 ) );
+   SetActorPitch( 0, 0.0 );
+}
+
+// [Doruk-Aksoy] Imps that can't walk, so a hurt one stays in its lane.
+script "Pin" ( void ) {
+   for ( int tid = 31; tid <= 33; ++tid ) {
+      SetActorProperty( tid, APROP_Speed, 0 );
+   }
+}
+
+// [Doruk-Aksoy] The three imps' and three barrels' health.
+script "Health" ( void ) {
+   Log( s: "drv imps ", d: GetActorProperty( 31, APROP_Health ), s: " ", d: GetActorProperty( 32, APROP_Health ), s: " ",
+      d: GetActorProperty( 33, APROP_Health ), s: " barrels ", d: GetActorProperty( 11, APROP_Health ), s: " ",
+      d: GetActorProperty( 12, APROP_Health ), s: " ", d: GetActorProperty( 13, APROP_Health ) );
+}
+
+// [Doruk-Aksoy] Removes the actors of `tid`, as a corpse cleaned up or a pickup taken would be.
+script "Remove" ( int tid ) {
+   Thing_Remove( tid );
+}

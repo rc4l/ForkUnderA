@@ -29,6 +29,69 @@ fua_SetField( h, "user_combo", fua_GetField( h, "user_combo" ) + 1 );
   stays on the machine that made it: a server's write doesn't reach clients. Native fields are changed
   through the existing functions after `fua_SetActivatorHandle`.
 
+## Examples
+
+Each example is a whole library: compile it with zt-bcc, add it to `LOADACS` and run its scripts with
+`pukename`.
+
+Reading what `GetActorProperty` doesn't reach, with positions and sizes in fixed point:
+
+```bcs
+#library "fuainsp"
+#import "zcommon.bcs"
+
+script "Inspect" ( int tid ) {
+   int h = fua_GetActorHandle( tid );
+   Log( s: "health ", d: fua_GetField( h, "health" ), s: ", radius ", d: fua_GetField( h, "radius" ) >> 16,
+      s: ", height ", d: fua_GetField( h, "height" ) >> 16, s: ", special arg 0 ", d: fua_GetField( h, "args", 0 ) );
+}
+```
+
+<!-- example
+pukename Inspect 31 => /health 60, radius 20, height 56, special arg 0 0/
+-->
+
+A `user_` counter, kept on actors whose DECORATE declares `var int user_kills;`, and refused on any other:
+
+```bcs
+#library "fuakills"
+#import "zcommon.bcs"
+
+script "CountKill" ( int tid ) {
+   int h = fua_GetActorHandle( tid );
+   if ( fua_SetField( h, "user_kills", fua_GetField( h, "user_kills" ) + 1 ) ) {
+      Log( s: "kills ", d: fua_GetField( h, "user_kills" ) );
+   }
+   else {
+      Log( s: "no user_kills here" );
+   }
+}
+```
+
+<!-- example
+pukename CountKill 21 => /kills 1/
+pukename CountKill 21 => /kills 2/
+pukename CountKill 31 => /no user_kills here/
+-->
+
+## Best practices
+
+- **Name fields as DECORATE does,** in any case. An unknown name reads 0, so check a name once against a
+  value you know when a field might not exist in every engine version.
+- **Whole units are `>> 16`.** Positions and sizes are fixed point; outside a `strict namespace`,
+  `( int ) x` keeps their bits (see [Vectors](Vectors.md#best-practices)).
+- **Write only your own `user_` variables,** and change native fields through their setters
+  (`SetActorProperty`, `SetActorPosition`, ...) after `fua_SetActivatorHandle`, which send the change to
+  clients where the engine does.
+- **For values on actors you don't own,** such as another mod's monsters, use
+  [actor data](Actor_data.md): it needs no DECORATE change.
+
+## Online
+
+Reads give each machine's own copy of the actor. A `user_` write stays on the machine that made it, as
+`SetUserVariable`'s does, so a server's write doesn't reach clients: send the value to a clientside
+script, or keep it on the server.
+
 ## Implementation notes
 
 [`src/zandronum/src/features/acs-fields/`](../../../src/zandronum/src/features/acs-fields/README.md).

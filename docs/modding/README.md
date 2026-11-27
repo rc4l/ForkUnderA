@@ -21,9 +21,14 @@ Doom modders already know:
 | *Usage* | What it does, what existed before it, and what it costs. |
 | *Parameters* | One entry per parameter. Flag constants are listed under the parameter that takes them. |
 | *Examples* | A complete, loadable DECORATE actor, with prose explaining why it is built that way. |
+| *Best practices*, *Online* | How to use it well, and what runs where in a netgame. |
 
 Anything marked **ZandroX only** does not exist in Zandronum 3.2 or in any other port unless the
 page says otherwise. A mod that uses it will not load elsewhere.
+
+An ACS page's ```` ```bcs ```` examples are whole libraries. The hidden `<!-- example -->` comment after
+each names the console steps that run it and what each prints; `fuactl scenarios acsdocs` compiles every
+one with zt-bcc and checks them in the engine, so they stay right as the engine changes.
 
 ## Categories
 
