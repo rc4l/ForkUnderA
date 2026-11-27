@@ -27,6 +27,7 @@
 //
 //-----------------------------------------------------------------------------
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include <stdlib.h>
 #include <math.h>
 
@@ -1733,6 +1734,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	fixed_t realheight = thing->height;
 
 	tm.thing = thing;
+	tm.hardblocker = NULL;
 
 	tm.x = x;
 	tm.y = y;
@@ -1858,6 +1860,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 				else
 				{ // Definitely blocking
 					thing->height = realheight;
+					tm.hardblocker = BlockingMobj;	// [Doruk-Aksoy] features/chase-trim
 					return false;
 				}
 			}
@@ -7106,6 +7109,7 @@ void PIT_CeilingRaise(AActor *thing, FChangePosition *cpos)
 
 bool P_ChangeSector(sector_t *sector, int crunch, int amt, int floorOrCeil, bool isreset)
 {
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim: a moving floor or ceiling can open a remembered wall
 	FChangePosition cpos;
 	void(*iterator)(AActor *, FChangePosition *);
 	void(*iterator2)(AActor *, FChangePosition *) = NULL;

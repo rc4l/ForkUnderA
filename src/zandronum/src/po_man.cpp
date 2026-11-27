@@ -12,6 +12,7 @@
 
 // HEADER FILES ------------------------------------------------------------
 
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/fixed64/computation/fixed64_scale_compute.h"
@@ -1449,6 +1450,7 @@ void FPolyObj::CalcCenter()
 
 bool FPolyObj::MovePolyobj (int x, int y, bool force)
 {
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 	FBoundingBox oldbounds = Bounds;
 	UnLinkPolyobj ();
 	DoMovePolyobj (x, y);
@@ -1536,6 +1538,7 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 
 bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 {
+	zx::chasetrim::WorldChanged();	// [Doruk-Aksoy] features/chase-trim
 	int an;
 	bool blocked;
 	FBoundingBox oldbounds = Bounds;

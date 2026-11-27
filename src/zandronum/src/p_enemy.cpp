@@ -65,6 +65,7 @@
 #include "features/look-players/computation/lookorder_compute.h"
 #include "features/telemetry/telemetry.h"
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] LiftOntoStairs
+#include "features/chase-trim/chasetrim.h"
 #include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_checkmissilerange ("CheckMissileRange");
@@ -470,7 +471,7 @@ bool P_Move (AActor *actor)
 
 	fixed_t tryx, tryy, deltax, deltay, origx, origy;
 	bool try_ok;
-	int speed = (int)(actor->Speed);
+	int speed = (int)(actor->Speed) * zx::chasetrim::StepScale();	// [Doruk-Aksoy] features/chase-trim: far monsters' double steps
 	int movefactor = ORIG_FRICTION_FACTOR;
 	int friction = ORIG_FRICTION;
 	int dropoff = 0;
@@ -529,6 +530,7 @@ bool P_Move (AActor *actor)
 		}
 	}
 
+	const fixed_t startZ = actor->z;	// [Doruk-Aksoy] features/chase-trim: whether the walker stayed
 	tryx = (origx = actor->x) + (deltax = FixedMul (speed, xspeed[actor->movedir]));
 	tryy = (origy = actor->y) + (deltay = FixedMul (speed, yspeed[actor->movedir]));
 
@@ -557,6 +559,18 @@ bool P_Move (AActor *actor)
 			}
 		}
 	}
+	// [Doruk-Aksoy] features/chase-trim: a direction this walker knows is still blocked fails without checking again.
+	if (zx::chasetrim::FailKnownBlocked(actor, speed))
+	{
+		if (nomonsterinterpolation)
+		{
+			actor->PrevX = actor->x;
+			actor->PrevY = actor->y;
+			actor->PrevZ = actor->z;
+		}
+		return false;
+	}
+
 	FCheckPosition tm;
 
 	tm.FromPMove = true;
@@ -570,6 +584,12 @@ bool P_Move (AActor *actor)
 
 	// killough 3/15/98: don't jump over dropoffs:
 	if (try_ok) try_ok = P_TryMove (actor, tryx, tryy, dropoff, NULL, tm);
+
+	// [Doruk-Aksoy] features/chase-trim: a wall is a refusal with no thing, no special line and no jump or float over it.
+	zx::chasetrim::AfterMove(actor, speed, try_ok, tm.hardblocker,
+		!try_ok && tm.hardblocker == NULL && actor->BlockingMobj == NULL && spechit.Size() == 0 &&
+			!(tm.floatok && ((actor->flags6 & MF6_CANJUMP) || (actor->flags & MF_FLOAT))),
+		actor->x == origx && actor->y == origy && actor->z == startZ);
 
 	// [GrafZahl] Interpolating monster movement as it is done here just looks bad
 	// so make it switchable
@@ -923,6 +943,7 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 		}
 	}
 
+	zx::chasetrim::OnReplanFailed(actor);	// [Doruk-Aksoy] features/chase-trim: so a stuck monster still reaches its missile check
 	actor->movedir = DI_NODIR;	// cannot move
 
 	// [BC] Set the thing's movement direction. Also, update the thing's
@@ -2894,9 +2915,16 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 			P_Move( actor );
 		}
 		// chase towards player
-		else if (--actor->movecount < 0 || !P_Move (actor))
+		else
 		{
-			P_NewChaseDir (actor);
+			// [Doruk-Aksoy] features/chase-trim: a far monster's skipped call or a jammed walker's wait leaves movement out, and a known-failed re-plan is skipped.
+			const zx::chasetrim::FarStep step = zx::chasetrim::ChaseStep(actor);
+			zx::chasetrim::ChaseMove chaseMove(actor, step.scale);
+			if (!step.skip && !zx::chasetrim::JamWaits(actor) && (--actor->movecount < 0 || !P_Move (actor)))
+			{
+				if (!zx::chasetrim::SkipJammedReplan(actor))
+					P_NewChaseDir (actor);
+			}
 		}
 		
 		// if the move was illegal, reset it 

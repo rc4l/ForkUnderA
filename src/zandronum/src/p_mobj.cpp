@@ -226,6 +226,12 @@ IMPLEMENT_POINTY_CLASS (AActor)
  DECLARE_POINTER (pMonsterSpot)
  DECLARE_POINTER (pPickupSpot)
  DECLARE_POINTER (Rune) // [TP]
+ DECLARE_POINTER (FuaBlockers[0]) // [Doruk-Aksoy] features/chase-trim
+ DECLARE_POINTER (FuaBlockers[1])
+ DECLARE_POINTER (FuaBlockers[2])
+ DECLARE_POINTER (FuaBlockers[3])
+ DECLARE_POINTER (FuaBlockers[4])
+ DECLARE_POINTER (FuaBlockers[5])
 END_POINTERS
 
 AActor::~AActor ()

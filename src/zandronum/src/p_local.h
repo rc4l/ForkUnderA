@@ -473,6 +473,7 @@ struct FCheckPosition
 	line_t			*refusedline;
 	double			refusedheadon;
 	AActor			*stepthing;
+	AActor			*hardblocker;	// [Doruk-Aksoy] features/chase-trim: the thing that alone refused the last P_CheckPosition, else NULL
 	// [RH] These are used by PIT_CheckThing and P_XYMovement to apply
 	// ripping damage once per tic instead of once per move.
 	bool			DoRipping;
@@ -492,6 +493,7 @@ struct FCheckPosition
 		PushTime = 0;
 		FromPMove = false;
 		RipStatePending = false;
+		hardblocker = NULL;
 		ceilingline = floorline = refusedline = NULL;
 		refusedheadon = 0;
 	}

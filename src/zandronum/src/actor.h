@@ -31,6 +31,7 @@
 
 // Basics.
 #include "features/relink-in-place/computation/relink_compute.h"
+#include "features/chase-trim/computation/chasetrim_compute.h"   // [Doruk-Aksoy] BlockMemo
 #include "tables.h"
 
 // We need the thinker_t stuff.
@@ -1324,6 +1325,9 @@ public:
 	unsigned short	NetID;			// ID used to identify this actor over network games.
 	SBYTE			LastLookPlayerNumber;// Player number last looked for (if TIDtoHate == 0)
 	SBYTE			visdir;
+	BYTE			FuaChasePhase;		// [Doruk-Aksoy] features/chase-trim: which call of a far monster's pair this is
+	BYTE			FuaJamWait;			// [Doruk-Aksoy] features/chase-trim: chase calls a jammed walker still waits
+	BYTE			FuaJamCount;		// [Doruk-Aksoy] features/chase-trim: re-plans in a row that failed every direction
 	TObjPtr<AActor>	lastenemy;		// Last known enemy -- killough 2/15/98
 	TObjPtr<AActor> LastHeard;		// [RH] Last actor this one heard
 
@@ -1338,6 +1342,10 @@ public:
 	fixed_t lastVelx, lastVely, lastVelz;
 
 	// [Doruk-Aksoy] The cold fields: no traced pass reads them every tic.
+
+	// [Doruk-Aksoy] features/chase-trim: directions this walker knows are blocked, and the actors blocking them.
+	zx::chasetrim::BlockMemo FuaBlockMemo;
+	TObjPtr<AActor> FuaBlockers[zx::chasetrim::kMemoSlots];
 
 	FTextureID		picnum;				// Draw this instead of sprite if valid
 
