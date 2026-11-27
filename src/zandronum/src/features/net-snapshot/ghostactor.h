@@ -46,7 +46,8 @@ private:
 	long long			m_startRaw;
 };
 
-// Called once per rendered frame, before the world is drawn.
+// [Kaori-Chani] Called once a render-copy fill, from gamecopy's FillNow ahead of its walk,
+// not once a drawn frame.
 void GhostFrame();
 
 // [Kaori-Chani] Every mirror carrying effects, into this tic's effects registry: a mirror never

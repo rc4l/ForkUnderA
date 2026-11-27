@@ -5,13 +5,13 @@ Covers: src/zandronum/src/features/net-snapshot/ghostactor.h, src/zandronum/src/
 ## Responsibility
 
 The engine side of the ghost table. Each present ghost gets a mirror: a client-side `AActor` of its
-class that the renderer, sound and the local player's collision see. Once a frame, this file samples
-every ghost (`SampleGhost`), writes the pose into its mirror, runs the mirror's state machine
-between records, and destroys the mirrors whose ghosts left. It also hides the client's own copy of
-each mirrored actor, makes the client's copies of cosmetic spawns (`SVC2_SNAPCOSMETIC`), moves a
-snapshot point sound onto a mirror that appears late, applies psprite records and property sets to
-remote entities, and prints the client's `[snap]` report. The ghost table and sampler are
-`entities.cpp` ([entities.md](entities.md)).
+class that the renderer, sound and the local player's collision see. Once a render-copy fill
+(gamecopy's `FillNow`), this file samples every ghost (`SampleGhost`), writes the pose into its
+mirror, runs the mirror's state machine between records, and destroys the mirrors whose ghosts left.
+It also hides the client's own copy of each mirrored actor, makes the client's copies of cosmetic
+spawns (`SVC2_SNAPCOSMETIC`), moves a snapshot point sound onto a mirror that appears late, applies
+psprite records and property sets to remote entities, and prints the client's `[snap]` report. The
+ghost table and sampler are `entities.cpp` ([entities.md](entities.md)).
 
 The design: [Mirrors and the renderer](design.md#mirrors-and-the-renderer), [Mirror
 collision](design.md#mirror-collision), [Error smoothing](design.md#error-smoothing), [Client-side
@@ -197,7 +197,7 @@ mirror-spawn rings (`MsRing`, by id, for spawner classes only), the pending poin
 ## Public functions
 
 The frame and the lifecycle:
-- `GhostFrame`: a frame, above. `GhostFoldApplied`: the fold on the packet clock.
+- `GhostFrame`: a fill, above. `GhostFoldApplied`: the fold on the packet clock.
 - `RegisterMirrorEffects`: every mirror carrying effects into the tic's effects registry, since
   a mirror never ticks and so never registers itself.
 - `GhostsFromNetwork`: turns `fua_csnap_ghosts` on when snapshot traffic arrives, and off with every
@@ -233,6 +233,9 @@ The report:
 - `CensusScope` (`ESnapCensusPhase`): times one call into the `[snap] ghostframe` and predict
   lines' window totals, a line at each site. The frame's sim and render come from
   `features/framephase` instead, which already times them, and the tics run from the gametic.
+- The denominator of every `/f` on those lines, and of `fills/5s`, is a render-copy fill:
+  `GhostFrame` runs from gamecopy's `FillNow`, not once a drawn frame as it does on ZanZan from
+  `D_Display`, so none of them is a frame rate and a frame rate comes from `vid_fps`.
 
 The smoothing (`computation/smooth_compute.h`, also used by `csnap_replay.cpp`):
 - `SnapSmooth`: one ghost's smoothing state: the decaying offset, the part retained inside the
