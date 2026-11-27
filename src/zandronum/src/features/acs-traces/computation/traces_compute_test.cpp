@@ -120,12 +120,18 @@ TEST(AcsTraces, TheStartTurnsOffsetsWithTheActorUnlessAbsolute)
 
 TEST(AcsTraces, OnlyActorsTheFlagsLetThroughAreSkipped)
 {
-	EXPECT_EQ(ComputeLineTraceDecision(kHitWall, true, true, true), kTraceStop);
-	EXPECT_EQ(ComputeLineTraceDecision(kHitFloor, true, false, false), kTraceStop);
-	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, false, true), kTraceStop);
-	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, true, false, false), kTraceSkip);
-	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, true, true), kTraceSkip);
-	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, true, false), kTraceStop);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitWall, false, true, true, true), kTraceStop);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitFloor, false, true, false, false), kTraceStop);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, false, false, true), kTraceStop);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, true, false, false), kTraceSkip);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, false, true, true), kTraceSkip);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, false, false, true, false), kTraceStop);
+}
+
+TEST(AcsTraces, ASnapshotMirrorIsAlwaysPassedThrough)
+{
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, true, false, false, false), kTraceSkip);
+	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, true, true, true, true), kTraceSkip);
 }
 
 TEST(AcsTraces, WallPartsAndTexturesFollowUZDoom)

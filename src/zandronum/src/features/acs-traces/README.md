@@ -8,6 +8,8 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   the `TRF_` flags, `ComputeLineTraceStart` its start, and `ComputeLineTraceDecision` is its
   `CheckLineTrace`. `TRF_BLOCKSELF` leaves out `MF8_BLOCKASPLAYER`, which we don't have; portal counting is
   dropped. Actors are hit at their attack extents unless `TRF_FUA_PHYSICALSIZE` asks for `TRACE_NoPassWidth`.
+- A trace passes through a client's snapshot mirror (`NETFL_MIRROR`), which only draws the actor scripts
+  read, so no hit is ever a mirror.
 - A hit is turned into ACS values once (`ComputeTraceHit`): its actor as a handle, lines and sectors as
   indices plus their first ID or tag, positions cut to ACS fixed point, the texture as a name.
 - A tracer lives on its script (`DLevelScript::fua_tracers`), freed and saved with it; a script holds up
@@ -36,4 +38,4 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   It fails on a build without the functions, and with the tracers' `SerializeScript` taken out.
 - `fuactl scenarios netacstraces`: every step before that savegame as CLIENTSIDE copies on the player's
   client, an observer and a late joiner, then on the server, each tracing its own copy of the map and its
-  actors with its own tracer ids.
+  actors with its own tracer ids, the server on the snapshot netcode at `fua_snap_nolegacy 2`.

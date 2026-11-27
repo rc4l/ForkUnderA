@@ -80,11 +80,11 @@ Fixed3 ComputeLineTraceStart(int flags, const Fixed3 &actor, int64_t floorclip, 
 		actor.y + Mul16(offsetForward, sinAngle) - Mul16(offsetSide, cosAngle), z };
 }
 
-TraceStatus ComputeLineTraceDecision(int type, bool thruActors, bool thruSpecies, bool sameSpecies)
+TraceStatus ComputeLineTraceDecision(int type, bool mirror, bool thruActors, bool thruSpecies, bool sameSpecies)
 {
 	if (type != kHitActor)
 		return kTraceStop;
-	return thruActors || (thruSpecies && sameSpecies) ? kTraceSkip : kTraceStop;
+	return mirror || thruActors || (thruSpecies && sameSpecies) ? kTraceSkip : kTraceStop;
 }
 
 int ComputeLinePart(int tier)

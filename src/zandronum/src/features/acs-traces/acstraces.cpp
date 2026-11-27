@@ -60,7 +60,8 @@ ETraceStatus CheckLineTrace(FTraceResults &res, void *userdata)
 {
 	const LineTraceData *data = static_cast<const LineTraceData *>(userdata);
 	const bool sameSpecies = data->thruSpecies && res.HitType == TRACE_HitActor && res.Actor->GetSpecies() == data->caller->GetSpecies();
-	return ETraceStatus(ComputeLineTraceDecision(res.HitType, data->thruActors, data->thruSpecies, sameSpecies));
+	const bool mirror = res.HitType == TRACE_HitActor && (res.Actor->NetworkFlags & NETFL_MIRROR) != 0;
+	return ETraceStatus(ComputeLineTraceDecision(res.HitType, mirror, data->thruActors, data->thruSpecies, sameSpecies));
 }
 
 int32_t NameOf(FTextureID tex)

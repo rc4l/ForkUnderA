@@ -213,8 +213,8 @@ Fixed3 ComputeTraceDirection(int64_t cosPitch, int64_t sinPitch, int64_t cosAngl
 // [Doruk-Aksoy] Where fua_LineTrace starts: offsets from the actor's feet, turned by its angle unless TRF_ABSOFFSET, or a map point with TRF_ABSPOSITION.
 Fixed3 ComputeLineTraceStart(int flags, const Fixed3 &actor, int64_t floorclip, int64_t cosAngle, int64_t sinAngle, int32_t offsetZ, int32_t offsetForward, int32_t offsetSide);
 
-// [Doruk-Aksoy] UZDoom's CheckLineTrace: stop at anything but an actor the flags let the trace pass.
-TraceStatus ComputeLineTraceDecision(int type, bool thruActors, bool thruSpecies, bool sameSpecies);
+// [Doruk-Aksoy] UZDoom's CheckLineTrace: stop at anything but an actor the flags let the trace pass, or a snapshot mirror, which it always passes.
+TraceStatus ComputeLineTraceDecision(int type, bool mirror, bool thruActors, bool thruSpecies, bool sameSpecies);
 
 // [Doruk-Aksoy] UZDoom's LinePart for a wall tier: 0 upper, 1 middle, 2 lower; a 3D floor's side counts as middle.
 int ComputeLinePart(int tier);
