@@ -1,7 +1,7 @@
 # features/acs-traces
 
 ACS line traces: ZScript's `LineTrace` and `LineTracer.Trace` on our fixed-point `Trace()`, kept in tracers
-a script reads at its own pace, `fua_` functions 24050-24061 (24054 comes with the callback). Modder
+a script reads at its own pace, `fua_` functions 24050-24061. Modder
 reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/Line_traces.md).
 
 - `fua_LineTrace` is UZDoom's `P_LineTrace`: `ComputeLineTraceMasks` builds its actor and line masks from
@@ -18,18 +18,26 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   filters run through the queries' `ActorFilters`, `TQ_` ones through `ComputeLineFilterMatch` and the
   hit's texture. `Trace()` ends on a floor or ceiling without calling back, so that hit is decided after
   it returns, unless the rules already saw it.
+- A `TRACE_Callback` rule runs the tracer's callback, an ACS function reference, through
+  `DLevelScript::RunFunctionNow`: a script started at the function's address that ends at the
+  function's own return (`RunScript` ends a run on a return with no caller), reading its caller's
+  tracers (`FuaTracers`). One that waits is unlinked and its hit stops the trace; no trace starts while a
+  callback runs; an actor a callback removed is passed by. `ComputeCallbackAction` turns the returned
+  value into an action.
 - A tracer lives on its script (`DLevelScript::fua_tracers`), freed and saved with it; a script holds up
   to 16, the 17th `fua_TracerCreate` returning 0 with one warning a map. Ids come from the query ids'
   serial (`acsqueries::NextObjectId`), so a tracer's and a query's never meet.
-- Scripts save their tracers from SAVEVER 4541, and their rules from 4542, as one run of ints (`ComputeFlattenTracers`) with texture
+- Scripts save their tracers from SAVEVER 4541, their rules from 4542 and their callback from 4543, as one run of ints (`ComputeFlattenTracers`) with texture
   names saved as names through the queries' `SerializeNamedRun`; a damaged run loads as no tracers.
 
 ## Hooks
 
-- `p_acs.h`: `DLevelScript::fua_tracers`.
-- `p_acs.cpp`: the eleven functions and `DLevelScript::Serialize`.
+- `p_acs.h`: `DLevelScript::fua_tracers`, and the callback run's `fua_tracerOwner`, `fua_entryFunction`
+  and `fua_returned`.
+- `p_acs.cpp`: the twelve functions, `DLevelScript::Serialize`, `RunFunctionNow` and `IsCallableFunction`,
+  and in `RunScript` the entry function's arrays and the return that ends a callback's run.
 - `g_level.cpp`: `EnterLevel`, so the full-script warning shows once a map.
-- `version.h`: SAVEVER 4541 and 4542.
+- `version.h`: SAVEVER 4541, 4542 and 4543.
 - `features/acs-argcount`: each function's minimum argument count.
 
 ## Tests
@@ -46,8 +54,13 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   then `fua_Trace` rules recording, stopping, continuing, aborting and filtering by tid, class, handle,
   line flag, special and texture, an ignored actor, `TRF_FUA_ALLLINES`, floors, the sky with and without
   `TRF_NOSKY`, refused rules and the 32-rule cap, and a tracer's rules kept across the savegame.
-  It fails on a build without the functions, with the tracers' `SerializeScript` taken out, and with the
-  rules left out of the save.
-- `fuactl scenarios netacstraces`: every step before that savegame, the rules' too, as CLIENTSIDE copies
-  on the player's client, an observer and a late joiner, then on the server, each tracing its own copy of
-  the map and its actors with its own tracer ids, the server on the snapshot netcode at `fua_snap_nolegacy 2`.
+  Callbacks from `fixtures/acstraces/tracecb.bcs` (compiled by zt-bcc, loaded as a library): a piercing
+  shot reading each hit, a context naming the action, an invalid action, a callback that waits (written as
+  assembly, since zt-bcc refuses `Delay` in a function), a refused nested trace, a cleared callback, one
+  removing an actor ahead, and one kept across the savegame. It fails on a build without the functions,
+  with the tracers' `SerializeScript` taken out, and with the rules or the callback left out of the save.
+- `fuactl scenarios netacstraces`: every step before that savegame, the rules' and the first callbacks'
+  too (`tracecb.bcs`' CLIENTSIDE copies 1030 and 1032), as CLIENTSIDE copies on the player's client, an
+  observer and a late joiner, then on the server, each tracing its own copy of the map and its actors
+  with its own tracer ids; the callback that removes an imp runs last, on every machine. The server runs
+  the snapshot netcode at `fua_snap_nolegacy 2`.

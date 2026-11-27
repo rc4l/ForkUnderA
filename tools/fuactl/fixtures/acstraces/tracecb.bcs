@@ -1,0 +1,106 @@
+// fuactl scenarios acstraces: fua_TraceCallback's functions, run on the scenario's imp lane (y 680, imps 31-33 at x 600-800).
+// Scripts 1030 and 1032 are 30's and 32's CLIENTSIDE copies, for netacstraces.
+// Build: zt-bcc -i <zt-bcc>/lib tracecb.bcs tracecb.o
+#library "tracecb"
+#import "zcommon.bcs"
+
+global int 2:resume;
+
+int power;
+int seen;
+
+// Each actor passed costs its health; the shot stops once the power runs out.
+int Pierce( int t, int ctx ) {
+   ++seen;
+   power -= fua_GetField( fua_TraceResult( t, TR_HitActor ), "health" );
+   return power > 0 ? TRACE_Record : TRACE_Stop;
+}
+
+// The context names the action.
+int Context( int t, int ctx ) {
+   return ctx;
+}
+
+// zt-bcc refuses a Delay in a function, which other compilers allow, so it is written as assembly.
+int Waits( int t, int ctx ) {
+   > delaydirect 1;
+   return TRACE_Skip;
+}
+
+// A trace started inside a callback is refused, so every hit is kept.
+int Nested( int t, int ctx ) {
+   return fua_Trace( ctx, 100.0, 960.0, 32.0, 1.0, 0.0, 0.0, 4096.0 ) == 0 ? TRACE_Record : TRACE_Abort;
+}
+
+// The first imp removes the second, which the trace then passes by.
+int Removes( int t, int ctx ) {
+   if ( fua_GetField( fua_TraceResult( t, TR_HitActor ), "tid" ) == 31 ) {
+      Thing_Remove( 32 );
+      return TRACE_Skip;
+   }
+   return TRACE_Stop;
+}
+
+int Imps( int t ) {
+   return fua_Trace( t, 100.0, 680.0, 32.0, 1.0, 0.0, 0.0, 4096.0 );
+}
+
+int TidOf( int t, int i ) {
+   return fua_GetField( fua_TraceResult( t, TR_HitActor, i ), "tid" );
+}
+
+void Callbacks( void ) {
+   int t = fua_TracerCreate();
+   fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
+   fua_TraceRule( t, TR_WALL, TRACE_Stop );
+   fua_TraceCallback( t, Pierce );
+   power = 100;
+   int pierced = Imps( t );
+   int first = TidOf( t, 0 );
+   int second = TidOf( t, 1 );
+   fua_TraceCallback( t, Context, TRACE_Skip );
+   int skipped = Imps( t );
+   int wall = fua_TraceResult( t, TR_HitType, 0 );
+   fua_TraceCallback( t, Context, TRACE_Callback );
+   int callback = Imps( t );
+   int callbackTid = TidOf( t, 0 );
+   fua_TraceCallback( t, Context, 99 );
+   int invalid = Imps( t );
+   fua_TraceCallback( t, Waits );
+   int waited = Imps( t );
+   int waitedTid = TidOf( t, 0 );
+   int t2 = fua_TracerCreate();
+   fua_TraceCallback( t, Nested, t2 );
+   int nested = Imps( t );
+   int cleared = fua_TraceCallback( t, null );
+   int none = Imps( t );
+   Log( s: "cb1 ", d: pierced, s: " ", d: first, s: " ", d: second, s: " ", d: seen, s: " ", d: skipped, s: " ", d: wall, s: " ",
+      d: callback, s: " ", d: callbackTid, s: " ", d: invalid, s: " ", d: waited, s: " ", d: waitedTid, s: " ", d: nested, s: " ",
+      d: cleared, s: " ", d: none );
+}
+
+script 30 ( void ) { Callbacks(); }
+script 1030 ( void ) clientside { Callbacks(); }
+
+// Holds a tracer with a callback across a savegame, then traces with it.
+script 31 ( void ) {
+   int t = fua_TracerCreate();
+   fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
+   fua_TraceRule( t, TR_WALL, TRACE_Stop );
+   fua_TraceCallback( t, Context, TRACE_Record );
+   until ( resume ) {
+      Delay( 1 );
+   }
+   Log( s: "cb2 ", d: Imps( t ), s: " ", d: TidOf( t, 2 ) );
+}
+
+// Removes an imp ahead of the trace, so it runs last.
+void RemovesAhead( void ) {
+   int t = fua_TracerCreate();
+   fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
+   fua_TraceCallback( t, Removes );
+   Log( s: "cb3 ", d: Imps( t ), s: " ", d: TidOf( t, 0 ) );
+}
+
+script 32 ( void ) { RemovesAhead(); }
+script 1032 ( void ) clientside { RemovesAhead(); }

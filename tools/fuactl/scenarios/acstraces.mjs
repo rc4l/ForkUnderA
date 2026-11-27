@@ -1,9 +1,12 @@
 // [Doruk-Aksoy] ACS line traces (features/acs-traces): exit 0 when fua_LineTrace stops where ZScript's LineTrace would on a wall, a BLOCKHITSCAN
 // line, a step's upper and lower parts, a row of imps, a solid decoration, a 3D floor, deep water and the sky, every TR_ property reads back what it hit,
-// fua_LineInfo and fua_SectorInfo read lines and sectors by index, fua_Trace's rules keep, pass and stop at what they match, a script stops at 16
-// tracers with one warning, and tracers and their rules survive a savegame.
+// fua_LineInfo and fua_SectorInfo read lines and sectors by index, fua_Trace's rules keep, pass and stop at what they match, callback functions
+// (fixtures/acstraces/tracecb.bcs) decide the hits rules hand them, a script stops at 16 tracers with one warning, and tracers, their rules and
+// callbacks survive a savegame.
 //
 // usage:  node scenarios/acstraces.mjs
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, callFunc, AcsScript, PCD, SCRIPT } from "../src/acs.mjs";
 import { SPECIAL, THING } from "../src/doomnums.mjs";
@@ -13,7 +16,7 @@ import { logged } from "./acshandles.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 export const FN = { GetActorHandle: 24020, GetField: 24030, QueryCreate: 24040, TracerCreate: 24050, TracerFree: 24051, TracerClear: 24052,
-  TraceRule: 24053, LineTrace: 24055, Trace: 24056, TraceHitCount: 24057, TraceResult: 24058, TraceResultStr: 24059, LineInfo: 24060, SectorInfo: 24061 };
+  TraceRule: 24053, TraceCallback: 24054, LineTrace: 24055, Trace: 24056, TraceHitCount: 24057, TraceResult: 24058, TraceResultStr: 24059, LineInfo: 24060, SectorInfo: 24061 };
 export const TR = { HitType: 0, HitActor: 1, HitX: 2, HitY: 3, HitZ: 4, DirX: 5, DirY: 6, DirZ: 7, Distance: 8, Fraction: 9, HitLine: 10, LineId: 11,
   LineSide: 12, LinePart: 13, HitSector: 14, SectorTag: 15, SectorPlane: 16, F3DFloor: 17, CrossedWater: 18, Crossed3DWater: 19, HitTexture: 20 };
 export const TRF = { ABSPOSITION: 1, THRUSPECIES: 4, THRUACTORS: 8, THRUHITSCAN: 32, NOSKY: 64, ALLACTORS: 128, SOLIDACTORS: 256, FUA_PHYSICALSIZE: 1 << 20,
@@ -221,6 +224,7 @@ export const CHECKS = {
     [fn("TraceRule", t, KIND.WALL, 9), 0], [rule(t, "ACTOR", "STOP", FQ.FLAT), 0], [rule(t, "WALL", "STOP", FQ.TID, 3), 0],
     [rule(t, "ACTOR", "STOP", TQ.SPECIAL, 80), 0], [rule(t, "ACTOR", "STOP", FQ.CLASS, S.NoSuchClass), 0], [rule(t, "WALL", "STOP", TQ.TEXTURE, S.NOSUCHTEX), 0],
     [rule(t, "ACTOR", "STOP", FQ.SIGHT, 999999), 0], [rule(t, "ACTOR", "STOP", FQ.TID), 0],
+    [fn("TraceCallback", t, 12345), 0], [fn("TraceCallback", 999999, 0), 0], [fn("TraceCallback", t, 0), 1],
     [[PCD.PUSHNUMBER, 0, ...Array.from({ length: 29 }, () => [...rule(t, "WALL", "STOP"), PCD.ADD]).flat()], 29], [rule(t, "WALL", "STOP"), 0],
   ],
 };
@@ -290,13 +294,17 @@ export function waitingScript() {
   return s.words(0);
 }
 
+// [Doruk-Aksoy] The callback functions, compiled by zt-bcc from tracecb.bcs beside it, as a library.
+export const CALLBACKS = fileURLToPath(new URL("../fixtures/acstraces/tracecb.o", import.meta.url));
+
 // [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map (things only, so the judge's indexes hold), as netacstraces' copies and starts do.
 export function buildAcsTracesPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const scripts = withScripts([{ code: waitingScript(), type: SCRIPT.CLOSED, number: 20 },
     ...Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }))]);
   const { m } = buildMap();
   withMap(m);
-  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) }]);
+  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) },
+    { name: "acs/tracecb.o", data: fs.readFileSync(CALLBACKS) }, { name: "LOADACS.txt", data: "tracecb\n" }]);
 }
 
 // [Doruk-Aksoy] The strings a log printed between bars, or null.
@@ -306,11 +314,18 @@ export function loggedStrings(text, tag) {
 }
 
 export const FULL_WARNING = /fua_TracerCreate: a script already holds 16 tracers/g;
+export const CALLBACK_WARNING = /fua_TraceCallback: a callback waited/g;
 const want = (checks) => checks.map(([, w]) => w);
 export const WANT = {
   ...Object.fromEntries(Object.keys(CHECKS).map((tag) => [tag, want(CHECKS[tag])])),
   v1: [HIT.ACTOR, HIT.WALL],
   v2: [1, TID.IMP1, ix.east, fx(2048), 1, TID.IMP2],
+  // [Doruk-Aksoy] tracecb.bcs: pierced two imps, the second's tid, two seen; skipped to the wall; a callback or 99 returned stops at the first imp;
+  // a callback that waits stops there too; a nested trace refused keeps all four hits; cleared, and with no callback the first imp stops it.
+  cb1: [2, TID.IMP1, TID.IMP2, 2, 1, HIT.WALL, 1, TID.IMP1, 1, 1, TID.IMP1, 4, 1, 1],
+  // [Doruk-Aksoy] A callback kept across the savegame records all three imps; one that removes the second imp ahead stops at the third.
+  cb2: [4, TID.IMP3],
+  cb3: [1, TID.IMP3],
 };
 export const WANT_STRINGS = { ...Object.fromEntries(Object.keys(STRING_CHECKS).map((tag) => [tag, want(STRING_CHECKS[tag])])), v3: ["STARTAN2"] };
 
@@ -336,6 +351,8 @@ export function judgeTraces(logs, want = WANT, strings = WANT_STRINGS) {
   }
   const warnings = (String(logs.l1).match(FULL_WARNING) || []).length;
   if ("l1" in want && warnings !== 1) faults.push(`a full script warned ${warnings} times, not once`);
+  const waits = (String(logs.cb1).match(CALLBACK_WARNING) || []).length;
+  if ("cb1" in want && waits !== 1) faults.push(`a waiting callback warned ${waits} times, not once`);
   return faults;
 }
 
@@ -359,6 +376,8 @@ export async function judgeLaunch(c, inst, label) {
     const out = await exec(`puke ${n}`);
     for (const tag of tags) logs[tag] = out;
   }
+  logs.cb1 = await exec("puke 30");
+  await exec("puke 31");
   logs.v1 = await exec("puke 20");
   await exec("save fuactl_acstraces.zds");
   await cap.waitTics(c, 10);
@@ -368,10 +387,12 @@ export async function judgeLaunch(c, inst, label) {
   const resumed = await exec("puke 13");
   logs.v2 = resumed;
   logs.v3 = resumed;
+  logs.cb2 = resumed;
   logs.n1 = await exec("puke 14");
+  logs.cb3 = await exec("puke 32");
   const faults = judgeTraces(logs);
   const count = Object.values(WANT).reduce((n, v) => n + v.length, 0) + Object.values(WANT_STRINGS).reduce((n, v) => n + v.length, 0);
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${count} trace values right on walls, lines, steps, actors, 3D floors, water and sky, rules keeping, passing and stopping at what they match, 16 tracers with one warning, and tracers and rules kept across a savegame`, failed: faults.length ? 1 : 0 };
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${count} trace values right on walls, lines, steps, actors, 3D floors, water and sky, rules and callbacks keeping, passing and stopping at what they match, 16 tracers with one warning, and tracers, rules and callbacks kept across a savegame`, failed: faults.length ? 1 : 0 };
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "acstraces", wad: buildAcsTracesPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);

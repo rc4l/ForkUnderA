@@ -188,7 +188,8 @@ int GetRevisionNumber();
 // [Doruk-Aksoy] 4540: each ACS script serializes its queries (features/acs-queries, guarded in SerializeScript); the next query id rides in its own savegame chunk.
 // [Doruk-Aksoy] 4541: each ACS script serializes its tracers (features/acs-traces, guarded in SerializeScript).
 // [Doruk-Aksoy] 4542: ACS tracers save their rules (features/acs-traces, guarded in SerializeScript).
-#define SAVEVER 4542
+// [Doruk-Aksoy] 4543: ACS tracers save their callback function (features/acs-traces, guarded in SerializeScript).
+#define SAVEVER 4543
 
 
 #define SAVEVERSTRINGIFY2(x) #x

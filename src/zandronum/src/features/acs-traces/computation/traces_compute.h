@@ -12,13 +12,14 @@
 
 namespace zx { namespace acstraces {
 
-// [Doruk-Aksoy] The ACS function numbers, fua_ block 24050-24061; 24054 comes with the callback.
+// [Doruk-Aksoy] The ACS function numbers, fua_ block 24050-24061.
 enum Function
 {
 	kTracerCreate = 24050,
 	kTracerFree = 24051,
 	kTracerClear = 24052,
 	kTraceRule = 24053,
+	kTraceCallback = 24054,
 	kLineTrace = 24055,
 	kTrace = 24056,
 	kTraceHitCount = 24057,
@@ -76,7 +77,7 @@ enum HitKind
 	kKind3DFloor,
 };
 
-// [Doruk-Aksoy] What a rule does with a hit: Trace()'s four, and recording it and going on.
+// [Doruk-Aksoy] What a rule does with a hit: Trace()'s four, recording it and going on, and handing it to the tracer's callback.
 enum Action
 {
 	kActStop,
@@ -84,6 +85,15 @@ enum Action
 	kActSkip,
 	kActAbort,
 	kActRecord,
+	kActCallback,
+};
+
+// [Doruk-Aksoy] What a savegame's run of tracers holds: hits only (SAVEVER 4541), rules too (4542), and the callback (4543).
+enum TracerFormat
+{
+	kTracerFormatHits = 1,
+	kTracerFormatRules,
+	kTracerFormatCallback,
 };
 
 // [Doruk-Aksoy] The TQ_ filters a rule tests walls and planes with, numbered apart from the FQ_ kinds.
@@ -280,14 +290,19 @@ struct Rule
 	acsqueries::Filter filter;
 };
 
-// [Doruk-Aksoy] A tracer: its id, the result its last trace ended on, the hits it kept and its rules.
+// [Doruk-Aksoy] A tracer: its id, the result its last trace ended on, the hits it kept, its rules, and its callback's function reference (0 for none) and context.
 struct Tracer
 {
 	int32_t id;
 	Hit last;
 	std::vector<Hit> hits;
 	std::vector<Rule> rules;
+	int32_t callback;
+	int32_t context;
 };
+
+// [Doruk-Aksoy] The action a callback's return value names; anything else, a callback among them, stops the trace.
+int ComputeCallbackAction(int32_t value);
 
 // [Doruk-Aksoy] Which kind a hit is for rules: a 3D floor's side is its own kind, not a wall; 0 for nothing.
 int ComputeHitKind(int type, int tier);
@@ -345,8 +360,11 @@ public:
 	const Tracer *Find(int32_t id) const;
 	bool Free(int32_t id);
 
-	// [Doruk-Aksoy] Drops the tracer's rules, hits and last result.
+	// [Doruk-Aksoy] Drops the tracer's rules, callback, hits and last result.
 	bool Clear(int32_t id);
+
+	// [Doruk-Aksoy] Sets the tracer's callback function reference (0 for none) and the context it is called with.
+	bool SetCallback(int32_t id, int32_t callback, int32_t context);
 
 	// [Doruk-Aksoy] Adds a rule, false for an unknown tracer, kind, action or filter, a filter that can't fit the kind, or a 33rd rule.
 	bool AddRule(int32_t id, const Rule &rule);
@@ -362,9 +380,9 @@ public:
 // [Doruk-Aksoy] The largest id the script holds, 0 for none.
 int32_t ComputeHighestTracerId(const ScriptTracers &tracers);
 
-// [Doruk-Aksoy] The tracers as one run of ints for a savegame, and back; decoding refuses a damaged run, and reads rules only when the run has them.
+// [Doruk-Aksoy] The tracers as one run of ints for a savegame in the newest format, and back from a run of `format`; decoding refuses a damaged run.
 std::vector<int32_t> ComputeFlattenTracers(const ScriptTracers &tracers);
-bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, bool withRules);
+bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, int format);
 
 // [Doruk-Aksoy] Maps every name a tracer holds, its hits' textures and its rules' class, flag and texture names, through `map`.
 template <class Map>

@@ -9,8 +9,9 @@
 |---|---|---|
 | 24050 | `fua_TracerCreate()` | a tracer id, or 0 when the script already holds 16 |
 | 24051 | `fua_TracerFree(int t)` | nothing; also happens when the script ends |
-| 24052 | `fua_TracerClear(int t)` | nothing; drops the tracer's rules and hits |
+| 24052 | `fua_TracerClear(int t)` | nothing; drops the tracer's rules, callback and hits |
 | 24053 | `fua_TraceRule(int t, int hit, int action [, int filter [, a [, b]]])` | 1 once added; 0 for a bad call, an unknown class, flag or texture, or a handle to no actor |
+| 24054 | `fua_TraceCallback(int t, int function(int, int)? fn [, int ctx])` | 1 once set; `null` clears it; 0 for no tracer |
 | 24055 | `fua_LineTrace(int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])` | the hit type, `TRACE_HitNone` (0) for nothing |
 | 24056 | `fua_Trace(int t, fixed x, fixed y, fixed z, fixed dx, fixed dy, fixed dz, fixed distance [, int flags [, int ignore]])` | how many hits the rules kept |
 | 24057 | `fua_TraceHitCount(int t)` | how many hits the tracer kept from its last trace |
@@ -18,8 +19,6 @@
 | 24059 | `fua_TraceResultStr(int t, int prop [, int hit])` | the hit texture's name for `TR_HitTexture`, "" otherwise |
 | 24060 | `fua_LineInfo(int line, int prop)` | an `LI_` property of a line by index, 0 for none |
 | 24061 | `fua_SectorInfo(int sector, int prop)` | an `SI_` property of a sector by index, 0 for none |
-
-24054 is kept for a callback function.
 
 ## Usage
 
@@ -130,6 +129,7 @@ for( int i = 0; i < n; i++ )
 | `TRACE_Skip` | 2 | go on as if it weren't there |
 | `TRACE_Abort` | 3 | end the trace with nothing, every kept hit dropped |
 | `TRACE_Record` | 4 | keep the hit and go on |
+| `TRACE_Callback` | 5 | let the tracer's callback function decide |
 
 A rule's filter is any `FQ_` actor filter of [queries](Actor_queries.md) but `FQ_2D` and `FQ_EDGES`, or one
 of these for lines, floors and ceilings; `b` 0 turns a `TQ_` filter round:
@@ -152,6 +152,45 @@ of these for lines, floors and ceilings; `b` 0 turns a `TQ_` filter round:
   would otherwise hit first.
 - **A tracer holds up to 32 rules,** kept until `fua_TracerClear` and saved with it. `fua_LineTrace`
   ignores them and keeps them for the next `fua_Trace`.
+
+## Callback functions
+
+A rule's `TRACE_Callback` hands its hits to a function the script names with `fua_TraceCallback`, for
+decisions rules can't express. The function takes the tracer and `ctx` and returns an action;
+`fua_TraceResult( t, prop )` with no hit reads the hit it decides, and `fua_TraceHitCount` the hits kept
+so far. zt-bcc checks the function's shape.
+
+```
+int power;
+
+int Pierce( int t, int ctx )
+{
+    power -= fua_GetField( fua_TraceResult( t, TR_HitActor ), "health" );
+    return power > 0 ? TRACE_Record : TRACE_Stop;
+}
+
+script "PierceShot" ( void )
+{
+    int t = fua_TracerCreate();
+    fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
+    fua_TraceRule( t, TR_WALL, TRACE_Stop );
+    fua_TraceCallback( t, Pierce );
+    power = 100;
+    int n = fua_Trace( t, x, y, z, dx, dy, dz, 4096.0, 0, fua_GetActorHandle( 0 ) );
+}
+```
+
+- **Rules come first.** Only the hits a `TRACE_Callback` rule hands over call the function, one ACS
+  function call each, so cheap cases stay with the rules.
+- **The function runs inside the trace,** as the calling script's activator, with its own module's
+  variables. `ctx` carries the caller's state, such as an index or a static struct, since functions
+  have no closures.
+- **A callback that waits** (only other compilers allow `Delay` in a function), or returns anything
+  but an action from `TRACE_Stop` to `TRACE_Record`, stops the trace on that hit; a wait also warns
+  once a map.
+- **A callback can't start a trace;** `fua_Trace` and `fua_LineTrace` return 0 inside one.
+- **An actor a callback removes** is passed by if the trace reaches it.
+- Many decisions need no callback: record every hit with a rule and walk the list after the trace.
 
 ## Implementation notes
 
