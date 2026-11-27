@@ -143,12 +143,12 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
 - `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
-  log, so each expectation is UZDoom's own: 49 of 49 pass there.
+  log, so each expectation is UZDoom's own: 50 of 50 pass there.
 - `fuactl scenarios decorateflags` (`tools/fuactl/scenarios/decorateflags.mjs`): the moved flags read back at map start,
   from this build's save, from a save an older build wrote (`--old PATH` or `FUACTL_OLD_ENGINE`), and on a server, its
   player, observer and late joiner. It fails with the remap left out, and online with `SetThingFlags` dropped.
 - `tools/flag_bits_snapshot.py` (CI): every DECORATE flag's bit, refusing a moved one until SAVEVER is bumped.
-- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (49 of 49 pass there); each
+- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (50 of 50 pass there); each
   behaviour check fails with its flag taken out.
 - `node uzdoom/flipparity.mjs` (from `tools/fuactl`): a four-colour sprite plain, XFLIP, YFLIP and both, and an
   eight-rotation sprite plain, SPRITEFLIP and SPRITEFLIP with XFLIP, each read by its quarters' colours in UZDoom's
