@@ -7,6 +7,8 @@
 #ifndef ZX_HITBOXVIZ_BLASTRECORDS_COMPUTE_H
 #define ZX_HITBOXVIZ_BLASTRECORDS_COMPUTE_H
 
+#include "features/hitboxviz/computation/recordstore_compute.h"
+
 namespace zx { namespace hitboxviz {
 
 struct BlastRecord
@@ -27,32 +29,8 @@ enum
 	BLAST_RECORD_LIFETIME_TICS = 35,
 };
 
-// Insertion-ordered, fixed-capacity. Oldest-first iteration; oldest evicted when full.
-class BlastRecordStore
-{
-public:
-	BlastRecordStore();
-
-	// Appends a record, evicting the oldest if already at capacity.
-	void Push(const BlastRecord &record);
-
-	// Drops every record whose expiryTic has been reached (expiryTic <= nowTic). Records are not
-	// assumed to be in expiry order, so this compacts rather than just popping the front.
-	void ExpireBefore(int nowTic);
-
-	// Drops everything -- used on map change, reconnect and demo seek, where surviving records
-	// would be drawn at coordinates belonging to a different level.
-	void Clear();
-
-	unsigned int Count() const { return mCount; }
-
-	// Valid for index < Count(); index 0 is the oldest surviving record.
-	const BlastRecord &Get(unsigned int index) const { return mRecords[index]; }
-
-private:
-	BlastRecord mRecords[MAX_BLAST_RECORDS];
-	unsigned int mCount;
-};
+// [MGOOOOOO] The blasts' store, the shared one (recordstore_compute.h) holding MAX_BLAST_RECORDS.
+typedef RecordStore<BlastRecord, MAX_BLAST_RECORDS> BlastRecordStore;
 
 }} // namespace zx::hitboxviz
 

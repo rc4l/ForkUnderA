@@ -3926,7 +3926,7 @@ void P_SetupLevel (const char *lumpname, int position)
 
 	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
 	// left over from the previous level would be drawn in the wrong place here.
-	zx::hitboxviz::ClearBlasts();
+	zx::hitboxviz::ClearRecords();   // [MGOOOOOO] the one-tic actors' boxes too
 	P_ForgetNoiseAlerts();
 
 	// [rc4l] features/levelmesh's boxes belong to the last level's marks, and features/decals counts this level's afresh.

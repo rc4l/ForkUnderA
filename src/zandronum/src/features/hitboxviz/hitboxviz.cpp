@@ -16,6 +16,7 @@
 
 #include "actor.h"
 #include "features/gamecopy/actors.h"   // [rc4l] CopyTic
+#include "features/gamecopy/level.h"   // [MGOOOOOO] the copy's level time
 #include "c_cvars.h"
 #include "c_dispatch.h"   // CCMD
 #include "c_console.h"    // Printf
@@ -30,6 +31,7 @@
 #include "features/hitboxviz/hitboxviz_internal.h"
 #include "features/hitboxviz/computation/blastrecords_compute.h"
 #include "features/hitboxviz/computation/boxedges_compute.h"
+#include "features/hitboxviz/computation/ticboxes_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
 #include "features/handoff/effects.h"   // [rc4l] Deferred
 
@@ -42,6 +44,8 @@ CVAR(Bool,  cl_fua_hitbox_actors,     true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG
 CVAR(Bool,  cl_fua_hitbox_missiles,   true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool,  cl_fua_hitbox_attackbox,  true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool,  cl_fua_hitbox_explosions, true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [MGOOOOOO] Draw actors spawned and destroyed inside one tic (a weapon's one-tic hitbox) for that tic's frames.
+CVAR(Bool,  cl_fua_hitbox_onetic,     true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // [MGOOOOOO] Include the actor the camera is attached to -- your own body in first person, or the
 // player you are following as a spectator. On by default: the followed player's box is the whole
 // point of watching them.
@@ -73,6 +77,10 @@ namespace
 	// [rc4l] The overlay draws the store every frame, so a blast a tic on the game thread makes is stored in the handoff.
 	zx::handoff::Deferred<BlastRecord> s_blastsMade([](const BlastRecord &r) { s_blasts.Push(r); });
 
+	TicBoxStore s_ticBoxes;
+	// [MGOOOOOO] An actor a tic on the game thread spawns and destroys reaches the frames' store through the handoff, as a blast does.
+	zx::handoff::Deferred<TicBoxRecord> s_ticBoxesMade([](const TicBoxRecord &r) { s_ticBoxes.Push(r); });
+
 	// [rc4l] The backend's frame (CollectBackendFrame), in BackendLines' order, and whether it may draw.
 	TArray<Vertex3> s_backendVerts[kLineBatches];
 	bool s_backendActive = false;
@@ -92,6 +100,21 @@ namespace
 	{
 		Vertex3 verts[BOX_EDGE_VERTS];
 		AppendVerts(dest, verts, BuildBoxEdges(cx, cy, bottomZ, radius, height, verts));
+	}
+
+	// [MGOOOOOO] Whether a missile, or any other actor, gets boxes at all.
+	inline bool KindShown(bool missile)
+	{
+		return missile ? !!cl_fua_hitbox_missiles : !!cl_fua_hitbox_actors;
+	}
+
+	// [MGOOOOOO] An actor's collision box, and its attack box only where that differs, or every actor would be outlined twice.
+	void AppendBoxes(float cx, float cy, float cz, float radius, float height, float attackRadius, float attackHeight,
+		TArray<Vertex3> &physical, TArray<Vertex3> &attack)
+	{
+		AppendBox(physical, cx, cy, cz, radius, height);
+		if (cl_fua_hitbox_attackbox && (attackRadius != radius || attackHeight != height))
+			AppendBox(attack, cx, cy, cz, attackRadius, attackHeight);
 	}
 
 	// Turns the surviving blast records into wireframe: the outer region actually tested by
@@ -132,8 +155,7 @@ void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor,
 	if (thing->who == viewActor && !cl_fua_hitbox_self)
 		return;
 
-	const bool isMissile = !!(thing->flags & MF_MISSILE);
-	if (isMissile ? !cl_fua_hitbox_missiles : !cl_fua_hitbox_actors)
+	if (!KindShown(!!(thing->flags & MF_MISSILE)))
 		return;
 
 	// Interpolated, so the box tracks its sprite instead of stepping at the 35Hz tic rate.
@@ -141,25 +163,28 @@ void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor,
 	const fixed_t thingy = thing->PrevY + FixedMul(r_TicFrac, thing->y - thing->PrevY);
 	const fixed_t thingz = thing->PrevZ + FixedMul(r_TicFrac, thing->z - thing->PrevZ);
 
-	const float cx = FIXED2FLOAT(thingx);
-	const float cy = FIXED2FLOAT(thingy);
-	const float cz = FIXED2FLOAT(thingz);
+	AppendBoxes(FIXED2FLOAT(thingx), FIXED2FLOAT(thingy), FIXED2FLOAT(thingz),
+		FIXED2FLOAT(thing->radius), FIXED2FLOAT(thing->height),
+		FIXED2FLOAT(thing->attackRadius), FIXED2FLOAT(thing->attackHeight), physical, attack);
+}
 
-	AppendBox(physical, cx, cy, cz,
-		FIXED2FLOAT(thing->radius), FIXED2FLOAT(thing->height));
-
-	// The attack box is only worth drawing where it actually differs from the movement box --
-	// otherwise every actor would be outlined twice in two colours.
-	if (cl_fua_hitbox_attackbox)
+void CollectTicBoxes(TArray<Vertex3> &physical, TArray<Vertex3> &attack)
+{
+	// [MGOOOOOO] The level time, not gametic, which goes on through a pause while the copy still shows the last tic that ran.
+	const int copyTime = zx::gamecopy::Level().time;
+	s_ticBoxes.ExpireBefore(copyTime);
+	if (!cl_fua_hitbox_onetic)
+		return;
+	const float frac = FIXED2FLOAT(r_TicFrac);
+	for (unsigned int i = 0; i < s_ticBoxes.Count(); ++i)
 	{
-		const fixed_t attackRadius = thing->attackRadius;
-		const fixed_t attackHeight = thing->attackHeight;
-
-		if (attackRadius != thing->radius || attackHeight != thing->height)
-		{
-			AppendBox(attack, cx, cy, cz,
-				FIXED2FLOAT(attackRadius), FIXED2FLOAT(attackHeight));
-		}
+		const TicBoxRecord &box = s_ticBoxes.Get(i);
+		if (!ComputeTicBoxShown(box.expiryTic, copyTime) || !KindShown(box.missile))
+			continue;
+		// [MGOOOOOO] Interpolated from where its tic began to where it went, as a live actor's box is.
+		AppendBoxes(box.prevX + frac * (box.x - box.prevX), box.prevY + frac * (box.y - box.prevY),
+			box.prevZ + frac * (box.z - box.prevZ), box.radius, box.height, box.attackRadius, box.attackHeight,
+			physical, attack);
 	}
 }
 
@@ -182,6 +207,7 @@ void CollectBackendFrame(const void *viewActor, const int *sectorList, int count
 	for (int i = 0; i < count; i++)
 		for (int r = zx::gamecopy::FirstActorIn(&sectors[sectorList[i]]); r >= 0; r = actors[r].nextInSector)
 			AppendActor(actors[r], viewActor, s_backendVerts[0], s_backendVerts[1]);
+	CollectTicBoxes(s_backendVerts[0], s_backendVerts[1]);
 	CollectBlasts(s_backendVerts[2]);
 }
 
@@ -221,10 +247,17 @@ void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedist
 	s_blastsMade.Make(record);
 }
 
-void ClearBlasts()
+void PushTicBox(const TicBoxRecord &box)
+{
+	s_ticBoxesMade.Make(box);
+}
+
+void ClearRecords()
 {
 	s_blasts.Clear();
 	s_blastsMade.Clear();
+	s_ticBoxes.Clear();
+	s_ticBoxesMade.Clear();
 }
 
 bool ServerDebugActive()
