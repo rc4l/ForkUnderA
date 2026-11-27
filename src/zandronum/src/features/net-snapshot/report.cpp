@@ -1471,11 +1471,17 @@ void zx::netsnapshot::snap_MaybeReport()
 
 		// The quota the code used, not one derived again for the report.
 		{
-			unsigned int quota = 0, wanted = 0, pop = 0;
-			AnimrefQuota(quota, wanted, pop);
-			snap_Say("[snap] animref quota: %u/frame over %u held -> ~%.1f s"
+			unsigned int quota = 0, wanted = 0, pop = 0, worst = MAXPLAYERS;
+			AnimrefQuota(quota, wanted, pop, worst);
+			// One client's figures, so the interval below is the quota's own.
+			char szWho[24];
+			if (worst < MAXPLAYERS)
+				mysnprintf(szWho, sizeof(szWho), "client %u", worst);
+			else
+				mysnprintf(szWho, sizeof(szWho), "no client");
+			snap_Say("[snap] animref quota: worst %s, %u/frame over %u held -> ~%.1f s"
 					" | target %.1f s | ceiling %d%s\n",
-					quota, pop,
+					szWho, quota, pop,
 					(quota > 0) ? ((double)pop / ((double)quota * pumpsPerSec)) : 0.0,
 					(double)(int)fua_snap_animref_interval / (double)TICRATE,
 					(int)SNAPCL_ANIMREF_MAX,

@@ -215,6 +215,11 @@ struct SnapClientState
 	unsigned int lastCosmeticCount;
 	// Held records owing appearance only; sizes the TIER_ANIMREFRESH quota.
 	unsigned int lastAnimrefCount;
+	// This client's own clamp memory, the quota each band wanted while the ceiling cut
+	// it and 0 while it did not, with the animref quota the frame actually used.
+	unsigned int lastRefreshWanted;
+	unsigned int lastAnimrefWanted;
+	unsigned int lastAnimrefQuota;
 	unsigned int			staleIds;
 };
 
@@ -334,6 +339,9 @@ void zx::netsnapshot::ResetClient(unsigned int client)
 	snapcl_ForgetWorld(cl);
 	cl.lastCosmeticCount = 0;
 	cl.lastAnimrefCount = 0;
+	cl.lastRefreshWanted = 0;
+	cl.lastAnimrefWanted = 0;
+	cl.lastAnimrefQuota = 0;
 	cl.lastAckedSeq = 0;
 	// Never rewound, since the client's high-water mark survives a map change
 	// and a reconnect.
@@ -1200,14 +1208,24 @@ unsigned int zx::netsnapshot::LastReserveSpent()		{ return g_lastReserveSpent; }
 unsigned int zx::netsnapshot::LastReserveCapped()		{ return g_lastReserveCapped; }
 unsigned int zx::netsnapshot::LastReserveDrained()	{ return g_lastReserveDrained; }
 
-static unsigned int g_lastAnimrefWanted = 0;
-static unsigned int g_lastAnimrefQuota = 0;
-
-void zx::netsnapshot::AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population)
+void zx::netsnapshot::AnimrefQuota(unsigned int& quota, unsigned int& wanted,
+	unsigned int& population, unsigned int& client)
 {
-	quota = g_lastAnimrefQuota;
-	wanted = g_lastAnimrefWanted;
-	population = (MAXPLAYERS > 0) ? g_clients[0].lastAnimrefCount : 0;
+	// The worst client, since the quota rises with the population: that client has both
+	// the longest interval and the clamp, where mixing clients described neither.
+	quota = wanted = population = 0;
+	client = MAXPLAYERS;
+	for (unsigned int i = 0; i < MAXPLAYERS; ++i)
+	{
+		const SnapClientState& cl = g_clients[i];
+		if ((cl.active == false)
+			|| ((client < MAXPLAYERS) && (cl.lastAnimrefCount <= population)))
+			continue;
+		quota = cl.lastAnimrefQuota;
+		wanted = cl.lastAnimrefWanted;
+		population = cl.lastAnimrefCount;
+		client = i;
+	}
 }
 
 unsigned int zx::netsnapshot::LastDeferred()
@@ -1339,9 +1357,6 @@ CVAR(Int, fua_snap_missile_share, 20, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 // Records a frame the refresh band may take (0: no cap), past which its
 // interval stretches rather than the near bands losing records.
 CVAR(Int, fua_snap_refresh_max, 40, CVAR_NOSETBYACS)
-
-// Records the refresh band asked for when the clamp cut it; 0 when it did not.
-static unsigned int g_lastRefreshWanted = 0;
 
 // Kept apart: an event that never got budget is a different failure from one
 // sent and lost, and only the first says the share is too small.
@@ -2789,45 +2804,37 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 
 	// The refresh bands drain first on quotas sized to cycle their population
 	// in their interval, clamped, past which the interval stretches.
-	unsigned int refreshQuota = (cl.lastCosmeticCount / SNAPCL_AGE_COSMETIC) + 1;
-	if ((fua_snap_refresh_max > 0) && (refreshQuota > (unsigned int)fua_snap_refresh_max))
-	{
-		// Clamped, so the interval is not met, which is reported.
-		if (g_lastRefreshWanted == 0)
-			Printf("[snap] refresh clamped: wanted %u/frame, capped at %d - the"
-				" cosmetic interval is now ~%.1f s, not %d s\n",
-				refreshQuota, (int)fua_snap_refresh_max,
-				(double)SNAPCL_AGE_COSMETIC * (double)refreshQuota
-				/ (double)(int)fua_snap_refresh_max / (double)TICRATE,
-				SNAPCL_AGE_COSMETIC / TICRATE);
-		g_lastRefreshWanted = refreshQuota;
-		refreshQuota = (unsigned int)fua_snap_refresh_max;
-	}
-	else
-		g_lastRefreshWanted = 0;
+	const SnapBandQuota refresh = ComputeBandQuota(cl.lastCosmeticCount, SNAPCL_AGE_COSMETIC,
+		(fua_snap_refresh_max > 0) ? (unsigned int)fua_snap_refresh_max : 0,
+		cl.lastRefreshWanted);
+	unsigned int refreshQuota = refresh.quota;
+	// Clamped, so the interval is not met, which is reported once per client.
+	if (refresh.bWarn)
+		Printf("[snap] refresh clamped: client %u wanted %u/frame, capped at %d - its"
+			" cosmetic interval is now ~%.1f s, not %d s\n",
+			client, refresh.wanted, (int)fua_snap_refresh_max,
+			(double)SNAPCL_AGE_COSMETIC * (double)refresh.wanted
+			/ (double)(int)fua_snap_refresh_max / (double)TICRATE,
+			SNAPCL_AGE_COSMETIC / TICRATE);
 
 	// The same for appearance, capped at SNAPCL_ANIMREF_MAX (5.1).
-	unsigned int animrefQuota = (cl.lastAnimrefCount / (unsigned int)(int)fua_snap_animref_interval) + 1;
-	if (animrefQuota > (unsigned int)SNAPCL_ANIMREF_MAX)
-	{
-		if (g_lastAnimrefWanted == 0)
-			Printf("[snap] animref clamped: wanted %u/frame, capped at %d - the"
-				" appearance interval is now ~%.1f s, not %.1f s\n",
-				animrefQuota, (int)SNAPCL_ANIMREF_MAX,
-				(double)(int)fua_snap_animref_interval * (double)animrefQuota
-				/ (double)SNAPCL_ANIMREF_MAX / (double)TICRATE,
-				(double)(int)fua_snap_animref_interval / (double)TICRATE);
-		g_lastAnimrefWanted = animrefQuota;
-		animrefQuota = (unsigned int)SNAPCL_ANIMREF_MAX;
-	}
-	else
-		g_lastAnimrefWanted = 0;
+	const SnapBandQuota animref = ComputeBandQuota(cl.lastAnimrefCount,
+		(unsigned int)(int)fua_snap_animref_interval, (unsigned int)SNAPCL_ANIMREF_MAX,
+		cl.lastAnimrefWanted);
+	unsigned int animrefQuota = animref.quota;
+	if (animref.bWarn)
+		Printf("[snap] animref clamped: client %u wanted %u/frame, capped at %d - its"
+			" appearance interval is now ~%.1f s, not %.1f s\n",
+			client, animref.wanted, (int)SNAPCL_ANIMREF_MAX,
+			(double)(int)fua_snap_animref_interval * (double)animref.wanted
+			/ (double)SNAPCL_ANIMREF_MAX / (double)TICRATE,
+			(double)(int)fua_snap_animref_interval / (double)TICRATE);
 
 	// The cvar may clamp this band, never close it: at zero the far tier freezes
 	// and appearance suppression loses its only unbiased sample.
 	if (animrefQuota == 0)
 		animrefQuota = 1;
-	g_lastAnimrefQuota = animrefQuota;
+	cl.lastAnimrefQuota = animrefQuota;
 
 	const unsigned int refreshCeiling = g_prefixBytes + (budgetBytes / SNAPCL_REFRESH_CAP_DIV);
 	unsigned int refreshEmitted = 0;

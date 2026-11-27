@@ -239,9 +239,10 @@ unsigned int LastReserveCapped();
 unsigned int LastReserveDrained();
 unsigned int LastDeferred();
 
-// The appearance-refresh quota this frame, what it would have been unclamped
-// (0 when not clamped), and the population it was derived over.
-void AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population);
+// One client's appearance-refresh quota, what it would have been unclamped (0 when not
+// clamped) and the population behind it: the worst client, whose index `client` takes.
+void AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population,
+	unsigned int& client);
 
 // The records emitted that were new to the client since last frame, which over
 // the contested population gives the per-entity refresh rate.
