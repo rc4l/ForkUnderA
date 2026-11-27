@@ -7,6 +7,20 @@
 
 using namespace zx::netreplication;
 
+// [Doruk-Aksoy] Seen 2026-11-26 at legacy suppression 2: farhitscan's killed monster read 10 on clients, the server -5, with KillThing suppressed.
+TEST(ComputeSendsDeathHealth, AMonsterWhoseKillThingIsSuppressedSendsItsDeadHealth)
+{
+	EXPECT_TRUE(ComputeSendsDeathHealth(false, true));
+}
+
+// [Doruk-Aksoy] KillThing carries it when it goes out, and a player's death is its own command.
+TEST(ComputeSendsDeathHealth, NothingWhenKillThingGoesOrForAPlayer)
+{
+	EXPECT_FALSE(ComputeSendsDeathHealth(false, false));
+	EXPECT_FALSE(ComputeSendsDeathHealth(true, true));
+	EXPECT_FALSE(ComputeSendsDeathHealth(true, false));
+}
+
 TEST(ComputeSendsWoundedHealth, AWoundedMonsterOnly)
 {
 	// [rc4l] farhitscan's wounded monsters read full health on the shooter and the observer while the server had them at 5 to 12.

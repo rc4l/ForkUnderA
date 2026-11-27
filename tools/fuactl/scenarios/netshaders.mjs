@@ -174,16 +174,12 @@ async function sentWhile(sc, label, puke, tics) {
   return countShaderCommands(fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
 }
 
-// [Doruk-Aksoy] A client notices a lost reliable packet only when a later one arrives, so on this quiet map the server says something after each miss, as a level's monsters and sounds would, until the server keeps idle clients told.
-const nudge = (sc) => cap.exec(sc, "say .");
-
 // [Doruk-Aksoy] A client's puke rides its unreliable packet, which loss can drop, so it is sent again until the client holds `want`, as a player presses again.
-async function pukeFrom(client, sc, script, want, { tries = 5, nudges = false } = {}) {
+async function pukeFrom(client, sc, script, want, { tries = 5 } = {}) {
   for (let i = 0; i < tries; i++) {
     await cap.exec(client.c, `puke ${script}`);
     await cap.waitTics(sc, 35);
     if (!stateFaults((await statesOf(client)).shaders, want, "").length) return;
-    if (nudges) await nudge(sc);
   }
 }
 
@@ -203,7 +199,6 @@ async function judgeFlow(set, label, config) {
         found = stateFaults((await statesOf(client)).shaders, want, `${when}, ${who}`);
         slowest = Math.max(slowest, waited);
         if (!found.length || tries === 1) break;
-        if (config.nudge) await nudge(sc);
         await cap.waitTics(client.c, 35);
       }
       faults.push(...found);
@@ -221,7 +216,7 @@ async function judgeFlow(set, label, config) {
   await cap.exec(sc, "puke 1");
   await cap.waitTics(sc, 35);
   await check("after the server's change", [[p0, "player 0", BLUE], [p1, "player 1", BLUE]]);
-  await pukeFrom(p0, sc, 2, THEIRS_HALF, { nudges: config.nudge });
+  await pukeFrom(p0, sc, 2, THEIRS_HALF);
   await check("after player 0's own change", [[p0, "player 0", THEIRS_HALF], [p1, "player 1", NOT_THEIRS]]);
   await cap.exec(sc, "puke 3");
   await cap.exec(p1.c, "puke 5");
@@ -322,7 +317,7 @@ export async function judgeNetplay(set, label, { config }) {
 // [Doruk-Aksoy] --side loopback --cvar fua_debug_netdrop=232/75 leaves every enable unsent, which fails; the reset's clients play the song, quietly.
 export const CONFIGS = [
   { name: "loopback", players: 2, reread: true },
-  { name: "lossy", players: 2, lag: "100", loss: "5", settle: 20, timing: false, mapChange: false, nudge: true },
+  { name: "lossy", players: 2, lag: "100", loss: "5", settle: 20, timing: false, mapChange: false },
   { name: "roundreset", players: 2, run: "reset", serverCvars: { survival: 1, sv_survivalcountdowntime: 600 }, clientCvars: QUIET },
 ];
 
