@@ -280,6 +280,11 @@ void zx::netsnapshot::MoverResetEnd()
 }
 
 static int snapmv_RecordClassOf( DSectorEffect * pMover );
+static void snapmv_KeptGateOn( );
+static int snapmv_Plane( BYTE bit );
+static void snapmv_KeptClear( );
+static void snapmv_ApplyRecord( BYTE cls, BYTE flags, BYTE gen, WORD index,
+	const BYTE * pBody, unsigned int bodyBytes, int frame );
 
 // The server's mover gate (SnapMoverGate), reset on disconnect.
 static bool g_serverGatesMovers = false;
@@ -291,6 +296,24 @@ static unsigned int g_moverFloorEpoch = 0;
 static unsigned int g_gateDropped[2][SNAPMV_COUNT];	// [legacy-made, record-made]
 static unsigned int g_gateBelowFloor = 0;
 static unsigned int g_gateKeptApplied = 0;
+
+// The newest record refused as legacy-live, per plane and sector, kept for a gate-on: the
+// server's re-send can reach the client before SnapMoverGate(true) and would never come again.
+struct SnapMoverKept
+{
+	bool	bHave;
+	BYTE	cls;
+	BYTE	flags;
+	BYTE	gen;
+	BYTE	bodyBytes;
+	int		frame;
+	BYTE	body[SNAPMV_BODY_MAX];
+};
+static TArray<SnapMoverKept> g_moverKept[2];
+static unsigned int g_moverKeptEpoch = 0;
+static unsigned int g_moverUngated = 0;
+static unsigned int g_moverUngatedKept = 0;
+
 
 bool zx::netsnapshot::ServerGatesLegacy( )
 {
@@ -336,6 +359,11 @@ static void snapmv_GateDrop( bool bLegacyMade )
 	}
 	g_gateDropped[bLegacyMade ? 0 : 1][SNAPMV_POLY] += bLegacyMade
 		? PolyGateOn( g_gateKeptApplied ) : PolyGateOff( );
+	// The sector keeps go the same way as the polyobject ones above.
+	if ( bLegacyMade )
+		snapmv_KeptGateOn( );
+	else
+		snapmv_KeptClear( );
 }
 
 void zx::netsnapshot::MoverMadeByLegacy( DMover * pMover )
@@ -367,6 +395,7 @@ void zx::netsnapshot::MoverForgetServerGate( )
 {
 	g_serverGatesMovers = false;
 	g_moverFloor = 0;
+	snapmv_KeptClear( );
 }
 
 void zx::netsnapshot::ClientMoverGateStats( SnapMoverGateStats & st, bool bReset )
@@ -379,10 +408,13 @@ void zx::netsnapshot::ClientMoverGateStats( SnapMoverGateStats & st, bool bReset
 			st.dropped[k][c] = g_gateDropped[k][c];
 	st.belowFloor = g_gateBelowFloor;
 	st.keptApplied = g_gateKeptApplied;
+	st.ungated = g_moverUngated;
+	st.ungatedKept = g_moverUngatedKept;
 	if ( bReset )
 	{
 		memset( g_gateDropped, 0, sizeof( g_gateDropped ));
 		g_gateBelowFloor = g_gateKeptApplied = 0;
+		g_moverUngated = g_moverUngatedKept = 0;
 	}
 }
 
@@ -469,17 +501,21 @@ bool zx::netsnapshot::MoverPlaysWaitSound( )
 	return ( NETWORK_InClientMode( ) == false );
 }
 
-bool zx::netsnapshot::MoverClientDerivesReversal( bool bSeen )
+bool zx::netsnapshot::MoverClientDerivesReversal( BYTE cls, bool bSeen )
 {
-	if ( ( bSeen == false ) || ( NETWORK_InClientMode( ) == false ) )
+	// The gate as well as the record: below it the legacy handler is live and turns it.
+	if (( bSeen == false ) || ( MoverSuppressesLegacy( cls ) == false ))
 		return false;
 	++g_moverDerivedReversal;
 	return true;
 }
 
-bool zx::netsnapshot::MoverClientSkipsWait( bool bSeen )
+bool zx::netsnapshot::MoverClientSkipsWait( BYTE cls, bool bSeen )
 {
-	return NETWORK_InClientMode( ) && ( bSeen == false );
+	// Left to the server unless records own the class here and one has reached this mover.
+	if ( NETWORK_InClientMode( ) == false )
+		return false;
+	return ( bSeen == false ) || ( MoverSuppressesLegacy( cls ) == false );
 }
 
 void zx::netsnapshot::MoverCountDoorWait( bool bExpired )
@@ -689,6 +725,7 @@ void zx::netsnapshot::MoverClientStats( SnapMoverClientStats & st, bool bReset )
 		g_moverDoorWaitEnded = g_moverDoorWaitEarly = g_moverDoorWaitEarlyWorst = 0;
 		g_moverWaitResid = g_moverWaitWorst = 0;
 		g_moverBlockedRecv = g_moverHeld = g_moverLegacySuppressed = 0;
+		g_moverDerivedReversal = 0;
 		g_moverHeldOnePlane = 0;
 		g_moverStallPlane = g_moverStallWorst = 0;
 		g_moverPlaneSuppressed = g_moverLinkSuppressed = 0;
@@ -780,6 +817,86 @@ void DPlat::SnapApply( const SnapMoverPlat & s, BYTE flags )
 	}
 	m_SnapSeen = true;
 	++g_moverApplied;
+}
+
+// Dropped at a gate-off and at a disconnect: a kept record outlives neither.
+static void snapmv_KeptClear( )
+{
+	for ( int p = 0; p < 2; ++p )
+		g_moverKept[p].Clear( );
+	g_moverKeptEpoch = 0;
+}
+
+// The newest refused record per plane and sector, which a gate-on applies.
+static void snapmv_Keep( BYTE cls, BYTE flags, BYTE gen, WORD index, const BYTE * pBody,
+	unsigned int bodyBytes, int frame, BYTE planes )
+{
+	const unsigned int want = ( numsectors > 0 ) ? (unsigned int)numsectors : 0;
+	const unsigned int epoch = StreamEpoch( );
+	if (( g_moverKept[0].Size( ) != want ) || ( g_moverKeptEpoch != epoch ))
+	{
+		for ( int p = 0; p < 2; ++p )
+		{
+			g_moverKept[p].Resize( want );
+			for ( unsigned int i = 0; i < g_moverKept[p].Size( ); ++i )
+				g_moverKept[p][i].bHave = false;
+		}
+		g_moverKeptEpoch = epoch;
+	}
+	if (( index >= want ) || ( bodyBytes > SNAPMV_BODY_MAX ) || ( pBody == NULL ))
+		return;
+
+	bool bTook = false;
+	for ( BYTE b = SNAPMV_PLANE_FLOOR; b <= SNAPMV_PLANE_CEILING; b <<= 1 )
+	{
+		if (( planes & b ) == 0 )
+			continue;
+		SnapMoverKept & k = g_moverKept[snapmv_Plane( b )][index];
+		if ( k.bHave && (( frame - k.frame ) < 0 ))
+			continue;
+		k.bHave = true;
+		k.cls = cls;
+		k.flags = flags;
+		k.gen = gen;
+		k.bodyBytes = (BYTE)bodyBytes;
+		k.frame = frame;
+		memcpy( k.body, pBody, bodyBytes );
+		bTook = true;
+	}
+	if ( bTook )
+		++g_moverUngatedKept;
+}
+
+// At a gate-on, each kept record once: one covering both planes sits in both slots.
+static void snapmv_KeptGateOn( )
+{
+	if (( g_moverKeptEpoch != StreamEpoch( )) || ( g_moverKept[0].Size( ) == 0 ))
+	{
+		snapmv_KeptClear( );
+		return;
+	}
+	for ( unsigned int i = 0; i < g_moverKept[0].Size( ); ++i )
+	{
+		for ( int p = 0; p < 2; ++p )
+		{
+			SnapMoverKept & k = g_moverKept[p][i];
+			if ( k.bHave == false )
+				continue;
+			k.bHave = false;
+			SnapMoverKept & o = g_moverKept[( p == 0 ) ? 1 : 0][i];
+			if ( o.bHave && ( o.frame == k.frame ) && ( o.cls == k.cls )
+				&& ( o.flags == k.flags ))
+				o.bHave = false;
+			// The gate floor judges a keep as it would a fresh record: only a re-send that
+			// beat the reliable gate on carries a frame at or above the flip's.
+			if ( snapmv_BelowFloor( k.frame ))
+				continue;
+			snapmv_ApplyRecord( k.cls, k.flags, k.gen, (WORD)i, k.body,
+				k.bodyBytes, k.frame );
+			++g_gateKeptApplied;
+		}
+	}
+	snapmv_KeptClear( );
 }
 
 // The last frame applied per plane, by sector, rebuilt as the epoch moves.
@@ -1052,6 +1169,16 @@ static void snapmv_ApplyRecord( BYTE cls, BYTE flags, BYTE gen, WORD index,
 	if ( planes == 0 )
 	{
 		++g_moverUnusable;
+		return;
+	}
+
+	// Beside live legacy handlers the record would be a second driver of this plane, so
+	// legacy keeps it and the newest is held for the gate turning on (polyobj.cpp does this).
+	if ( MoverSuppressesLegacy( cls ) == false )
+	{
+		++g_moverUngated;
+		MoverCountOutcome( SNAPMV_OUT_UNUSABLE );
+		snapmv_Keep( cls, flags, gen, index, pBody, bodyBytes, frame, planes );
 		return;
 	}
 	const bool bGone = ( flags & SNAPMVF_GONE ) != 0;

@@ -151,6 +151,19 @@ void ComputeEventDelivery(bool bTerminal, int eventCopies, unsigned int& copies,
 // The own-missile census's bucket for a wait in tics: 0, 1, 2, 3-4, 5-8, 9+.
 unsigned int ComputeOwnEnterBucket(int wait);
 
+// A refresh band's quota for one client, with the clamp line that goes with it.
+struct SnapBandQuota
+{
+	unsigned int	quota;		// records the band may spend this frame
+	unsigned int	wanted;		// the quota before the ceiling cut it, 0 when it did not
+	bool			bWarn;		// this client has just become clamped
+};
+
+// The population cycled in `interval` tics and cut to `ceiling` (0 none); `lastWanted` is
+// one client's own clamp memory, so no client silences or repeats another's warning.
+SnapBandQuota ComputeBandQuota(unsigned int population, unsigned int interval,
+	unsigned int ceiling, unsigned int& lastWanted);
+
 }} // namespace zx::netsnapshot
 
 #endif // __SNAP_INTEREST_COMPUTE_H__

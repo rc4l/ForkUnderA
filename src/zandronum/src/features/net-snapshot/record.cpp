@@ -20,7 +20,6 @@
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "c_console.h"
-#include "i_system.h"
 #include "zstring.h"
 #include "tarray.h"
 #include "features/net-snapshot/record.h"
@@ -214,7 +213,7 @@ void zx::netsnapshot::RecorderReset(const char* pszReason)
 		return;
 
 	clrec_Write8((BYTE)CSNAP_RESET);
-	clrec_Write32((DWORD)I_MSTime());
+	clrec_Write32((DWORD)NowMS());
 	const size_t len = (pszReason != NULL) ? strlen(pszReason) : 0;
 	clrec_Write8((BYTE)((len > 63) ? 63 : len));
 	if (len > 0)
@@ -329,7 +328,7 @@ CCMD(fua_csnap_record)
 		{
 			// Stamped on the deltas' clock, the newest game tic held.
 			RecorderDelta(&s_baseline[0], n, baseTic, NewestGameTic(),
-				I_MSTime());
+				NowMS());
 			Printf("fua_csnap_record: baseline %u bytes, %u entities\n", n, present);
 		}
 		else

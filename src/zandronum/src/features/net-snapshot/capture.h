@@ -39,13 +39,19 @@ class AActor;
 
 namespace zx { namespace netsnapshot {
 
+// The module's milliseconds, one clock for every figure it prints, stamps or records: the
+// monotonic counter (i_tictime) since this process first read it.
+unsigned int NowMS();
+
 // True when the snapshot channel has taken over this update class for this
 // actor, so no legacy command is sent (players: SuppressesLegacyPlayer).
 bool SuppressesLegacy( const AActor *pActor, int updateClass );
 
 // Called by SERVER_SendClientPacket once an unreliable datagram is launched,
-// with its payload size and its size on the wire, which only that site sees.
-void NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd);
+// with its payload size, its size on the wire and the launch's time on the raw
+// counter (compression included), which only that site sees.
+void NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd,
+	QWORD launchRaw);
 
 // Called when a snapshot command is queued for a client, so the wire accounting
 // can tell which datagrams carried one.
@@ -417,9 +423,21 @@ bool SnapFileNameBad(const char *pszName);
 // The entities whose properties a script moved off their class defaults, one slot each, as
 // the mover table holds a mover: the generation is the whole dirty test.
 #define SNAPPROP_MAXSLOTS	256
+// A slot's id and generation, which is the whole dirty test: the set itself is a struct the
+// size of a wire record, so the per-client walk reads it only past the guards.
+bool PropSlotId(unsigned int slot, WORD & netID, WORD & gen);
 bool PropSlotRead(unsigned int slot, WORD & netID, struct SnapProps & props, WORD & gen);
 unsigned int PropSlots();
 void PropForget();
+
+// A set is told once to each client that holds the entity, so the table carries what changes
+// during a life and nothing else.
+#define SNAPPROP_NOSLOT	0xFFFF	// a props record told once a client, holding no slot
+// The live set an id has to be told, read from the actor at send time: false for one that
+// is its class, already holds a slot, or has gone.
+bool PropsToTell(WORD netID, struct SnapProps & out);
+// The ids with a set to tell, which the per-client walk reads rather than every id.
+const WORD * PropsMarkedIds(unsigned int & count);
 void PropStats(unsigned int & live, unsigned int & changes, unsigned int & overflow,
 	unsigned int & truncated, QWORD & walks, QWORD & steps, double & sweepMS, bool reset);
 

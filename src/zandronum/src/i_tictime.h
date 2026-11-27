@@ -28,6 +28,10 @@ void TIC_Init();
 tictime_raw_t TIC_GetRawCounter();
 tictime_raw_t TIC_GetRawFrequency();
 
+// [Kaori-Chani] The frequency itself, a plain global because MSVC guards every read of a
+// function-local static, and not static because the test clears it for an early reader.
+extern tictime_raw_t tictime_rawFrequency;
+
 // floor( raw * mul / frequency ), overflow-safe for any realistic uptime.
 // TIC_ScaleRaw(delta, 1000)    -> milliseconds
 // TIC_ScaleRaw(delta, TICRATE) -> whole tics

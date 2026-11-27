@@ -2272,9 +2272,11 @@ static QWORD g_ghostSolidAccum = 0;
 static QWORD g_ghostSolidChangeAccum = 0;
 static unsigned int g_ghostSolidMax = 0;
 static QWORD g_ghostSolidCorpseAccum = 0;
-static unsigned int g_ghostCensusFrames = 0;
+// [Kaori-Chani] Fills, not drawn frames: GhostFrame runs from gamecopy's FillNow, so every
+// `/f` on the lines below is per fill and a frame rate comes from `vid_fps`.
+static unsigned int g_ghostCensusFills = 0;
 static unsigned int g_ghostNearMax = 0;
-static unsigned int g_ghostReportMS = 0;	// [Kaori-Chani] I_MSTime's width, so it wraps with it
+static unsigned int g_ghostReportMS = 0;	// [Kaori-Chani] NowMS's width, so it wraps with it
 
 static void ghost_Report();
 
@@ -2316,7 +2318,7 @@ void zx::netsnapshot::GhostFrame()
 	ghost_Init();
 
 	// Everything is sampled at now on the deltas' clock, once a frame.
-	const unsigned int renderMS = I_MSTime();
+	const unsigned int renderMS = NowMS();
 
 	// [Kaori-Chani] The tic's end on that clock, and this frame's fraction of it: r_TicFrac
 	// is set after the fill, so reading it here would give the frame before.
@@ -3093,7 +3095,7 @@ void zx::netsnapshot::GhostFrame()
 		g_ghostSolidMax = nSolid;
 	g_ghostCreateAccum += nCreate;
 	g_ghostRecreateAccum += nRecreate;
-	++g_ghostCensusFrames;
+	++g_ghostCensusFills;
 	if (nNear > g_ghostNearMax)
 		g_ghostNearMax = nNear;
 	if (nRelink > g_ghostRelinkMax)
@@ -3102,9 +3104,9 @@ void zx::netsnapshot::GhostFrame()
 	// After this frame's mirrors exist, so a sound finds the one just created.
 	ghost_AttachPointSounds();
 
-	// [Kaori-Chani] Both at I_MSTime's width, so the subtraction wraps with it; widening to
+	// [Kaori-Chani] Both at NowMS's width, so the subtraction wraps with it; widening to
 	// 64 bits first breaks that.
-	const unsigned int nowMS2 = I_MSTime();
+	const unsigned int nowMS2 = NowMS();
 	if (g_ghostReportMS == 0)
 		g_ghostReportMS = nowMS2;
 	const unsigned int reportMS = (fua_snap_stats > 0) ? (unsigned int)fua_snap_stats * 1000 : 5000;
@@ -3231,13 +3233,13 @@ static void ghost_Report()
 	const unsigned int mvBeforeReset = MoverBeforeResetRecords(true);
 	const unsigned int tailRequested = CLIENT_TailPacketsRequested(true);
 
-	if (g_ghostCensusFrames > 0)
+	if (g_ghostCensusFills > 0)
 	{
-		const double inv = 1.0 / (double)g_ghostCensusFrames;
+		const double inv = 1.0 / (double)g_ghostCensusFills;
 		ghost_Print("[snap] ghostframe: %u mirrors | near %.0f (max %u) mid %.0f far %.0f | "
 			"relink %.0f (max %u) create %.1f (recreate %.1f) | gc %.0f-%.0fMB | "
 			"ghostMS %.1f (%.2f/f) | sim %.2f/f render %.2f/f | tics %.2f/f | "
-			"think %.2f/f fx %.2f/f parse %.2f/f gtick %.2f/f netupd %.2f/f | %u frames/5s\n",
+			"think %.2f/f fx %.2f/f parse %.2f/f gtick %.2f/f netupd %.2f/f | %u fills/5s\n",
 			g_mirrorCount,
 			(double)g_ghostNearAccum * inv, g_ghostNearMax,
 			(double)g_ghostMidAccum * inv, (double)g_ghostFarAccum * inv,
@@ -3255,7 +3257,7 @@ static void ghost_Report()
 			ghost_RawToMS(g_applyDeltaRaw) * inv,
 			ghost_RawToMS(g_gtickerRaw) * inv,
 			ghost_RawToMS(g_netupdateRaw) * inv,
-			g_ghostCensusFrames);
+			g_ghostCensusFills);
 		ghost_Print("[snap] player mirrors: %u player ghosts, %u excluded | %u legacy copies followed their mirror\n",
 			g_playerGhostSeen, g_playerGhostExcluded, g_legacyFollowed);
 		g_legacyFollowed = 0;
@@ -3959,47 +3961,24 @@ static void ghost_Report()
 		unsigned int fh[CLENT_FIRE_BUCKETS], fs = 0, fw = 0, fu = 0;
 		unsigned int jn[4];
 		double ja[4], jw[4];
+		// Read, not printed: on a client the missile's enter lands before the stamp, so the
+		// figure was the gap between shots rather than fire to draw (entities.md).
 		LocalFireStats(fh, fs, fw, fu, ja, jn, jw);
-		if ((fs != 0) || (fu != 0))
-		{
-			char jbuf[160];
-			unsigned int jat = 0;
-			jbuf[0] = '\0';
-			for (unsigned int k = 0; k < 4; ++k)
-			{
-				if (jat >= sizeof(jbuf) - 1)
-					break;
-				// The SAMPLE COUNT is printed, so an ordinal's figure says
-				// whether it came from two shots or fifty.
-				const int w = mysnprintf(jbuf + jat, sizeof(jbuf) - jat,
-					" #%u %.0f/%.0f u/t x%u", k + 1,
-					(jn[k] > 0) ? (ja[k] / (double)jn[k]) : 0.0,
-					jw[k], jn[k]);
-				if (w > 0)
-					jat += (unsigned int)w;
-			}
-			const double finv = (fs > 0) ? (100.0 / (double)fs) : 0.0;
-			ghost_Print("[snap] own fire: %u shots | to first draw <35ms %.0f%% "
-				"<70 %.0f%% <105 %.0f%% <175 %.0f%% 175+ %.0f%% (worst %u ms)"
-				" | speed by record (mean/worst)%s | %u unmatched\n",
-				fs, fh[0] * finv, fh[1] * finv, fh[2] * finv,
-				fh[3] * finv, fh[4] * finv, fw, jbuf, fu);
-		}
 	}
 
 	// Reported whether or not it is on, so "off" and "on but reaching
 	// nothing" are distinguishable.
-	if (g_ghostCensusFrames > 0)
+	if (g_ghostCensusFills > 0)
 	{
-		// `solid` a per-frame mean, the other two window totals.
-		const double cinv = 1.0 / (double)g_ghostCensusFrames;
-		ghost_Print("[snap] collide: %s | %.1f solid/frame (max %u)"
-			" | %llu transitions, %llu corpse-released over %u frames | dist %d\n",
+		// `solid` a per-fill mean, the other two window totals.
+		const double cinv = 1.0 / (double)g_ghostCensusFills;
+		ghost_Print("[snap] collide: %s | %.1f solid/fill (max %u)"
+			" | %llu transitions, %llu corpse-released over %u fills | dist %d\n",
 			fua_csnap_collide ? "on" : "off",
 			(double)(QWORD)g_ghostSolidAccum * cinv, g_ghostSolidMax,
 			(unsigned long long)g_ghostSolidChangeAccum,
 			(unsigned long long)g_ghostSolidCorpseAccum,
-			g_ghostCensusFrames,
+			g_ghostCensusFills,
 			(int)fua_csnap_collide_dist);
 	}
 
@@ -4114,10 +4093,11 @@ static void ghost_Report()
 				mysnprintf(szDrop[k], sizeof(szDrop[k]), " none");
 		}
 		ghost_Print("[snap] mover gate: legacy off %d | dropped at the gate: legacy-made%s,"
-			" record-made%s | %u kept poly records applied | %u records refused"
-			" below the gate floor (floor %d)\n",
+			" record-made%s | %u kept records applied | %u records refused"
+			" below the gate floor (floor %d)"
+			" | %u sector records refused with legacy live, %u kept for a gate-on\n",
 			gt.bGate ? 1 : 0, szDrop[0], szDrop[1], gt.keptApplied, gt.belowFloor,
-			gt.floor);
+			gt.floor, gt.ungated, gt.ungatedKept);
 
 		// Polyobjects (7.1), read as polyobj.md says.
 		SnapPolyClientStats po;
@@ -4181,7 +4161,7 @@ static void ghost_Report()
 	g_applyDeltaRaw = 0;
 	g_gtickerRaw = 0;
 	g_netupdateRaw = 0;
-	g_ghostCensusFrames = 0;
+	g_ghostCensusFills = 0;
 	g_ghostNearMax = 0;
 	g_ghostRelinkMax = 0;
 }
@@ -4202,9 +4182,9 @@ void zx::netsnapshot::RegisterMirrorEffects()
 
 void zx::netsnapshot::GhostReportNow()
 {
-	// Most lines are per frame and print only over at least one.
-	if (g_ghostCensusFrames == 0)
-		g_ghostCensusFrames = 1;
+	// Most lines are per fill and print only over at least one.
+	if (g_ghostCensusFills == 0)
+		g_ghostCensusFills = 1;
 	ghost_Report();
 	// The report clears these only beside the localanim counts, which a fuzz
 	// run leaves at zero.
@@ -4256,7 +4236,7 @@ DEV_MODE_CCMD(fua_csnap_ghostinfo)
 		return;
 	}
 
-	const unsigned int nowMS = I_MSTime();
+	const unsigned int nowMS = NowMS();
 
 	// Selection sort over the nearest `want`: this is a console command, and
 	// keeping it allocation-free matters more than the asymptotics.

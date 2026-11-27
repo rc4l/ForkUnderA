@@ -247,7 +247,10 @@ Report readings (each feeds a `[snap]` line or the replay's):
 - `MapStampStale`, `MapStampAhead`, `BeforeJoin`, `SoundIdStats`.
 - `ClientMoverStats`, `ClientLocalStats`, `ClientPSpriteStats`, `PropsEventStats`: records routed to
   each sink, and those with none installed.
-- `NoteLocalFire`, `LocalFireStats`: fire to the first sight of the player's own shot.
+- `NoteLocalFire`, `LocalFireStats`: fire to the first sight of the player's own shot. The
+  report line is off until Phase 6 re-aims the stamp: the hook runs in the non-predicted pass,
+  after the snapshot carrying the missile's own enter, so each shot paired with the next shot's
+  missile and the figure was the interval between shots.
 - `ClockStats`, `ClockDescribe`.
 
 The clock model (`computation/clock_compute.h`):

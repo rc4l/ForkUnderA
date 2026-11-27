@@ -1,6 +1,6 @@
 # capture: the server's snapshot tick
 
-Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/computation/proptell_compute.h, src/zandronum/src/features/net-snapshot/computation/proptell_compute.cpp, src/zandronum/src/features/net-snapshot/computation/proptell_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.h, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute_test.cpp, src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
 
 ## Responsibility
 
@@ -38,8 +38,13 @@ In order:
    one is counted as sent, since to the server a drop must look like a datagram that left and never
    arrived. The header carries the frame, which counts pumps, and the absolute game tic, so a lost
    frame cannot desync the client's clock.
-6. The report: `snap_MaybeReport` builds the window's `[snap]` lines into a queue, and one line is
-   printed per pump.
+6. The report: `snap_MaybeReport` builds the window's `[snap]` lines into a queue, and
+   `snap_DrainOneLine` prints one of them a pump. Both are `report.cpp`, which this file's counters
+   feed through `report.h`, so an edit to a report line cannot move the capture loop's own code.
+   Every figure it prints passes through `snap_RawToMS`, and it reads this file through
+   `snap_CatchUpStats`, `snap_CosEnsure`, `snap_CosRow`, `snap_CosIsCosmetic`,
+   `snap_CosCountersReset`, `snap_CosCountAlive`, `snap_ClientInMap`, `snap_PacketRoom`,
+   `snap_EffectiveBudget` and `snap_ChunkLimit`.
 
 The byte budgets are `budget_compute`, a pure unit: the snapshot command one datagram may carry, the
 frame's budget and each chunk's limit, which this file reads from `sv_maxpacketsize` and
@@ -134,7 +139,11 @@ Legacy suppression (see [Gating legacy](design.md#gating-legacy)):
 
 Wire accounting:
 - `NoteSnapshotQueued`, `ConsumeSnapshotQueued`, `NoteUnreliablePacket`: which datagrams carried a
-  snapshot, and their payload against their size on the wire.
+  snapshot, their payload against their size on the wire, and how long each launch took with the
+  transport's compression in it, which the `[snap] wire` line gives per tic and per datagram beside
+  `net_zstd_level`. Most of it also falls inside the pump line's `perclient`: a full buffer is
+  launched where it fills (`SERVER_CheckClientBuffer`), inside the per-client pass, so only each
+  client's last datagram of a frame is launched after it.
 - `CountLegacy*` (4): legacy traffic by command, reliable flushes and resends, and the reliable send
   time, for Phase 6's reclassify order.
 
@@ -159,11 +168,38 @@ Capture helpers the per-client pass and the client use:
   a record's position, with the compat order. Both ends call `LawAt`.
 
 The property slots:
-- `PropSlotRead`, `PropSlots`: how the per-client pass reads the table -- a slot's NetID, its
-  `SnapProps` and its generation.
+- `PropSlotId`, `PropSlotRead`, `PropSlots`: how the per-client pass reads the table -- a
+  slot's NetID and generation, which is the whole dirty test, and then its `SnapProps`,
+  read past the guards because the set is a struct the size of a wire record.
 - `PropForget`: the table at a level change.
+- `NowMS`: the module's milliseconds, one clock for every figure it prints, stamps or
+  records, taken from the monotonic counter since this process first read it.
 - `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
   to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.
+- `PropsToTell`, `PropsMarkedIds`: a set is told once to each client that holds the entity,
+  rather than taking a slot, so the table carries what changes during a life and nothing else.
+  The capture keeps one mark an id of what was told -- `ComputePropMark` over the bytes that
+  travel, never 0 -- and `ComputePropTellOrSlot` says whether a pump marks a set to tell, takes
+  a slot or does nothing: a slot once what the entity would send stops matching the mark, since
+  the clients told already have no second telling coming. A return to the class defaults reads
+  as a change too, a body naming nothing having a mark of its own. The mark is cleared with the
+  id's leave and at `PropForget`, so the next entity on that id is told its own set. The
+  per-client walk reads `PropsMarkedIds` -- every live marked entity, told or not, walked in
+  full by every client every frame at about 4.5 ns an id, so a few thousand marked ids cost a
+  client some 0.3 ms a second; an id cleared by a leave and re-marked before the sweep sits
+  in the list twice, which costs one skipped iteration more -- and
+  `PropsToTell` reads the live actor at send time, which is what a re-entry and a joiner need.
+  It waits on no record of the entity's own, so a settled entity is told as well, and it sends
+  only to a client whose `present` is set: that is acked belief, and an event for an id a
+  client does not hold is dropped as an orphan. `SNAPPROP_NOSLOT` marks the row, which holds
+  no generation, so the repair clears `propsTold` and the walk tells it again.
+- `fua_snap_propclasses`: which classes hold the slots, run while the table is full. It reads
+  the table as it stands and tallies it with `ComputePropClassCensus` -- most slots first, the
+  lower class id breaking a tie -- naming each class, how many slots it holds and which of scale,
+  roll, material and uniforms those slots carry. On demand, not kept per window, so a pump pays
+  nothing for it; during a fight the table is at its peak anyway. A slot whose entity has gone
+  since the capture is counted as `(gone)` rather than skipped, and `PropStats` is read without
+  its reset so the report's window is left alone.
 
 Mirror spawns (the client reads these too):
 - `IsSpawnerState`, `ClassSpawns`, `OwnsSpecialExpression`: the four spawner actions, a class with a
@@ -330,6 +366,10 @@ client's references after every ack and prints `[snap] reference check`.
 - **An effect actor the clients draw themselves keeps no NetID.** `ClientEffect` frees it before the
   capture pass can see it, since the pass takes every actor with a NetID and a three-tic fog would
   enter and leave in one breath.
+- **A set is told once a client, and only a second change takes a slot.** The telling waits on
+  no record of the entity's own and goes only to a client that has acked holding it, so nothing
+  is dropped as an orphan and a lost telling is repaired by telling again. An older client
+  reads the same event it always did.
 - **A property slot is marked by the capture pass and swept at its end**, and its generation comes
   from one counter that never repeats and never reaches 0, so a reused slot cannot read as the
   previous occupant's set.

@@ -6,8 +6,8 @@
 // Filename: interest_compute_test.cpp
 //
 // Description: Tests for interest_compute: the tier a record is ranked into,
-// the observations reported beside it, and the refresh bands, event delivery
-// and own-missile buckets.
+// the observations reported beside it, and the refresh bands, their quotas and
+// clamp warnings, event delivery and own-missile buckets.
 //
 //-----------------------------------------------------------------------------
 
@@ -329,4 +329,54 @@ TEST(SnapshotInterest, OwnEnterBucketsFollowTheWait)
 		EXPECT_EQ(cases[i].want, ComputeOwnEnterBucket(cases[i].wait))
 			<< "a wait of " << cases[i].wait;
 	}
+}
+
+TEST(SnapshotInterest, ABandQuotaCyclesItsPopulationAndStopsAtTheCeiling)
+{
+	// One record a frame more than the population needs, so a band of none still spends 1.
+	unsigned int last = 0;
+	EXPECT_EQ(1u, ComputeBandQuota(0, 70, 0, last).quota);
+	EXPECT_EQ(2u, ComputeBandQuota(70, 70, 0, last).quota);
+	EXPECT_EQ(5u, ComputeBandQuota(280, 70, 0, last).quota);
+	// A 0 interval is read as 1 rather than dividing by it.
+	EXPECT_EQ(9u, ComputeBandQuota(8, 0, 0, last).quota);
+
+	// The ceiling cuts the quota and keeps what it wanted; 0 is no ceiling.
+	const SnapBandQuota cut = ComputeBandQuota(280, 70, 3, last);
+	EXPECT_EQ(3u, cut.quota);
+	EXPECT_EQ(5u, cut.wanted);
+	last = 0;
+	const SnapBandQuota uncut = ComputeBandQuota(280, 70, 5, last);
+	EXPECT_EQ(5u, uncut.quota);
+	EXPECT_EQ(0u, uncut.wanted);
+}
+
+TEST(SnapshotInterest, AClampWarnsOnceUntilItIsUnclampedAgain)
+{
+	unsigned int last = 0;
+	EXPECT_TRUE(ComputeBandQuota(280, 70, 3, last).bWarn);
+	EXPECT_FALSE(ComputeBandQuota(280, 70, 3, last).bWarn)
+		<< "a second clamped frame must not print again";
+	EXPECT_FALSE(ComputeBandQuota(70, 70, 3, last).bWarn);
+	EXPECT_EQ(0u, last) << "an unclamped frame forgets the clamp";
+	EXPECT_TRUE(ComputeBandQuota(280, 70, 3, last).bWarn)
+		<< "and the next clamp warns again";
+}
+
+TEST(SnapshotInterest, TwoClientsClampWithoutDisturbingEachOther)
+{
+	// The fault this guard had while it was one file static: with one client clamped
+	// and one not, each frame's second client reset what the first had set.
+	unsigned int clamped = 0, clear = 0;
+	EXPECT_TRUE(ComputeBandQuota(280, 70, 3, clamped).bWarn);
+	EXPECT_FALSE(ComputeBandQuota(70, 70, 3, clear).bWarn);
+	for (int frame = 0; frame < 60; ++frame)
+	{
+		EXPECT_FALSE(ComputeBandQuota(280, 70, 3, clamped).bWarn)
+			<< "frame " << frame << ": the clamped client warned twice";
+		EXPECT_FALSE(ComputeBandQuota(70, 70, 3, clear).bWarn)
+			<< "frame " << frame << ": the unclamped client warned";
+	}
+	EXPECT_EQ(5u, clamped);
+	EXPECT_EQ(0u, clear);
 }

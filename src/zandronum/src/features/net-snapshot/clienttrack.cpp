@@ -20,7 +20,6 @@
 #include "features/net-snapshot/capture.h"		// BranchedThisTic / BranchCensus
 #include "features/net-snapshot/computation/ack_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
-#include "i_system.h"		// I_MSTime, for the join fill timer
 #include "sv_main.h"		// [Kaori-Chani] SERVER_IsValidClient, for the health summary
 
 using namespace zx::netsnapshot;
@@ -58,8 +57,9 @@ struct SnapSentPSprite
 namespace {
 struct SnapSentProps
 {
-	WORD				slot;
+	WORD				slot;	// SNAPPROP_NOSLOT for a set told once a client
 	WORD				gen;
+	WORD				id;	// the entity, which a told row is all there is to repair by
 	unsigned int		offset;		// where its record starts in the payload
 };
 }
@@ -162,6 +162,8 @@ struct SnapClientState
 	WORD					propSentGen[SNAPPROP_MAXSLOTS];
 	WORD					propBelievedGen[SNAPPROP_MAXSLOTS];
 	unsigned int			propCursor;
+	// Where the walk of sets to tell stopped, as the slot loop's cursor does.
+	unsigned int			propTellCursor;
 	WORD					moverBelievedSeq[SNAPMV_MAXSLOTS];
 
 	// Where the capped walk resumes, or it would serve the first slots forever.
@@ -195,6 +197,9 @@ struct SnapClientState
 	// Whether this entity was culled or held at its previous classification,
 	// the edge the re-entry census needs.
 	BYTE * wasHeld;
+	// Whether this client has been told an id's properties, so the walk tells them once
+	// and the repair can ask for them again.
+	BYTE *		propsTold;
 
 	// How long since the client heard anything of it, bounding a hold, where
 	// lastSentFrame is the starvation guard's clock.
@@ -210,6 +215,11 @@ struct SnapClientState
 	unsigned int lastCosmeticCount;
 	// Held records owing appearance only; sizes the TIER_ANIMREFRESH quota.
 	unsigned int lastAnimrefCount;
+	// This client's own clamp memory, the quota each band wanted while the ceiling cut
+	// it and 0 while it did not, with the animref quota the frame actually used.
+	unsigned int lastRefreshWanted;
+	unsigned int lastAnimrefWanted;
+	unsigned int lastAnimrefQuota;
 	unsigned int			staleIds;
 };
 
@@ -243,6 +253,7 @@ static void snapcl_EnsureAllocated(SnapClientState& cl)
 		cl.lastAppearFrame = new WORD[SNAP_MAXID];
 		cl.enterFrame = new WORD[SNAP_MAXID];
 		cl.wasHeld = new BYTE[SNAP_MAXID];
+		cl.propsTold = new BYTE[SNAP_MAXID];
 		cl.psprSent = new SnapPSpriteState[MAXPLAYERS];
 		cl.psprBelieved = new SnapPSpriteState[MAXPLAYERS];
 		memset(cl.psprSent, 0, MAXPLAYERS * sizeof(SnapPSpriteState));
@@ -259,6 +270,7 @@ static void snapcl_EnsureAllocated(SnapClientState& cl)
 		memset(cl.lastAppearFrame, 0, SNAP_MAXID * sizeof(WORD));
 		memset(cl.enterFrame, 0, SNAP_MAXID * sizeof(WORD));
 		memset(cl.wasHeld, 0, SNAP_MAXID);
+		memset(cl.propsTold, 0, SNAP_MAXID);
 		memset(cl.bandCursor, 0, sizeof(cl.bandCursor));
 		cl.believedCount = 0;
 		cl.fillStartMS = 0;
@@ -287,12 +299,15 @@ static void snapcl_ForgetWorld(SnapClientState& cl)
 	memset(cl.lastAppearFrame, 0, SNAP_MAXID * sizeof(WORD));
 	if (cl.wasHeld != NULL)
 		memset(cl.wasHeld, 0, SNAP_MAXID);
+	if (cl.propsTold != NULL)
+		memset(cl.propsTold, 0, SNAP_MAXID);
 
 	// Zero is nothing sent, so every mover goes again, from the first slot.
 	memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
 	memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
 	memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
 	cl.propCursor = 0;
+	cl.propTellCursor = 0;
 	memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 	cl.moverCursor = 0;
 
@@ -324,6 +339,9 @@ void zx::netsnapshot::ResetClient(unsigned int client)
 	snapcl_ForgetWorld(cl);
 	cl.lastCosmeticCount = 0;
 	cl.lastAnimrefCount = 0;
+	cl.lastRefreshWanted = 0;
+	cl.lastAnimrefWanted = 0;
+	cl.lastAnimrefQuota = 0;
 	cl.lastAckedSeq = 0;
 	// Never rewound, since the client's high-water mark survives a map change
 	// and a reconnect.
@@ -367,7 +385,12 @@ void zx::netsnapshot::ForgetMovers()
 		memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
 		memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
 		memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
+		// Capture stopping clears every mark (PropForget), so what was told goes with
+		// them, or a re-marked id is skipped by the walk and never told again.
+		if (cl.propsTold != NULL)
+			memset(cl.propsTold, 0, SNAP_MAXID);
 		cl.propCursor = 0;
+		cl.propTellCursor = 0;
 		memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 		cl.moverCursor = 0;
 		for (unsigned int f = 0; f < cl.pending.Size(); ++f)
@@ -411,6 +434,7 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 			}
 			cl.unackedMask[rec.id] = 0;
 			cl.maybe[rec.id] = 0;
+			cl.propsTold[rec.id] = 0;
 			// The newest leave folds, so the marker is done (an older one's
 			// must not clear a newer leave's).
 			if (cl.leaving[rec.id] && (pf.frame >= cl.leaveFrame[rec.id]))
@@ -503,6 +527,9 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 // Property rows reverted by a repair, and emitted, for the stats line.
 static unsigned int g_repairedProps = 0;
 static unsigned int g_propsEmitted = 0, g_propsOutOfBytes = 0;
+namespace zx { namespace netsnapshot {
+unsigned int g_propsTold = 0;	// sets told to a client, needing no slot
+}} // namespace zx::netsnapshot
 
 // Frames the server sent, confirmed delivered, and confirmed LOST; the ack's
 // history bits are what make loss provable.
@@ -546,6 +573,15 @@ void zx::netsnapshot::RepairStats(unsigned int& frames, unsigned int& entities,
 		g_repairedFrames = g_repairedEntities = g_repairedMovers = 0;
 		g_repairedProps = 0;
 	}
+}
+
+void zx::netsnapshot::PropWalkStats(unsigned int & sent, unsigned int & cutByBudget,
+	bool reset)
+{
+	sent = g_propsEmitted;
+	cutByBudget = g_propsOutOfBytes;
+	if (reset)
+		g_propsEmitted = g_propsOutOfBytes = 0;
 }
 
 void zx::netsnapshot::MaybeStats(unsigned int& marked, unsigned int& leaves,
@@ -915,6 +951,12 @@ void zx::netsnapshot::OnAck(unsigned int client, unsigned int seq, unsigned int 
 				cl.propSentGen[sl] = cl.propBelievedGen[sl];
 				++g_repairedProps;
 			}
+			else
+			{
+				// A told set holds no generation to revert, so the walk tells it again.
+				cl.propsTold[pf.propRecords[r].id] = 0;
+				++g_repairedProps;
+			}
 		}
 		// Movers too, the reverted seq re-sending the whole body next frame.
 		for (unsigned int r = 0; r < pf.moverRecords.Size(); ++r)
@@ -1166,14 +1208,24 @@ unsigned int zx::netsnapshot::LastReserveSpent()		{ return g_lastReserveSpent; }
 unsigned int zx::netsnapshot::LastReserveCapped()		{ return g_lastReserveCapped; }
 unsigned int zx::netsnapshot::LastReserveDrained()	{ return g_lastReserveDrained; }
 
-static unsigned int g_lastAnimrefWanted = 0;
-static unsigned int g_lastAnimrefQuota = 0;
-
-void zx::netsnapshot::AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population)
+void zx::netsnapshot::AnimrefQuota(unsigned int& quota, unsigned int& wanted,
+	unsigned int& population, unsigned int& client)
 {
-	quota = g_lastAnimrefQuota;
-	wanted = g_lastAnimrefWanted;
-	population = (MAXPLAYERS > 0) ? g_clients[0].lastAnimrefCount : 0;
+	// The worst client, since the quota rises with the population: that client has both
+	// the longest interval and the clamp, where mixing clients described neither.
+	quota = wanted = population = 0;
+	client = MAXPLAYERS;
+	for (unsigned int i = 0; i < MAXPLAYERS; ++i)
+	{
+		const SnapClientState& cl = g_clients[i];
+		if ((cl.active == false)
+			|| ((client < MAXPLAYERS) && (cl.lastAnimrefCount <= population)))
+			continue;
+		quota = cl.lastAnimrefQuota;
+		wanted = cl.lastAnimrefWanted;
+		population = cl.lastAnimrefCount;
+		client = i;
+	}
 }
 
 unsigned int zx::netsnapshot::LastDeferred()
@@ -1305,9 +1357,6 @@ CVAR(Int, fua_snap_missile_share, 20, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 // Records a frame the refresh band may take (0: no cap), past which its
 // interval stretches rather than the near bands losing records.
 CVAR(Int, fua_snap_refresh_max, 40, CVAR_NOSETBYACS)
-
-// Records the refresh band asked for when the clamp cut it; 0 when it did not.
-static unsigned int g_lastRefreshWanted = 0;
 
 // Kept apart: an event that never got budget is a different failure from one
 // sent and lost, and only the first says the share is too small.
@@ -2068,11 +2117,11 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 	// its holding the world, by acked delivery.
 	if ((cl.fillStartMS == 0) && (cl.fillReported == false) && (worldCount > 0)
 		&& (cl.believedCount == 0))
-		cl.fillStartMS = I_MSTime();
+		cl.fillStartMS = NowMS();
 	else if ((cl.fillStartMS != 0) && (cl.believedCount >= worldCount))
 	{
-		const unsigned int now = I_MSTime();
-		// [Kaori-Chani] Unsigned subtraction stays right across I_MSTime's 49.7-day wrap,
+		const unsigned int now = NowMS();
+		// [Kaori-Chani] Unsigned subtraction stays right across NowMS's 49.7-day wrap,
 		// where a comparison guard would read 0.
 		Printf("[snap] JOIN FILL: client %u reached %u of %u entities in %u ms\n",
 			client, cl.believedCount, worldCount,
@@ -2248,8 +2297,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			const unsigned int slot = (cl.propCursor + k) % slots;
 
 			WORD netID = 0, gen = 0;
-			SnapProps props;
-			if (PropSlotRead(slot, netID, props, gen) == false)
+			if (PropSlotId(slot, netID, gen) == false)
 				continue;			// a free slot
 			if (gen == cl.propSentGen[slot])
 				continue;
@@ -2258,12 +2306,17 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			if ((cl.present == NULL) || (netID >= SNAP_MAXID) || (cl.present[netID] == 0))
 				continue;
 
+			// The set itself, past the guards: a slot this walk skips copies none of it.
+			SnapProps props;
+			if (PropSlotRead(slot, netID, props, gen) == false)
+				continue;
 			BYTE prec[SNAP_MAX_EVENT_BYTES];
 			const unsigned int n = WritePropsBody(prec, props);
 
 			SnapEmitRec & er = snapcl_PushPrefix(prec, n, netID, SNAPEMIT_PROPS);
 			er.prsent.slot = (WORD)slot;
 			er.prsent.gen = gen;
+			er.prsent.id = netID;
 			er.prsent.offset = 0;		// assigned at layout
 
 			// Optimistic, as the movers' is, and reverted by repair.
@@ -2272,6 +2325,46 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		}
 		if (slots > 0)
 			cl.propCursor = (cl.propCursor + examined) % slots;
+	}
+
+	// ---- then the sets told once a client, which wait on no record of their own ----
+	//
+	// A settled entity gets no record to carry a set, so the ids with one are walked here.
+	//
+	// On `present`, the acked belief: an event for an id a client does not hold is dropped
+	// as an orphan, and `propsTold` would be set with nothing to bring it back.
+	{
+		unsigned int marked = 0;
+		const WORD * const ids = PropsMarkedIds(marked);
+		unsigned int examined = 0;
+		for (unsigned int k = 0; (ids != NULL) && (k < marked); ++k)
+		{
+			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_PROPS) > budgetBytes)
+			{
+				++g_propsOutOfBytes;
+				break;
+			}
+			++examined;
+			const WORD id = ids[(cl.propTellCursor + k) % marked];
+			if ((cl.present == NULL) || (id == 0) || (id >= SNAP_MAXID)
+				|| (cl.present[id] == 0) || (cl.propsTold[id] != 0))
+				continue;
+			SnapProps tell;
+			if (PropsToTell(id, tell) == false)
+				continue;
+			BYTE prec[SNAP_MAX_EVENT_BYTES];
+			const unsigned int n = WritePropsBody(prec, tell);
+			SnapEmitRec & er = snapcl_PushPrefix(prec, n, id, SNAPEMIT_PROPS);
+			er.prsent.slot = SNAPPROP_NOSLOT;
+			er.prsent.gen = 0;
+			er.prsent.id = id;
+			er.prsent.offset = 0;	// assigned at layout
+			// Optimistic, as the slot rows are: the repair clears it and the walk tells again.
+			cl.propsTold[id] = 1;
+			++g_propsTold;
+		}
+		if (marked > 0)
+			cl.propTellCursor = (cl.propTellCursor + examined) % marked;
 	}
 
 	// ---- then psprite state, before the priority drain ----
@@ -2711,45 +2804,37 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 
 	// The refresh bands drain first on quotas sized to cycle their population
 	// in their interval, clamped, past which the interval stretches.
-	unsigned int refreshQuota = (cl.lastCosmeticCount / SNAPCL_AGE_COSMETIC) + 1;
-	if ((fua_snap_refresh_max > 0) && (refreshQuota > (unsigned int)fua_snap_refresh_max))
-	{
-		// Clamped, so the interval is not met, which is reported.
-		if (g_lastRefreshWanted == 0)
-			Printf("[snap] refresh clamped: wanted %u/frame, capped at %d - the"
-				" cosmetic interval is now ~%.1f s, not %d s\n",
-				refreshQuota, (int)fua_snap_refresh_max,
-				(double)SNAPCL_AGE_COSMETIC * (double)refreshQuota
-				/ (double)(int)fua_snap_refresh_max / (double)TICRATE,
-				SNAPCL_AGE_COSMETIC / TICRATE);
-		g_lastRefreshWanted = refreshQuota;
-		refreshQuota = (unsigned int)fua_snap_refresh_max;
-	}
-	else
-		g_lastRefreshWanted = 0;
+	const SnapBandQuota refresh = ComputeBandQuota(cl.lastCosmeticCount, SNAPCL_AGE_COSMETIC,
+		(fua_snap_refresh_max > 0) ? (unsigned int)fua_snap_refresh_max : 0,
+		cl.lastRefreshWanted);
+	unsigned int refreshQuota = refresh.quota;
+	// Clamped, so the interval is not met, which is reported once per client.
+	if (refresh.bWarn)
+		Printf("[snap] refresh clamped: client %u wanted %u/frame, capped at %d - its"
+			" cosmetic interval is now ~%.1f s, not %d s\n",
+			client, refresh.wanted, (int)fua_snap_refresh_max,
+			(double)SNAPCL_AGE_COSMETIC * (double)refresh.wanted
+			/ (double)(int)fua_snap_refresh_max / (double)TICRATE,
+			SNAPCL_AGE_COSMETIC / TICRATE);
 
 	// The same for appearance, capped at SNAPCL_ANIMREF_MAX (5.1).
-	unsigned int animrefQuota = (cl.lastAnimrefCount / (unsigned int)(int)fua_snap_animref_interval) + 1;
-	if (animrefQuota > (unsigned int)SNAPCL_ANIMREF_MAX)
-	{
-		if (g_lastAnimrefWanted == 0)
-			Printf("[snap] animref clamped: wanted %u/frame, capped at %d - the"
-				" appearance interval is now ~%.1f s, not %.1f s\n",
-				animrefQuota, (int)SNAPCL_ANIMREF_MAX,
-				(double)(int)fua_snap_animref_interval * (double)animrefQuota
-				/ (double)SNAPCL_ANIMREF_MAX / (double)TICRATE,
-				(double)(int)fua_snap_animref_interval / (double)TICRATE);
-		g_lastAnimrefWanted = animrefQuota;
-		animrefQuota = (unsigned int)SNAPCL_ANIMREF_MAX;
-	}
-	else
-		g_lastAnimrefWanted = 0;
+	const SnapBandQuota animref = ComputeBandQuota(cl.lastAnimrefCount,
+		(unsigned int)(int)fua_snap_animref_interval, (unsigned int)SNAPCL_ANIMREF_MAX,
+		cl.lastAnimrefWanted);
+	unsigned int animrefQuota = animref.quota;
+	if (animref.bWarn)
+		Printf("[snap] animref clamped: client %u wanted %u/frame, capped at %d - its"
+			" appearance interval is now ~%.1f s, not %.1f s\n",
+			client, animref.wanted, (int)SNAPCL_ANIMREF_MAX,
+			(double)(int)fua_snap_animref_interval * (double)animref.wanted
+			/ (double)SNAPCL_ANIMREF_MAX / (double)TICRATE,
+			(double)(int)fua_snap_animref_interval / (double)TICRATE);
 
 	// The cvar may clamp this band, never close it: at zero the far tier freezes
 	// and appearance suppression loses its only unbiased sample.
 	if (animrefQuota == 0)
 		animrefQuota = 1;
-	g_lastAnimrefQuota = animrefQuota;
+	cl.lastAnimrefQuota = animrefQuota;
 
 	const unsigned int refreshCeiling = g_prefixBytes + (budgetBytes / SNAPCL_REFRESH_CAP_DIV);
 	unsigned int refreshEmitted = 0;

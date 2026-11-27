@@ -264,9 +264,9 @@ const char* SampleExit();
 // acting on arrivals on the packet clock.
 const unsigned int* EnteredIds(unsigned int& count);
 
-// The local player fired from (x, y) at nowMS, paired with the first missile
-// entering near there to time the shot's first draw (9.3).
-void NoteLocalFire(int x, int y, unsigned int nowMS);
+// The local player fired from (x, y), stamped here on the clock the arrival is matched
+// against, and paired with the first missile entering near there to time its draw (9.3).
+void NoteLocalFire(int x, int y);
 
 }} // namespace zx::netsnapshot
 

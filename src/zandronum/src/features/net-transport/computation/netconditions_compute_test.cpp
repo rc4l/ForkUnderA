@@ -95,6 +95,23 @@ TEST(ComputeHoldPacket, ANegativeDelayGoesAtOnceAndEmptyPartsStayEmpty)
 	EXPECT_EQ(0, out.addressLength);
 }
 
+TEST(ComputeTakeDuePacket, TheBytesComeOutOfTheQueueRatherThanBeingCopiedOutOfIt)
+{
+	// [Kaori-Chani] A payload too large for any small-buffer trick, so the queue owns a heap
+	// buffer and taking it must hand that same buffer over.
+	HeldPackets held;
+	const std::vector<unsigned char> payload(1400, 0xA5);
+	const unsigned char addr[] = { 9, 9, 9 };
+	ComputeHoldPacket(held, 0, 0, payload.data(), (int)payload.size(), addr, 3);
+	const unsigned char* queued = held.queue.front().bytes.data();
+	HeldPacket out;
+	ASSERT_TRUE(ComputeTakeDuePacket(held, 0, out));
+	EXPECT_EQ(queued, out.bytes.data());
+	EXPECT_EQ(payload, out.bytes);
+	EXPECT_EQ(3, out.addressLength);
+	EXPECT_TRUE(held.queue.empty());
+}
+
 TEST(ComputeAdmitDatagram, AFullQueueDropsTheNewest)
 {
 	HeldPackets held;

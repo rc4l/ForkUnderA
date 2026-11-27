@@ -163,6 +163,9 @@ The scoring (`computation/interest_compute.h`):
 - `ComputeEventDelivery`: a branch event's copies, spacing and deadline (`SNAPCL_EVENT_DEADLINE`,
   `SNAPCL_EVENT_TERMINAL_COPIES`, `SNAPCL_EVENT_TERMINAL_SPACING`).
 - `ComputeOwnEnterBucket`: the own-missile census's wait buckets.
+- `ComputeBandQuota` (`SnapBandQuota`): a refresh band's quota for one client, cycling its
+  population in the band's interval and cut to its ceiling, and whether that client has just
+  become clamped, from the clamp memory the caller keeps per client.
 
 The ack reading (`computation/ack_compute.h`):
 - `ComputeAckRead` (`SnapAckRead`): whether an ack is stale, ahead of `nextSeq`, wide, and has
@@ -198,8 +201,14 @@ Report readings, per frame or per window (each feeds a `[snap]` line):
   and the gravity bridge.
 - `AnimrefQuota`, `TerminalStats`, `ReentryStats`, `BandComposition`, `OwedStats`: the appearance
   quota, terminal promotions, returns from a hold, band contents and what the contested set owes.
+  The quota is one client's, the worst: the largest held population, which is both the
+  longest interval and the first the ceiling cuts, and the report names it. Each client's own
+  clamp memory also decides its `refresh clamped` and `animref clamped` lines, so one client
+  being clamped neither silences nor repeats another's.
 - `ServerPSpriteStats`, `ServerLocalStats`, `ServerMoverStats`, `TargetStats`, `OwnEnterStats`,
   `WireCensus`: per-stream counts and the encoding census.
+- `PropWalkStats`: property sets sent from a slot, and the walks a client's byte budget cut
+  short, both on the properties line.
 - `PendingFrames`, `BelievedCount`, `LastAckedSeq`, `AggregateHealth`, `GetCensus`,
   `ResetWindowStats`: client health and the visibility census.
 - `ReferenceCheckStats`: the reference check's ids in flight, ids at rest and psprites, and those
@@ -253,9 +262,9 @@ None. Every call comes from `capture.cpp`.
 
 The cut's tests are `budget_compute`'s ([capture.md](capture.md)).
 `computation/interest_compute_test.cpp` takes every path through the classifier, what it observes
-beside the band, and the refresh bands, event delivery and own-missile buckets: all of the unit's
-lines, and all but two branches, neither reachable -- a terminal record is always floored below the
-appearance test's bands, and the spacing clamp sees only its two constants.
+beside the band, the refresh bands and their quotas, event delivery and own-missile buckets: all of
+the unit's lines, and all but two branches, neither reachable -- a terminal record is always floored
+below the appearance test's bands, and the spacing clamp sees only its two constants.
 `computation/ack_compute_test.cpp` takes an ack's standing at each edge, an ack of the newest sent
 datagram read and one of the next ignored, every verdict at the edges of the history and the reorder
 window, a stream of datagrams lost, late and reordered read back through its acks, the ack lag, the

@@ -55,6 +55,7 @@ def comp(stem):
 COLUMNS = [
     ('server', 'Server', 'once per pump, then per client', [
         ('capture.cpp', [MODULE + '/capture.h', MODULE + '/capture.cpp']),
+        ('report.cpp', [MODULE + '/report.h', MODULE + '/report.cpp']),
         ('clienttrack.cpp', [MODULE + '/clienttrack.h', MODULE + '/clienttrack.cpp']),
     ]),
     ('client', 'Client', 'datagrams, ghosts and mirrors', [
@@ -71,7 +72,8 @@ COLUMNS = [
         (s + '.cpp', comp(s)) for s in (
             'budget_compute', 'interest_compute', 'ack_compute', 'join_compute', 'catchup_compute',
             'law_compute', 'clock_compute', 'sample_compute', 'smooth_compute', 'anim_compute',
-            'wall_compute', 'sound_compute', 'mover_compute', 'replay_compute')
+            'wall_compute', 'sound_compute', 'mover_compute', 'replay_compute',
+            'propcensus_compute', 'proptell_compute', 'follow_compute')
     ]),
     ('format', 'Wire format and clock', 'engine-free', [
         ('format.h', [MODULE + '/format.h']),
@@ -94,8 +96,9 @@ COLUMNS = [
 ]
 OPEN = ['capture.cpp', 'apply.cpp']
 
-# Unit tests are not parts: they declare nothing and are reached by no one.
-TEST_RE = re.compile(r'_test\.cpp$')
+# Unit tests are not parts: they declare nothing and are reached by no one. A wire test's
+# _nettest.cpp is one of them, routed to zandrox_tests_net rather than zandrox_tests.
+TEST_RE = re.compile(r'_(net)?test\.cpp$')
 
 
 def read(rel):

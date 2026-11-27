@@ -22,10 +22,6 @@
 #include "i_tictime.h"
 #include "doomdef.h"	// TICRATE
 
-// The time base's frequency (i_tictime.cpp), cleared below as a static initializer in another unit
-// would find it before the time base's own had run.
-extern tictime_raw_t g_rawFrequency;
-
 namespace
 {
 
@@ -174,9 +170,9 @@ TEST(TicTime, AReadBeforeStaticInitializationStillFindsTheFrequency)
 {
 	TIC_Init();
 	const tictime_raw_t freq = TIC_GetRawFrequency();
-	g_rawFrequency = 0;
+	tictime_rawFrequency = 0;
 	EXPECT_EQ(TIC_GetRawFrequency(), freq);
-	g_rawFrequency = 0;
+	tictime_rawFrequency = 0;
 	TIC_Init();
 	EXPECT_EQ(TIC_GetRawFrequency(), freq);
 }

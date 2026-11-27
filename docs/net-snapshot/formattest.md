@@ -1,6 +1,6 @@
 # formattest: the codec's tests, and the two offline targets
 
-Covers: src/zandronum/src/features/net-snapshot/formattest.cpp, src/zandronum/src/features/net-snapshot/format_test.cpp, src/zandronum/src/features/net-snapshot/refdump_test.cpp, tests/snapdump/snapdump.h, tests/snapdump/snapdump.cpp, tests/snapdump/main.cpp, tests/snapdump/snapdump_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/formattest.cpp, src/zandronum/src/features/net-snapshot/format_test.cpp, src/zandronum/src/features/net-snapshot/refdump_test.cpp, src/zandronum/src/features/net-snapshot/moversound_wire_nettest.cpp, tests/snapdump/snapdump.h, tests/snapdump/snapdump.cpp, tests/snapdump/main.cpp, tests/snapdump/snapdump_test.cpp
 
 ## Responsibility
 
@@ -12,6 +12,9 @@ second copy of the assertions to drift:
   held to 100% line coverage;
 - the reference decode is **`refdump_test.cpp`**, which decodes the committed recordings through the
   ported format layer and holds each dump to its shipped digest;
+- the three sector-keyed mover sounds' bytes are **`moversound_wire_nettest.cpp`**, which models
+  SVC2_DOORSOUND, SVC2_MOVERSOUND and SVC2_FLOORSOUND on `BYTESTREAM_s` and runs in
+  `zandrox_tests_net` (the `_nettest.cpp` suffix routes it there);
 - the fuzzer is the **`snap_fuzz`** target over `tests/snapfuzz/fuzz.cpp` ([fuzz.md](fuzz.md));
 - the dumper is the **`snap_dump`** target over `tests/snapdump/`, whose body the reference test
   calls, so a dump taken by hand is the dump the test takes.

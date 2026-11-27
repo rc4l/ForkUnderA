@@ -118,9 +118,9 @@ void DDoor::Tick ()
 		// de-sync the game. Instead, wait for the server to tell us to change
 		// the door's direction.
 		// [EP] Don't let the clients read the undefined m_TopCountdown variable
-		// [Kaori-Chani] features/net-snapshot: unless a record has reached this door, which
-		// carries the countdown it is reading; with the gate off that is never true.
-		if ( zx::netsnapshot::MoverClientSkipsWait( m_SnapSeen ))
+		// [Kaori-Chani] features/net-snapshot: unless records own doors on this client and one
+		// has reached this door, carrying the countdown it is then reading.
+		if ( zx::netsnapshot::MoverClientSkipsWait( SNAPMV_DOOR, m_SnapSeen ))
 			break;
 		zx::netsnapshot::MoverCountDoorWait( m_TopCountdown == 1 );
 

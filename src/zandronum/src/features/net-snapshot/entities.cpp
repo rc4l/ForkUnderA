@@ -26,6 +26,7 @@
 #include "features/net-snapshot/computation/clock_compute.h"
 #include "features/net-snapshot/computation/join_compute.h"
 #include "features/net-snapshot/entities.h"
+#include "features/net-snapshot/capture.h"	// NowMS, the clock the arrival is on
 #include "features/net-snapshot/record.h"
 #include "features/net-snapshot/selftest.h"
 #include "networkshared.h"	// BYTESTREAM_s, for the point sound's position
@@ -208,13 +209,14 @@ void zx::netsnapshot::LocalFireStats(unsigned int* hist, unsigned int& samples,
 	g_fireSamples = g_fireWorstMS = g_fireUnmatched = 0;
 }
 
-void zx::netsnapshot::NoteLocalFire(int x, int y, unsigned int nowMS)
+void zx::netsnapshot::NoteLocalFire(int x, int y)
 {
 	// A shot still waiting for its enter is replaced, not queued.
 	if (g_fireArmed)
 		++g_fireUnmatched;
 
-	g_fireMS = nowMS;
+	// Taken here, not passed in: the matcher subtracts it from an arrival on this clock.
+	g_fireMS = NowMS();
 	g_fireX = x;
 	g_fireY = y;
 	g_fireArmed = true;

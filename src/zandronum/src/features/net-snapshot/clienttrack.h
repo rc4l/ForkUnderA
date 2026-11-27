@@ -63,6 +63,10 @@ void RepairStats(unsigned int& frames, unsigned int& entities,
 // which is sized to read 0.
 void ServerPSpriteStats(unsigned int & emitted, unsigned int & capped, bool reset);
 
+// Property sets the slot walk sent, and walks the byte budget cut short, the slots' or the
+// telling's, which is what a set waiting a frame longer than it should looks like.
+void PropWalkStats(unsigned int & sent, unsigned int & cutByBudget, bool reset);
+
 }} // namespace zx::netsnapshot
 
 // Local-block emission over all clients: `noId` and `noClient` must read 0, and
@@ -235,9 +239,10 @@ unsigned int LastReserveCapped();
 unsigned int LastReserveDrained();
 unsigned int LastDeferred();
 
-// The appearance-refresh quota this frame, what it would have been unclamped
-// (0 when not clamped), and the population it was derived over.
-void AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population);
+// One client's appearance-refresh quota, what it would have been unclamped (0 when not
+// clamped) and the population behind it: the worst client, whose index `client` takes.
+void AnimrefQuota(unsigned int& quota, unsigned int& wanted, unsigned int& population,
+	unsigned int& client);
 
 // The records emitted that were new to the client since last frame, which over
 // the contested population gives the per-entity refresh rate.

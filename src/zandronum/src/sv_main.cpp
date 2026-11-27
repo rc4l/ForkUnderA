@@ -1024,13 +1024,14 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 	// [Kaori-Chani] features/net-snapshot: the payload as built, which only this line knows
 	// alongside what the wire cost.
 	const unsigned int snapPayloadSize = TempBuffer.CalcSize( );
+	const tictime_raw_t launchStart = TIC_GetRawCounter( );	// [Kaori-Chani] and its compression's cost
 	NETWORK_LaunchPacket( &TempBuffer, pClient->Address, pClient->State >= CLS_CONNECTED );
 
 	// [Kaori-Chani] features/net-snapshot: built size against wire cost, known together here only.
 	if ( zx::netsnapshot::ConsumeSnapshotQueued( ulClient ))
 	{
 		zx::netsnapshot::NoteUnreliablePacket( snapPayloadSize, NETWORK_GetLastLaunchWireSize( ),
-			NETWORK_GetLastLaunchUsedZstd( ));
+			NETWORK_GetLastLaunchUsedZstd( ), (QWORD)( TIC_GetRawCounter( ) - launchStart ));
 	}
 	pClient->UnreliablePacketBuffer.Clear();
 }

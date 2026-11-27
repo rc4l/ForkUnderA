@@ -259,6 +259,24 @@ void zx::netsnapshot::ComputeEventDelivery(bool bTerminal, int eventCopies, unsi
 	deadline = SNAPCL_EVENT_DEADLINE + (copies - 1) * spacing;
 }
 
+zx::netsnapshot::SnapBandQuota zx::netsnapshot::ComputeBandQuota(unsigned int population,
+	unsigned int interval, unsigned int ceiling, unsigned int& lastWanted)
+{
+	SnapBandQuota out;
+	// The cvars' handlers keep the interval above 0; a 0 is read as 1 rather than dividing by it.
+	out.quota = (population / ((interval > 0) ? interval : 1)) + 1;
+	out.wanted = 0;
+	if ((ceiling > 0) && (out.quota > ceiling))
+	{
+		out.wanted = out.quota;
+		out.quota = ceiling;
+	}
+	// Once per crossing into clamped, and again only after an unclamped frame.
+	out.bWarn = (out.wanted > 0) && (lastWanted == 0);
+	lastWanted = out.wanted;
+	return out;
+}
+
 unsigned int zx::netsnapshot::ComputeOwnEnterBucket(int wait)
 {
 	if (wait <= 0)	return 0;	// same tic it spawned on

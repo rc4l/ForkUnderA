@@ -205,6 +205,8 @@ DEV_MODE_CCMD(fua_seams)
 	if (first != nullptr) Printf(", the first in %s on the %s thread in %s:%d", first, zx::handoff::g_firstViolationThread.load(), site ? site->function : "?", site ? site->line : 0);
 	Printf("; %d locks taken while holding another", zx::handoff::g_nestedLocks.load());
 	if (zx::handoff::g_firstNested.load() != nullptr) Printf(" (first %s)", zx::handoff::g_firstNested.load());
-	Printf("; %d seams declared with a second owner\n", zx::handoff::g_conflicts.load());
+	Printf("; %d seams declared with a second owner", zx::handoff::g_conflicts.load());
+	// [Kaori-Chani] Last, as fuactl reads this line from its start; 0 here means no seams.
+	Printf("; %d seams declared in all\n", zx::handoff::Registry().Size());
 	Printf("%s", zx::handoff::Violations().Table().c_str());
 }
