@@ -122,6 +122,9 @@ export function judgeEach(logs, judge) {
 }
 
 // [Doruk-Aksoy] A scenario's PASS or FAIL line and failed count from its faults.
+// [Doruk-Aksoy] Every actor row an instance's world.actors lists, with `extra` such as { mirrors: 1 } for a snapshot client's mirrors beside their legacy copies.
+export const actorRows = async (c, extra = {}) => (await c.rpc("world.actors", { limit: 100000, ...extra }))?.actors || [];
+
 export function result(label, faults, passed) {
   return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${passed}`, failed: faults.length ? 1 : 0 };
 }

@@ -28,6 +28,9 @@ bool ComputeLeaveDestroysLegacy(bool isInventory);
 // [Doruk-Aksoy] A copy's flag word once raised: `corpse` taken off and the `restored` bits put back as its class has them.
 uint32_t ComputeLegacyRaisedFlags(uint32_t flags, uint32_t classFlags, uint32_t corpse, uint32_t restored);
 
+// [Doruk-Aksoy] A mirror's render word once it takes its legacy copy's, which the flag commands still reach below level 3: every bit from the copy but those in kept, which the mirror holds as the snapshot drives them.
+uint32_t ComputeMirrorRenderWord(uint32_t mirrorWord, uint32_t legacyWord, uint32_t kept);
+
 }} // namespace zx::netsnapshot
 
 #endif // __SNAP_FOLLOW_COMPUTE_H__
