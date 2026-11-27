@@ -2477,7 +2477,9 @@ void zx::netsnapshot::GhostFrame()
 			const long long sdsq = sdx * sdx + sdy * sdy;
 			// A corpse, by the wire bit, is never solid.
 			const bool corpse = ((pose.misc & SNAPMISC_CORPSE) != 0);
-			const bool want = (corpse == false)
+			// [Doruk-Aksoy] Below level 3 the hidden legacy copy, which follows this mirror, is the one in the blockmap.
+			const bool mayCollide = ComputeMirrorMayCollide((g_hidLegacy != NULL) && g_hidLegacy[id]);
+			const bool want = (corpse == false) && mayCollide
 				&& (isSolid ? (sdsq <= collideOut)
 					: ((sdsq <= collideIn) && ghost_ClassCollides(GhostClassId(id))));
 			if (corpse && isSolid)
