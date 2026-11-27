@@ -123,6 +123,10 @@ bool MirrorSpawnAction(const FState *pState);
 // (3.1), since a mirror's NetID is 0.
 int MirrorPlayerNum(const AActor* pActor);
 
+// [Doruk-Aksoy] How many mirrors this client holds, and the k-th with its snapshot id, for the bridge's world.actors; NULL past the count or for a slot already dropped.
+unsigned int MirrorCount();
+AActor* MirrorAt(unsigned int k, unsigned int& id);
+
 // Destroys every mirror actor, in a live level only; a level going away
 // calls LevelUnloaded instead.
 void GhostClearAll();

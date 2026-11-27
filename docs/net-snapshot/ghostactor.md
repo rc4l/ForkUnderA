@@ -59,6 +59,9 @@ without running its action, and the wire's corpse bit as a death or a raise (`Co
 `ComputeLegacyDeathFlags`, `ComputeLegacyRaisedFlags`, `ComputeLegacyDeathHealth`). Without it a
 client read a placed barrel's angle as 0, a walker's position as where it spawned, and a killed
 monster as alive. A remote player's own actor takes its angle the same tic even when it has not moved.
+A mirror with a hidden legacy copy never turns solid either (`ComputeMirrorMayCollide`): the copy,
+following it, already blocks the player, and both in the blockmap made a client's searches find the actor
+twice (netacsqueries). At level 3 the mirror is all there is, and it collides as before.
 When a ghost leaves, the server having removed its actor, the legacy copy goes with it
 (`ComputeLeaveDestroysLegacy`): kept hidden, an exploded rocket outlived the server's for good, since a
 client never explodes a server's missile itself. Inventory is the exception, since a pickup also leaves
@@ -236,6 +239,9 @@ Lookups:
   mirror rather than dropped.
 - `MirrorPlayerNum`: the player a mirror stands in for, or -1, since a mirror's NetID is 0. The
   game copy's sprite path reads it for a player mirror's skin, a mirror carrying no `player_t`.
+- `MirrorCount`, `MirrorAt`: the mirrors this client holds and the k-th with its snapshot id, for the
+  bridge's `world.actors`, which lists them under that id: a mirror sits in `STAT_INFO`, below where a
+  default `TThinkerIterator` starts.
 - `SpeedForClass`: a class's default speed in units per tic, for the replay's glide census.
 
 Sounds, spawns and respawns:
@@ -382,9 +388,10 @@ ghost of one class.
 
 ## Engine hooks
 
-The stock call sites, each a `[Kaori-Chani]` line. Seven files call this header:
+The stock call sites, each a `[Kaori-Chani]` line but the bridge's. Eight files call this header:
 - `features/gamecopy/gamecopy.cpp`: `GhostFrame` in `FillNow`, and `MirrorPlayerNum` in the sprite
   path for a player mirror's skin.
+- `mcp_rpc.cpp`: `MirrorCount`, `MirrorAt` and `MirrorPlayerNum` in `world.actors`, a `[Doruk-Aksoy]` line.
 - `cl_main.cpp`: `LevelUnloaded` at the connection's map load (`SVCC_MAPLOAD`), on quitting a
   network game and at a map change; `GhostsFromNetwork` when snapshot traffic starts and stops;
   `CosmeticEvents` for `SVC2_SNAPCOSMETIC`; `ResolveThroughMirror` in the client's actor lookup; and
