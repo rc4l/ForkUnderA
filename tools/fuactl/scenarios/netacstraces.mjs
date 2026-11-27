@@ -4,7 +4,7 @@
 //
 // usage:  node scenarios/netacstraces.mjs
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
-import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, onSnapshots } from "../src/netacs.mjs";
 import { TRACE_STEPS, WANT, WANT_STRINGS, buildAcsTracesPk3, judgeTraces } from "./acstraces.mjs";
 
 // [Doruk-Aksoy] Every step before acstraces' savegame on every machine, and again on the late joiner; a step that logs nothing waits under a tag of its own.
@@ -29,6 +29,6 @@ export const judgeNetplay = netJudge({ steps: STEPS, late: LATE, after: AFTER, j
   passed: `${Object.values(WANT_ONLINE).reduce((n, v) => n + v.length, 0) + Object.values(STRINGS_ONLINE).reduce((n, v) => n + v.length, 0)} trace values right on every machine's own walls, lines, planes and actors` });
 
 const MONSTERS = { sv_nomonsters: 0 };
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1, serverCvars: MONSTERS }, { name: "ping100", players: 1, observers: 1, lag: "100,100", serverCvars: MONSTERS }];
+export const CONFIGS = onSnapshots([{ name: "lan", players: 1, observers: 1, serverCvars: MONSTERS }, { name: "ping100", players: 1, observers: 1, lag: "100,100", serverCvars: MONSTERS }]);
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacstraces", wad: buildNetTracesPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);
