@@ -6,6 +6,18 @@
 
 using namespace zx::netsnapshot;
 
+// [Doruk-Aksoy] Seen by netacsqueries at legacy suppression 2: a client's blockmap search found each barrel twice, its solid mirror and the legacy copy.
+TEST(SnapshotFollow, AMirrorBesideAHiddenLegacyCopyStaysOutOfTheBlockmap)
+{
+	EXPECT_FALSE(ComputeMirrorMayCollide(true));
+}
+
+// [Doruk-Aksoy] At level 3 the mirror is all the client has, so it blocks the player as before.
+TEST(SnapshotFollow, AMirrorWithNoLegacyCopyMayCollide)
+{
+	EXPECT_TRUE(ComputeMirrorMayCollide(false));
+}
+
 // [Doruk-Aksoy] Seen 2026-11-26 at legacy suppression 2: KillThing is suppressed, so a client's legacy copy of a killed monster stayed alive for its scripts.
 TEST(SnapshotFollow, ACorpseOnTheWireKillsALiveCopyAndALiveOneRaisesADeadCopy)
 {
