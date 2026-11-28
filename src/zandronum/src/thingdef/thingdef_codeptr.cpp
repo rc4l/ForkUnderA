@@ -85,6 +85,7 @@
 // [BB] new #includes.
 #include "deathmatch.h"
 #include "features/trnslate/trnslate.h"
+#include "features/actor-flags/actorflags.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "invasion.h"
@@ -5471,156 +5472,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 	ACTION_PARAM_STRING(flagname, 0);
 	ACTION_PARAM_BOOL(expression, 1);
 
-	const char *dot = strchr (flagname, '.');
-	FFlagDef *fd;
-	const PClass *cls = self->GetClass();
-
-	if (dot != NULL)
-	{
-		FString part1(flagname, dot-flagname);
-		fd = FindFlag (cls, part1, dot+1);
-	}
-	else
-	{
-		fd = FindFlag (cls, flagname, NULL);
-	}
-
-	if (fd != NULL)
-	{
-		bool kill_before, kill_after;
-		INTBOOL item_before, item_after;
-		INTBOOL secret_before, secret_after;
-
-		kill_before = self->CountsAsKill();
-		item_before = self->flags & MF_COUNTITEM;
-		secret_before = self->flags5 & MF5_COUNTSECRET;
-
-		if (fd->structoffset == -1)
-		{
-			HandleDeprecatedFlags(self, cls->ActorInfo, expression, fd->flagbit);
-		}
-		else
-		{
-			// [BB] The server handles the flag change.
-			// [rc4l] Ported from zandronum@873abcdc7cf96f2e1daffa583896faed4afd6bc7: a CLIENTSIDEONLY actor changes its own flags.
-			if (NETWORK_InClientModeAndActorNotClientHandled(self))
-				return;
-
-			ActorFlags *flagp = (ActorFlags*) (((char*)self) + fd->structoffset);
-
-			// [EP] Store the old value in order to save bandwidth
-			// [rc4l] uzdoom@ca012bc9b typed the flag words. This [BB] block identifies which word
-			// was touched by comparing addresses, and those are distinct types now, so the
-			// comparisons go through void* and the value is read as a raw integer.
-			const DWORD oldflag = flagp->GetValue();
-
-			// If these 2 flags get changed we need to update the blockmap and sector links.
-			bool linkchange = flagp == &self->flags && (fd->flagbit == MF_NOBLOCKMAP || fd->flagbit == MF_NOSECTOR);
-
-			if (linkchange) self->UnlinkFromWorld();
-			ModActorFlag(self, fd, expression);
-			if (linkchange) self->LinkToWorld();
-
-			// [BB] Let the clients know about the flag change.
-			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( flagp->GetValue() != oldflag ) ) {
-				FlagSet flagset = FLAGSET_UNKNOWN;
-				if ( (void*)flagp == (void*)&self->flags )
-					flagset = FLAGSET_FLAGS;
-				else if ( (void*)flagp == (void*)&self->flags2 )
-					flagset = FLAGSET_FLAGS2;
-				else if ( (void*)flagp == (void*)&self->flags3 )
-					flagset = FLAGSET_FLAGS3;
-				else if ( (void*)flagp == (void*)&self->flags4 )
-					flagset = FLAGSET_FLAGS4;
-				else if ( (void*)flagp == (void*)&self->flags5 )
-					flagset = FLAGSET_FLAGS5;
-				else if ( (void*)flagp == (void*)&self->flags6 )
-					flagset = FLAGSET_FLAGS6;
-				else if ( (void*)flagp == (void*)&self->flags7 )
-					flagset = FLAGSET_FLAGS7;
-				// [MGOOOOOO] flags8 was never wired up here, so A_ChangeFlag on an MBF21 flag
-				// silently desynced clients. flags9 is ZandroX's own word (see actor.h MF9_*).
-				else if ( (void*)flagp == (void*)&self->flags8 )
-					flagset = FLAGSET_FLAGS8;
-				else if ( (void*)flagp == (void*)&self->flags9 )
-					flagset = FLAGSET_FLAGS9;
-				// [rc4l] Movement-model flags (see actor.h MV_*).
-				else if ( (void*)flagp == (void*)&self->mvFlags )
-					flagset = FLAGSET_MVFLAGS;
-				else if ( (void*)flagp == (void*)&self->fua_flags )
-					flagset = FLAGSET_FUAFLAGS;
-				else if ( (void*)flagp == (void*)&self->renderflags )
-					flagset = FLAGSET_RENDERFLAGS;
-				else if ( (void*)flagp == (void*)&self->BounceFlags )
-					flagset = FLAGSET_BOUNCEFLAGS;
-				else if ( (void*)flagp == (void*)&self->renderflags2 )
-					flagset = FLAGSET_RENDERFLAGS2;
-				else if ( (void*)flagp == (void*)&self->STFlags )
-					flagset = FLAGSET_FLAGSST;
-
-				SERVERCOMMANDS_SetThingFlags( self, flagset );
-			}
-		}
-		kill_after = self->CountsAsKill();
-		item_after = self->flags & MF_COUNTITEM;
-		secret_after = self->flags5 & MF5_COUNTSECRET;
-		// Was this monster previously worth a kill but no longer is?
-		// Or vice versa?
-		if (kill_before != kill_after)
-		{
-			if (kill_after)
-			{ // It counts as a kill now.
-				level.total_monsters++;
-			}
-			else
-			{ // It no longer counts as a kill.
-				level.total_monsters--;
-			}
-
-			// [AK] Update the invasion monster count accordingly.
-			INVASION_UpdateMonsterCount( self, !kill_after );
-
-			// [BB] If we're the server, tell clients the new number of total monsters.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetMapNumTotalMonsters( );
-		}
-		// same for items
-		if (item_before != item_after)
-		{
-			if (item_after)
-			{ // It counts as an item now.
-				level.total_items++;
-			}
-			else
-			{ // It no longer counts as an item
-				level.total_items--;
-			}
-
-			// [BB] If we're the server, tell clients the new number of total items.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetMapNumTotalItems( );
-		}
-		// and secretd
-		if (secret_before != secret_after)
-		{
-			if (secret_after)
-			{ // It counts as an secret now.
-				level.total_secrets++;
-			}
-			else
-			{ // It no longer counts as an secret
-				level.total_secrets--;
-			}
-
-			// [BB] If we're the server, tell clients the new number of total items.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetMapNumTotalSecrets( );
-		}
-	}
-	else
-	{
-		Printf("Unknown flag '%s' in '%s'\n", flagname, cls->TypeName.GetChars());
-	}
+	// [Doruk-Aksoy] features/actor-flags, which ACS's SetActorFlag shares.
+	zx::actorflags::ChangeActorFlag(self, flagname, expression, true, false);
 }
 
 //===========================================================================

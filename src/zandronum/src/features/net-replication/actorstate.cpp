@@ -55,6 +55,20 @@ void SendThingTranslation(AActor *actor)
 	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingTranslation(actor);
 }
 
+void SendThingFlags(AActor *actor, int flagset)
+{
+	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingFlags(actor, static_cast<FlagSet>(flagset));
+}
+
+void SendMapTotals(bool monsters, bool items, bool secrets)
+{
+	if (!zx::net::IsServer())
+		return;
+	if (monsters) SERVERCOMMANDS_SetMapNumTotalMonsters();
+	if (items) SERVERCOMMANDS_SetMapNumTotalItems();
+	if (secrets) SERVERCOMMANDS_SetMapNumTotalSecrets();
+}
+
 void SendDeathHealth(AActor *actor)
 {
 	if (actor != NULL && zx::net::IsServer() && ComputeSendsDeathHealth(actor->player != NULL, zx::netsnapshot::SuppressesLegacy(actor, SNAPLEGACY_ANIM)))

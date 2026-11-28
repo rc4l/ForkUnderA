@@ -28,9 +28,11 @@ export const POOL = { x0: 400, y0: 400, x1: 500, y1: 500, top: 48 };
 export const ICE = (3 << 16) | 7;
 export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46, FriendlySeeBlocks: 48, WaterDepth: 49 };
 const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
+// [Doruk-Aksoy] GetLevelInfo's total monsters and GetPlayerInfo's fviewbob, at zcommon.bcs' numbers.
+const LEVELINFO_TOTAL_MONSTERS = 7, PLAYERINFO_FVIEWBOB = 10;
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", ""];
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", "", "SHOOTABLE", "ZxNoFlag", "COUNTKILL"];
 export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
@@ -110,6 +112,11 @@ export const CHECKS = [
   { what: "SetTranslation(far, Ice)", words: call("SetTranslation", BARREL.far, S.Ice), want: 1 },
   { what: "SetTranslation(mud, Ice), then an unknown name", words: [...call("SetTranslation", BARREL.mud, S.Ice), PCD.DROP, ...call("SetTranslation", BARREL.mud, S.ZxNoTranslation)], want: 1 },
   { what: "SetTranslation(wet, Ice), then \"\"", words: [...call("SetTranslation", BARREL.wet, S.Ice), PCD.DROP, ...call("SetTranslation", BARREL.wet, S[""])], want: 1 },
+  { what: "SetActorFlag(far, SHOOTABLE, off)", words: call("SetActorFlag", BARREL.far, S.SHOOTABLE, 0), want: 1 },
+  { what: "CheckFlag(far, SHOOTABLE) after", words: call("CheckFlag", BARREL.far, S.SHOOTABLE), want: 0 },
+  { what: "SetActorFlag(far, ZxNoFlag)", words: call("SetActorFlag", BARREL.far, S.ZxNoFlag, 1), want: 0 },
+  { what: "SetActorFlag(far, COUNTKILL), then the map's total monsters", words: [...call("SetActorFlag", BARREL.far, S.COUNTKILL, 1), PCD.DROP, PCD.PUSHNUMBER, LEVELINFO_TOTAL_MONSTERS, PCD.GETLEVELINFO], want: 1 },
+  { what: "GetPlayerInfo(0, PLAYERINFO_FVIEWBOB)", words: [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, PLAYERINFO_FVIEWBOB, PCD.GETPLAYERINFO], want: 1 },
 ];
 
 // [Doruk-Aksoy] What is wrong with a machine's barrels after script 1, from its world.actors rows: far and mud on Ice, wet given back its class's (near is pushed by DamageActor, so isn't used).

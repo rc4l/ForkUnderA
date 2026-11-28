@@ -669,3 +669,6 @@ xx(RedPlasmaScorch)
 // namedef indices are sent over the network (see the decal names above), so renumbering an
 // existing entry would break protocol compatibility.
 xx(Rip)
+
+// [Doruk-Aksoy] features/acs-parity: UZDoom's fviewbob userinfo, appended for the same reason.
+xx(FViewBob)

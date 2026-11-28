@@ -87,6 +87,8 @@ CVAR (String,	gender,					"male",		CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (Int,		switchonpickup,			1,			CVAR_USERINFO | CVAR_UNSYNCED_USERINFO | CVAR_ARCHIVE);
 CVAR (Float,	movebob,				0.25f,		CVAR_USERINFO | CVAR_UNSYNCED_USERINFO | CVAR_ARCHIVE);
 CVAR (Float,	stillbob,				0.f,		CVAR_USERINFO | CVAR_UNSYNCED_USERINFO | CVAR_ARCHIVE);
+// [Doruk-Aksoy] features/acs-parity: UZDoom's fviewbob, synced since a flying player's bob moves its pawn on the server and in prediction.
+CVAR (Bool,		fviewbob,				true,		CVAR_USERINFO | CVAR_ARCHIVE);
 CVAR (String,	playerclass,			"Fighter",	CVAR_USERINFO | CVAR_ARCHIVE);
 // [BC] New userinfo entries for Skulltag.
 CVAR (Int,		railcolor,				0,			CVAR_USERINFO | CVAR_ARCHIVE);

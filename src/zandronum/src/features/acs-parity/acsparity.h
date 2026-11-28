@@ -40,6 +40,9 @@ void SetSectorDamage(int tag, int32_t amount, const char* type);
 // [Doruk-Aksoy] Whether `name` is an actor class.
 bool IsActorClass(const char* name);
 
+// [Doruk-Aksoy] SetActorFlag: the flag set or cleared on the actors with `tid`, the activator for 0 (which alone reports an unknown flag), and how many have it.
+int SetActorFlag(AActor* activator, int tid, const char* name, bool on);
+
 // [Doruk-Aksoy] SetTranslation: the named translation on the actors with `tid`, the activator for 0, "" giving back each one's class's and an unknown name changing nothing.
 void SetTranslation(AActor* activator, int tid, const char* name);
 

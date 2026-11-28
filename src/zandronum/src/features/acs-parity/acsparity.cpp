@@ -14,6 +14,7 @@
 #include "p_tags.h"
 #include "p_terrain.h"
 #include "r_state.h"
+#include "features/actor-flags/actorflags.h"
 #include "features/trnslate/trnslate.h"
 
 namespace zx { namespace acsparity {
@@ -161,6 +162,20 @@ bool IsActorClass(const char* name)
 {
 	const PClass* cls = name != nullptr ? PClass::FindClass(name) : nullptr;
 	return cls != nullptr && cls->IsDescendantOf(RUNTIME_CLASS(AActor));
+}
+
+int SetActorFlag(AActor* activator, int tid, const char* name, bool on)
+{
+	// [Doruk-Aksoy] On a client only a clientside script runs, and its changes stay on its machine.
+	const bool local = zx::net::InClientMode();
+	if (tid == 0)
+		return actorflags::ChangeActorFlag(activator, name, on, true, local) ? 1 : 0;
+	// [Doruk-Aksoy] Actors sharing a tid needn't share the flag, so none of them reports a miss, as UZDoom's doesn't.
+	int count = 0;
+	FActorIterator it(tid);
+	while (AActor* actor = it.Next())
+		count += actorflags::ChangeActorFlag(actor, name, on, false, local) ? 1 : 0;
+	return count;
 }
 
 void SetTranslation(AActor* activator, int tid, const char* name)

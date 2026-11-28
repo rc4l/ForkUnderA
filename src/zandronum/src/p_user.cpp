@@ -2951,7 +2951,8 @@ void P_CalcHeight (player_t *player)
 	}
 	else if ((player->mo->flags & MF_NOGRAVITY) && !player->onground)
 	{
-		player->bob = FRACUNIT / 2;
+		// [Doruk-Aksoy] features/acs-parity: no flying view bob without UZDoom's fviewbob.
+		player->bob = player->userinfo.GetFViewBob() ? FRACUNIT / 2 : 0;
 	}
 	else
 	{

@@ -1748,6 +1748,7 @@ add_executable( zdoom WIN32
 	features/acsvec/acsvec.cpp
 	features/acs-funcrefs/acsfuncrefs.cpp
 	features/acs-parity/acsparity.cpp
+	features/actor-flags/actorflags.cpp
 	features/decorate-uzdoom/decorateexpr.cpp
 	features/decorate-uzdoom/uservars.cpp
 	features/acs-handles/acshandles.cpp

@@ -173,6 +173,7 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 185, 2, "IsPlayerContestingControlPoint" },
 	{ 200, 1, "CheckClass" },
 	{ 201, 6, "DamageActor" },
+	{ 202, 3, "SetActorFlag" },
 	{ 203, 2, "SetTranslation" },
 	{ 204, 1, "GetActorFloorTexture" },
 	{ 205, 1, "GetActorFloorTerrain" },

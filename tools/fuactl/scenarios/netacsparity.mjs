@@ -33,7 +33,9 @@ export function buildNetParityPk3() {
 // [Doruk-Aksoy] Where a machine's right answer is not single player's: a client's copy leaves a synced actor's health to the server (the barrel keeps 20),
 // and the late joiner arrives after the server's run set the player's step height and took the barrel to 10.
 export const ANSWERS = {
-  client: { "DamageActor(barrel, 10, Fire)": -1, "the barrel's health after": 20, "the new activator's health": 20 },
+  client: { "DamageActor(barrel, 10, Fire)": -1, "the barrel's health after": 20, "the new activator's health": 20,
+    // [Doruk-Aksoy] A clientside SetActorFlag changes its own barrel but not the map's totals, which stay the server's until its run sends them.
+    "SetActorFlag(far, COUNTKILL), then the map's total monsters": 0 },
   latejoin: { "APROP_MaxStepHeight": 40 * 65536, "the barrel's health after": 10, "the new activator's health": 10 },
 };
 // [Doruk-Aksoy] A client's SetSectorDamage copies log the health the server holds then: untouched through script 3, the server's 90 through script 4; and after
