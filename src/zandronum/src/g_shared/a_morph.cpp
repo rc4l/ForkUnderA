@@ -100,6 +100,8 @@ bool P_MorphPlayer (player_t *activator, player_t *p, const PClass *spawntype, i
 	p->PremorphWeapon = p->ReadyWeapon;
 	morphed->special2 = actor->flags & ~MF_JUSTHIT;
 	morphed->player = p;
+	// [Doruk-Aksoy] The morph's body is the player's now, so it holds the player's reserved id, which a snapshot client knows the player by.
+	P_TakeReservedNetID (morphed, int(p - players));
 	// [Binary] Keep movement if +NOMORPHLIMITATIONS is used.
 	if (morphed->PlayerFlags & PPF_NOMORPHLIMITATIONS)
 	{
@@ -285,6 +287,8 @@ bool P_UndoPlayerMorph (player_t *activator, player_t *player, int unmorphflag, 
 	}
 	mo->angle = pmo->angle;
 	mo->player = player;
+	// [Doruk-Aksoy] The reserved id goes back before the morph's body is destroyed, so the clients move their copy of it off the id first.
+	P_TakeReservedNetID (mo, int(player - players));
 	// [AK] Don't adjust the reaction time if NOMORPHLIMITATIONS is enabled.
 	if (noMorphLimitations == false)
 		mo->reactiontime = 18;

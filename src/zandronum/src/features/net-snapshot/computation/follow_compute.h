@@ -36,6 +36,9 @@ bool ComputeLeaveDestroysLegacy(bool isInventory);
 // [Doruk-Aksoy] Whether a mirror may turn solid and enter the blockmap: only where no hidden legacy copy holds its id (level 3), since that copy follows it, blocks the player already, and the blockmap searches would find the actor twice.
 bool ComputeMirrorMayCollide(bool legacyHidden);
 
+// [Doruk-Aksoy] Whether a mirror is made again: when the class its entity should have is known and is not the mirror's, as when a morphed player's new body takes the player's id.
+bool ComputeRemakesMirror(bool wantKnown, unsigned int mirrorClass, unsigned int wantClass);
+
 // [Doruk-Aksoy] A copy's flag word once raised: `corpse` taken off and the `restored` bits put back as its class has them.
 uint32_t ComputeLegacyRaisedFlags(uint32_t flags, uint32_t classFlags, uint32_t corpse, uint32_t restored);
 

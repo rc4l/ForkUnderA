@@ -747,6 +747,17 @@ Each hook is one call from a stock file into the module, listed here as it lands
   builds the door, so a reset left the sector with no door at all; the loop restores what the
   map's own setup built, gate or no gate, and a gated client builds none of them and takes
   them by record.
+- `p_mobj.cpp`, `P_TakeReservedNetID`: a server hands a player's reserved id to the player's
+  new body, moving whatever held it to a new id the clients are told of (`SetThingNetID`).
+  `P_SpawnPlayer` calls it for each spawn. `g_shared/a_morph.cpp` calls it for a morph's body,
+  and for the restored body on the way back, before the morph's body is destroyed. Without it,
+  a morphed player's id stayed with the hidden body the morph left behind, and every snapshot
+  client named that body the player.
+- `ghostactor.cpp`, `GhostFrame`: a mirror takes its class from the legacy actor holding its id
+  when there is one (`ghost_MirrorClassId`), and is made again when that class changes
+  (`ComputeRemakesMirror`). An entity's class rides only on its enter, so a mirror kept the
+  class it was made with when a new body took a present id. Its states then decoded against
+  the wrong class. Tested by `fuactl scenarios morphskin`, morphing and unmorphing a player.
 
 ## The decode check, and its constant
 
