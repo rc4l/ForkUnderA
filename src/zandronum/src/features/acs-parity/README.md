@@ -8,6 +8,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 |---|---|---|
 | 93 | `GetMaxInventory` | uzdoom@c51abb0161 |
 | 94 | `SetSectorDamage`, its amount and damage type only | uzdoom@d0c372692b |
+| 95 | `SetSectorTerrain` | uzdoom@7f454358b9 |
 | 98 | `CheckProximity` | uzdoom@6633e41cca |
 | 99 | `CheckActorState` | uzdoom@df4a8e38c5 |
 | 200 | `CheckClass` | uzdoom@3299a29c44 |
@@ -60,6 +61,13 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   respawn and is saved from SAVEVER 4545. A server sends it (`SVC2_SETPLAYERSOUNDCLASS`, through
   `netreplication::SendPlayerSoundClass`) and resends it to a joiner; a clientside script changes its own copy.
   Reading it of an actor no player holds gives `"player"`.
+- `SetSectorTerrain` gives a plane its own terrain in `sector_t::terrainnum` (-1 for its flat's), which
+  `sector_t::GetTerrain` answers first (`ComputeSectorTerrain`); friction, footclip, splashes, floor damage, decals
+  and `P_GetThingFloorType` all ask it, the boundary rule `terrain-through-the-sector` counting the readers left that
+  go by flat. An actor on a 3D floor of another flat takes that flat's (`ComputeThingFloorTerrain`). UDMF's
+  `floorterrain` and `ceilingterrain` set it at load (names appended to `namedef.h`), a map reset restores it from
+  `SavedTerrainnum`, and it is saved by name from SAVEVER 4546. A server sends it as the net-replication family
+  `kSectorTerrain` (`SVC2_SETSECTORTERRAIN`), to a joiner too; a clientside script changes its own map.
 - `SetTeamScore` sets the score `GetTeamScore` reads (`ComputeTeamScoreKind`: frags, wins or points by the game
   mode) through `ChangeTeamScore`'s code, `SetTeamScoreOf`, announced.
 
@@ -85,6 +93,11 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   `SERVER_UpdateActorProperties`.
 - `p_interaction.cpp`: `isFakePain` answers no for a null target.
 - `features/acs-argcount`: each function's minimum argument count, UZDoom's `MIN_ARG_COUNT`.
+- `r_defs.h`, `p_sectors.cpp`: `terrainnum`, `SavedTerrainnum` and `GetTerrain`; `p_terrain.{h,cpp}`: `P_FindTerrain`;
+  `p_setup.cpp`, `p_udmf.cpp`, `p_buildmap.cpp`: its load; `p_map.cpp`, `p_mobj.cpp`, `features/decals`: its readers;
+  `p_spec.cpp`, `g_game.cpp`: its baseline and reset; `p_saveg.cpp`, `version.h`: its save, SAVEVER 4546;
+  `features/net-replication/mapstate`, `protocolspec/spec.misc.txt`, `network_enums.h`, `sv_commands.cpp`,
+  `cl_main.cpp`: `kSectorTerrain` and its command.
 
 ## Tests
 
@@ -100,9 +113,11 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   a client's own call hurts no one, the server's hurts the player, and every client then holds the health
   the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them). Every machine's
   barrels end on the translations the server set, a server-only script's barrel included, and every client
-  reads the sound class a server-only script gave the player
-  (`fua_debug_netdrop=64`, `SVC_SETTHINGTRANSLATION` unsent, fails the clients and the late joiner).
-- `soundclass_wire_nettest.cpp`: `SVC2_SETPLAYERSOUNDCLASS`'s bytes, both name forms and a cut packet.
+  reads the sound class and the mud floor's terrain server-only scripts gave
+  (`fua_debug_netdrop=64`, `SVC_SETTHINGTRANSLATION` unsent, and `232/94`, `SVC2_SETSECTORTERRAIN` unsent, fail
+  the clients and the late joiner).
+- `soundclass_wire_nettest.cpp`: `SVC2_SETPLAYERSOUNDCLASS`'s bytes, both name forms and a cut packet;
+  `sectorterrain_wire_nettest.cpp`: `SVC2_SETSECTORTERRAIN`'s.
 - `fuactl scenarios acsviewbob`: a hovering player's height and view bob with `fviewbob 1` and stay still with
   0; `netacsviewbob`: the server moves the pawn by the client's own setting and the client predicts the same. Both
   fail on a build without the gates.
@@ -112,5 +127,6 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.
-- Against UZDoom itself, the scenario's pk3 logged the same 67 values but for `Ceil(2.0)` and the
-  default terrain's spelling (`SOLID`).
+- Against UZDoom itself, the scenario's pk3 logged the same 72 values but for `Ceil(2.0)`, the
+  default terrain's spelling (`SOLID`) and the three `SetSectorTerrain` reads, where UZDoom's standing barrel keeps the
+  terrain it last moved onto (`AActor::floorterrain`); ours asks the sector each time.

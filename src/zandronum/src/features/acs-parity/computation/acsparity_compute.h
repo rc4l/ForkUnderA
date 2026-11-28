@@ -14,6 +14,7 @@ enum Function
 {
 	kGetMaxInventory = 93,
 	kSetSectorDamage = 94,
+	kSetSectorTerrain = 95,
 	kCheckProximity = 98,
 	kCheckActorState = 99,
 	kCheckClass = 200,
@@ -234,6 +235,15 @@ enum TeamScoreKind
 };
 
 TeamScoreKind ComputeTeamScoreKind(bool earnsFrags, bool earnsWins);
+
+// [Doruk-Aksoy] A sector plane's terrain: the one a script or the map gave it, else (-1) its flat's.
+int ComputeSectorTerrain(int own, int flat);
+
+// [Doruk-Aksoy] Whether SetSectorTerrain's plane names one, the floor (0) or the ceiling (1), as UZDoom's does; any other changes nothing.
+bool ComputeTerrainPlane(int plane);
+
+// [Doruk-Aksoy] The terrain an actor stands on: its sector's (a script's or the flat's) when it stands on that sector's own floor, else its floor flat's.
+int ComputeThingFloorTerrain(bool onSectorFloor, int sectorTerrain, int floorPicTerrain);
 
 }} // namespace zx::acsparity
 

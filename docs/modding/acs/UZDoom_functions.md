@@ -10,6 +10,7 @@
 |---|---|---|
 | `GetMaxInventory(tid, item)` | 93 | the most of `item` the actor can carry; `"Health"` gives its maximum health |
 | `SetSectorDamage(tag, amount [, damagetype [, interval [, leakiness]]])` | 94 | nothing; players in the tagged sectors take `amount` of `damagetype` damage |
+| `SetSectorTerrain(tag, plane, terrain)` | 95 | nothing; the tagged sectors' floor (0) or ceiling (1) takes the named TERRAIN, a name no TERRAIN defines giving back the flat's |
 | `CheckProximity(tid, class, distance [, count [, flags [, ptr]]])` | 98 | whether `count` actors of `class` stand within `distance`, by `CPXF_` flags |
 | `CheckActorState(tid, state [, exact])` | 99 | whether the actor's class has the state |
 | `CheckClass(class)` | 200 | whether an actor class of that name exists |
@@ -31,6 +32,10 @@
 | `APROP_SoundClass` | 47 | string; the sound class a player's sounds come from, a script's own over its skin's and class's, `""` giving them back |
 | `APROP_FriendlySeeBlocks` | 48 | how many blockmap blocks a friendly monster looks for enemies across; its class's (10) until set |
 | `APROP_WaterDepth` | 49 | fixed, read only; how deep in water the actor stands |
+
+A sector's terrain sets its friction, splashes, footclip and floor damage, and what `GetActorFloorTerrain`
+reads, as the flat's TERRAIN does. A UDMF map gives a sector its own with UZDoom's `floorterrain` and
+`ceilingterrain` keys, which a map restart (`ResetMap`) gives back after a script's change.
 
 `GetPlayerInfo(player, PLAYERINFO_FVIEWBOB)` (10) reads the player's `fviewbob`, UZDoom's userinfo setting: with it
 off a flying player neither bobs up and down nor sways its view, as in UZDoom.
@@ -164,6 +169,8 @@ pukename FlashActor 31 => /flashing a DoomImp/
 - `Ceil` of a whole number returns it unchanged. UZDoom's adds one, so `Ceil(2.0)` is 3.0 there.
 - `DamageActor` on a tid no actor holds returns -1. UZDoom crashes.
 - The default terrain's name is `Solid`; UZDoom spells it `SOLID`.
+- `SetSectorTerrain` reaches an actor at once. UZDoom's actors keep the terrain they last moved onto, so one
+  standing still there reads, takes floor damage and steps by the old terrain until it moves.
 - `SetSectorDamage` sets what `Sector_SetDamage` does: the damage lands once every 32 tics, and a radiation
   suit lets it through by the amount (none under 20, now and then under 50, always from 50). The
   `interval` and `leakiness` arguments are accepted and ignored for now. The damage type is one of the
@@ -173,6 +180,8 @@ pukename FlashActor 31 => /flashing a DoomImp/
 - A friendly monster's search covers 128 blockmap blocks at most, whatever `APROP_FriendlySeeBlocks` or
   its class says, so a script can't make every look scan a whole map; the property reads back what was set.
 - `SetTranslation` knows no `RainPillar1`..`8`, which need tables this engine doesn't have.
+- A floor or ceiling mark (a decal) refuses liquid by the plane's terrain, but the renderer's screen-space
+  marks still go by the flat's.
 
 ## Implementation notes
 

@@ -15,10 +15,10 @@ import { fileURLToPath } from "node:url";
 import { runUzdoom } from "../src/uzdoom.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
-// [Doruk-Aksoy] A flat this pk3's TERRAIN names, since Doom's own gives no flat a terrain.
+// [Doruk-Aksoy] A flat this pk3's TERRAIN names, since Doom's own gives no flat a terrain, and ZxIce, which only SetSectorTerrain puts on a plane.
 const MUD_FLAT = "CEIL3_5";
-export const TERRAIN = `terrain ZxMud\n{\n}\nfloor ${MUD_FLAT} ZxMud\n`;
-export const SOUTH_LINE = 7, DIAGONAL_LINE = 8, ROOM_TAG = 5, POOL_TAG = 6;
+export const TERRAIN = `terrain ZxMud\n{\n}\nterrain ZxIce\n{\n}\nfloor ${MUD_FLAT} ZxMud\n`;
+export const SOUTH_LINE = 7, DIAGONAL_LINE = 8, ROOM_TAG = 5, POOL_TAG = 6, MUD_TAG = 9;
 export const DIAGONAL = [[100, 300], [160, 380], [220, 300]];
 export const BARREL = { near: 11, mud: 12, far: 13, wet: 14, net: 15 };
 // [Doruk-Aksoy] Where each barrel stands, so a judge finds it in world.actors, and the pool's water, 48 deep.
@@ -32,7 +32,8 @@ const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
 const LEVELINFO_TOTAL_MONSTERS = 7, PLAYERINFO_FVIEWBOB = 10;
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", "", "SHOOTABLE", "ZxNoFlag", "COUNTKILL", "zxmarine", "sc"];
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", "", "SHOOTABLE", "ZxNoFlag", "COUNTKILL", "zxmarine", "sc", "ZxIce",
+  "ZxNoTerrain", "terr"];
 export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
@@ -75,6 +76,13 @@ export const CHECKS = [
   { what: "GetActorFloorTerrain(player)", words: call("GetActorFloorTerrain", 0), want: "Solid", uzdoom: "SOLID", str: true },
   { what: "GetActorFloorTerrain(barrel on mud)", words: call("GetActorFloorTerrain", BARREL.mud), want: "ZxMud", str: true },
   { what: "GetActorFloorTerrain(no actor)", words: call("GetActorFloorTerrain", 999), want: "", str: true },
+  { what: "GetActorFloorTerrain(barrel in the pool), UDMF floorterrain", words: call("GetActorFloorTerrain", BARREL.wet), want: "ZxIce", str: true },
+  // [Doruk-Aksoy] The mud floor takes a script's terrain, keeps it through a plane naming neither floor nor ceiling and through a ceiling's change, and an unknown name gives the flat's back.
+  // [Doruk-Aksoy] UZDoom's barrel keeps the terrain it last moved onto (AActor::floorterrain), so it reads ZxMud until it moves.
+  { what: "SetSectorTerrain(mud, floor, ZxIce)", words: [...call("SetSectorTerrain", MUD_TAG, 0, S.ZxIce), PCD.DROP, ...call("GetActorFloorTerrain", BARREL.mud)], want: "ZxIce", uzdoom: "ZxMud", str: true },
+  { what: "SetSectorTerrain(mud, plane 2)", words: [...call("SetSectorTerrain", MUD_TAG, 2, S.ZxNoTerrain), PCD.DROP, ...call("GetActorFloorTerrain", BARREL.mud)], want: "ZxIce", uzdoom: "ZxMud", str: true },
+  { what: "SetSectorTerrain(mud, ceiling)", words: [...call("SetSectorTerrain", MUD_TAG, 1, S.ZxNoTerrain), PCD.DROP, ...call("GetActorFloorTerrain", BARREL.mud)], want: "ZxIce", uzdoom: "ZxMud", str: true },
+  { what: "SetSectorTerrain(mud, floor, unknown)", words: [...call("SetSectorTerrain", MUD_TAG, 0, S.ZxNoTerrain), PCD.DROP, ...call("GetActorFloorTerrain", BARREL.mud)], want: "ZxMud", str: true },
   { what: "GetLineX(south wall, 0.25)", words: call("GetLineX", SOUTH_LINE, fixed(0.25), 0), want: lineCoord(0, [512, 0], [0, 0], fixed(0.25), 0) },
   { what: "GetLineY(south wall, 0.5, 16)", words: call("GetLineY", SOUTH_LINE, fixed(0.5), fixed(16)), want: lineCoord(1, [512, 0], [0, 0], fixed(0.5), fixed(16)) },
   { what: "GetLineX(diagonal, 0.3, 10)", words: call("GetLineX", DIAGONAL_LINE, fixed(0.3), fixed(10)), want: lineCoord(0, DIAGONAL[0], DIAGONAL[1], fixed(0.3), fixed(10)) },
@@ -176,12 +184,12 @@ export const OURS_STEPS = [[ROOM_TAG, 10, S.ZxPlasma, 1, 256], [ROOM_TAG, 10, S.
 export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
   const room = m.room(0, 0, 512, 512, { ...ROOM, id: ROOM_TAG }, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
-  // [Doruk-Aksoy] A pool in the far corner, out of the proximity checks' reach: a swimmable 3D floor to 48 from a control sector off the map.
-  m.block(POOL.x0, POOL.y0, POOL.x1, POOL.y1, { ...ROOM, texturefloor: "FLAT14", id: POOL_TAG }, room);
+  // [Doruk-Aksoy] A pool in the far corner, out of the proximity checks' reach: a swimmable 3D floor to 48 from a control sector off the map, its floor ZxIce by UDMF's floorterrain.
+  m.block(POOL.x0, POOL.y0, POOL.x1, POOL.y1, { ...ROOM, texturefloor: "FLAT14", id: POOL_TAG, floorterrain: "ZxIce" }, room);
   m.room(3200, 0, 3264, 64, { ...ROOM, heightfloor: 0, heightceiling: POOL.top, textureceiling: "FWATER1" }, (edge) => ({ side: { texturemiddle: "COMPBLUE" },
     line: edge === "west" ? { special: SPECIAL.Sector_Set3DFloor, arg0: POOL_TAG, arg1: 2, arg2: 0, arg3: 128 } : {} }));
   const first = m.lines.length;
-  m.shape(DIAGONAL, { ...ROOM, texturefloor: MUD_FLAT }, 0);
+  m.shape(DIAGONAL, { ...ROOM, texturefloor: MUD_FLAT, id: MUD_TAG }, 0);
   m.lines[first].id = DIAGONAL_LINE;
   m.thing({ x: 256, y: 64, angle: 90, type: 1 });
   m.thing({ x: 256, y: 128, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.near });

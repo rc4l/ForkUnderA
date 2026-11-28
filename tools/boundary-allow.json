@@ -332,5 +332,10 @@
  "renderer-reads-the-copy": {
   "features/frame/levelrenderer.cpp": 2,
   "r_utility.cpp": 12
+ },
+ "terrain-through-the-sector": {
+  "features/decals/decals.cpp": 1,
+  "p_mobj.cpp": 1,
+  "p_sectors.cpp": 1
  }
 }

@@ -672,3 +672,7 @@ xx(Rip)
 
 // [Doruk-Aksoy] features/acs-parity: UZDoom's fviewbob userinfo, appended for the same reason.
 xx(FViewBob)
+
+// [Doruk-Aksoy] features/acs-parity: UZDoom's UDMF sector terrain keys, appended for the same reason.
+xx(floorterrain)
+xx(ceilingterrain)

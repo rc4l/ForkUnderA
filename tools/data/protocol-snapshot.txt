@@ -212,6 +212,7 @@
  54 SVC2_SNAPSPECIALSTATE                  [Extended] : Short Struct Short Struct
  55 SVC2_SNAPMAPRESET                      [Extended] : Byte
  56 SVC2_SETPLAYERSOUNDCLASS               [Extended] : Player Name
+ 57 SVC2_SETSECTORTERRAIN                  [Extended] : Sector Name Name
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -545,7 +546,8 @@
  91 SVC2_FLOORSOUND
  92 SVC2_MOVERSOUND
  93 SVC2_SETPLAYERSOUNDCLASS
- 94 NUM_SVC2_COMMANDS
+ 94 SVC2_SETSECTORTERRAIN
+ 95 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION

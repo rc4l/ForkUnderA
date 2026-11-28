@@ -57,6 +57,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "version.h"
+#include "p_terrain.h"
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "features/gamecopy/gamecopy.h"   // [Doruk-Aksoy] NoteMapLoaded
 
@@ -371,6 +372,15 @@ static void SpawnExtraPlayers ()
 	}
 }
 
+// [Doruk-Aksoy] A plane's terrain by its TERRAIN name, since another load's lumps may number them otherwise; -1, the flat's own, saves as no name.
+static void SerializeTerrain (FArchive &arc, int &terrain)
+{
+	FName name = terrain >= 0 && terrain < (int)Terrains.Size() ? Terrains[terrain].Name : FName(NAME_None);
+	arc << name;
+	if (arc.IsLoading())
+		terrain = P_FindTerrain(name);
+}
+
 //
 // P_ArchiveWorld
 //
@@ -507,6 +517,17 @@ void P_SerializeWorld (FArchive &arc)
 			<< sec->SavedMOD
 			<< sec->SavedCeilingReflect
 			<< sec->SavedFloorReflect;
+		// [Doruk-Aksoy] features/acs-parity: each plane's own terrain and the map's, by name from 4546 on, as UZDoom saves them.
+		for (int pos = sector_t::floor; pos <= sector_t::ceiling; pos++)
+		{
+			if (SaveVersion >= 4546)
+			{
+				SerializeTerrain(arc, sec->terrainnum[pos]);
+				SerializeTerrain(arc, sec->SavedTerrainnum[pos]);
+			}
+			else
+				sec->terrainnum[pos] = sec->SavedTerrainnum[pos] = -1;
+		}
 	}
 
 	// do lines
