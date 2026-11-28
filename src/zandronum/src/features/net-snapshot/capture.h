@@ -40,7 +40,8 @@ class AActor;
 namespace zx { namespace netsnapshot {
 
 // The module's milliseconds, one clock for every figure it prints, stamps or records: the
-// monotonic counter (i_tictime) since this process first read it.
+// engine's I_MSTime, which the tic's end from I_GetTimeFrac is on and which pauses while the
+// engine freezes time.
 unsigned int NowMS();
 
 // True when the snapshot channel has taken over this update class for this
