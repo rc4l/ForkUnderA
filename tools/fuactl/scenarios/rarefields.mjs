@@ -55,6 +55,23 @@ ${vars}  states
 }
 `;
 }).join("");
+// [Doruk-Aksoy] A class whose skip_super copies AActor's defaults over its own and writes no rare field, which must still own its block or hold none.
+export const SKIP = "ZXRareSkip";
+export const SKIP_DECORATE = `actor ${SKIP}\n{\n  skip_super\n  +SOLID\n  states\n  {\n  Spawn:\n    POSS A -1\n    stop\n  }\n}\n`;
+
+// [Doruk-Aksoy] fua_dev_classblocks' counts, or null when it printed none.
+export function classBlocks(text) {
+  const m = /fua_dev_classblocks: owned (\d+) shared (\d+) none (\d+)/.exec(String(text));
+  const names = [...String(text).matchAll(/^\s+(\S+) reads a block it does not own/gm)].map((n) => n[1]);
+  return m ? { owned: Number(m[1]), shared: Number(m[2]), none: Number(m[3]), names } : null;
+}
+
+// [Doruk-Aksoy] What is wrong with the class blocks: any class reading a block it does not own, which shutdown reads after its owner frees it.
+export function judgeClassBlocks(counts) {
+  if (counts === null) return ["fua_dev_classblocks printed nothing"];
+  return counts.shared > 0 ? [`${counts.shared} class(es) read a rare-field block they do not own${counts.names && counts.names.length ? `: ${counts.names.join(", ")}` : ""}`] : [];
+}
+
 export const GROWN_TIDS = Array.from({ length: GROWN.count }, (_, i) => GROWN.firstTid + i);
 
 export function buildRareFieldsMap() {
@@ -117,7 +134,7 @@ export function rareFieldsBehavior() {
 export function buildRareFieldsPk3() {
   return pk3([
     { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", buildRareFieldsMap(), { behavior: rareFieldsBehavior() })) },
-    { name: "decorate.txt", data: DECORATE + GROWN_DECORATE },
+    { name: "decorate.txt", data: DECORATE + GROWN_DECORATE + SKIP_DECORATE },
     { name: "cvarinfo.txt", data: `server int ${COUNTER_CVAR} = 0;\n` },
   ]);
 }
@@ -142,6 +159,7 @@ export async function judgeLaunch(c, inst, label) {
   await exec("puke 2");
   await cap.waitTics(c, 5);
   const faults = judgeCounter("before the save", await counter());
+  faults.push(...judgeClassBlocks(classBlocks(await exec("fua_dev_classblocks list"))));
   await exec(`${COUNTER_CVAR} 0`);
   await exec("save fuactl_rarefields.zds");
   await cap.waitTics(c, 10);

@@ -466,7 +466,7 @@ DEFINE_PROPERTY(skip_super, 0, Actor)
 		return;
 	}
 
-	memcpy ((void *)defaults, (void *)GetDefault<AActor>(), sizeof(AActor));
+	defaults->CopyClassDefaults(GetDefault<AActor>());
 	if (bag.DropItemList != NULL)
 	{
 		FreeDropItemChain (bag.DropItemList);

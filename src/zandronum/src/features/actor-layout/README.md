@@ -49,7 +49,10 @@ Fields most actors never use live outside it, so every actor is smaller: 1,576 b
   Every class's defaults own their block (`OwnExt` after `dobjtype.cpp`'s copy), so a later decal or DeHackEd write to a
   parent stays the parent's. Ownership is the owner's address, so `PClass::Extend`, whose realloc for user variables can
   move a class's defaults, hands the block back to the moved defaults (`ReclaimExt`); a child class made at the old
-  address would otherwise write its parent's block. `PClass::StaticFreeData` frees each class's block. DECORATE's natives among them carry an offset past any actor (`DEFINE_EXT_MEMBER_VARIABLE`,
+  address would otherwise write its parent's block. `skip_super` and DeHackEd's pickup classes copy
+  another class's defaults over theirs through `CopyClassDefaults`, which keeps the block their own.
+  `PClass::StaticFreeData` frees each class's block, so a class reading another's would read it
+  after it is freed (TSan found DeHackEd's pickups doing so). DECORATE's natives among them carry an offset past any actor (`DEFINE_EXT_MEMBER_VARIABLE`,
   `computation/actorext_compute.*`), which an expression and `features/acs-fields` resolve in the block. A save writes
   each field where it was, so the format is unchanged.
 - **Chase-trim's memo** (88 bytes): a jammed walker's blocked directions and blockers live in a pool in
@@ -72,5 +75,7 @@ Tests:
 - `tools/fuactl/scenarios/rarefields.mjs`: a script's change to one statue's score, accuracy and stamina stays that
   statue's; its sibling, a child class, an heir and a later spawn read their class values through ACS properties, a
   DECORATE expression and `fua_GetField`, before and after a savegame; and 64 parents whose user variables grew their
-  defaults keep their accuracy beside a child made after each (fails every run without `ReclaimExt`).
+  defaults keep their accuracy beside a child made after each (fails every run without `ReclaimExt`). The dev-mode
+  `fua_dev_classblocks` counts classes reading a block they do not own; it must find none, beside a
+  `skip_super` class and Freedoom's DeHackEd pickups.
 - `computation/actorext_compute_test.cpp`, `computation/ownedblock_compute_test.cpp`.

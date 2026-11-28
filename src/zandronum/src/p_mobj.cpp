@@ -245,6 +245,30 @@ ZxActorExt &AActor::ExtW ()
 	return *FuaExt;
 }
 
+// [Doruk-Aksoy] Test tool (features/actor-layout): how many actor classes' defaults own their rare-field block, read another class's, or hold none; a shared one is read after its owner frees it at shutdown.
+DEV_MODE_CCMD (fua_dev_classblocks)
+{
+	int owned = 0, shared = 0, none = 0;
+	for (unsigned int i = 0; i < PClass::m_Types.Size(); ++i)
+	{
+		const PClass *type = PClass::m_Types[i];
+		if ((type == NULL) || (type->ActorInfo == NULL) || (type->Defaults == NULL))
+			continue;
+		const AActor *def = (const AActor *)type->Defaults;
+		if (def->FuaExt == NULL)
+			++none;
+		else if (def->OwnsExt ())
+			++owned;
+		else
+		{
+			++shared;
+			if (argv.argc () > 1)
+				Printf ("  %s reads a block it does not own\n", type->TypeName.GetChars ());
+		}
+	}
+	Printf ("fua_dev_classblocks: owned %d shared %d none %d\n", owned, shared, none);
+}
+
 // [Doruk-Aksoy] The block's pointers that were declared ones, retargeted as DObject::PointerSubstitution retargets those.
 size_t AActor::PointerSubstitution (DObject *old, DObject *notOld)
 {

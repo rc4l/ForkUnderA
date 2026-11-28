@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRareFieldsMap, buildRareFieldsPk3, judgeCounter, CHECKS, READ, DECORATE, ED, TID, PARENT, CHILD, HEIR, S, GROWN, GROWN_DECORATE, GROWN_TIDS, grownName } from "../scenarios/rarefields.mjs";
+import { buildRareFieldsMap, buildRareFieldsPk3, judgeCounter, CHECKS, READ, DECORATE, ED, TID, PARENT, CHILD, HEIR, S, GROWN, GROWN_DECORATE, GROWN_TIDS, grownName, SKIP_DECORATE, classBlocks, judgeClassBlocks } from "../scenarios/rarefields.mjs";
 import { parseUdmf, readPk3 } from "../src/udmf.mjs";
 import { PCD } from "../src/acs.mjs";
 
@@ -53,4 +53,19 @@ test("a run's counter names each failed check with when it ran", () => {
 test("the pk3 carries the map, its scripts, the statues and the counter", () => {
   const names = readPk3(buildRareFieldsPk3()).map((e) => e.name);
   for (const name of ["maps/MAP01.wad", "decorate.txt", "cvarinfo.txt"]) assert.ok(names.includes(name), name);
+});
+
+test("the skip_super class copies AActor's defaults and writes no rare field", () => {
+  assert.match(SKIP_DECORATE, /^actor ZXRareSkip\n\{\n  skip_super\n/);
+  assert.doesNotMatch(SKIP_DECORATE, /Accuracy|Stamina|RipperLevel|Tag|Score/);
+});
+
+test("a class reading a block it does not own fails the run", () => {
+  assert.deepEqual(classBlocks("x\nfua_dev_classblocks: owned 300 shared 2 none 10\n"), { owned: 300, shared: 2, none: 10, names: [] });
+  assert.deepEqual(classBlocks("  ZXRareSkip reads a block it does not own\nfua_dev_classblocks: owned 300 shared 1 none 10\n").names, ["ZXRareSkip"]);
+  assert.deepEqual(judgeClassBlocks({ owned: 300, shared: 1, none: 10, names: ["ZXRareSkip"] }), ["1 class(es) read a rare-field block they do not own: ZXRareSkip"]);
+  assert.equal(classBlocks("nothing"), null);
+  assert.deepEqual(judgeClassBlocks({ owned: 300, shared: 0, none: 10 }), []);
+  assert.deepEqual(judgeClassBlocks({ owned: 300, shared: 2, none: 10 }), ["2 class(es) read a rare-field block they do not own"]);
+  assert.deepEqual(judgeClassBlocks(null), ["fua_dev_classblocks printed nothing"]);
 });

@@ -56,6 +56,7 @@
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
 #include "features/tid-hash/computation/tidhash_compute.h"   // [Doruk-Aksoy] kZxTidHashSize, ComputeTidBucket
@@ -1544,6 +1545,8 @@ public:
 	void ReclaimExt () { FuaExt->owner = this; }
 	// [Doruk-Aksoy] Frees the block this actor owns and reads none after.
 	void FreeOwnedExt () { if (OwnsExt ()) delete FuaExt; FuaExt = nullptr; }
+	// [Doruk-Aksoy] Copies another class's defaults over these class defaults (skip_super, DeHackEd's pickups), the rare-field block left their own, not the other's.
+	void CopyClassDefaults (const AActor *from) { FreeOwnedExt (); memcpy ((void *)this, (const void *)from, sizeof(AActor)); OwnExt (); }
 	// [Doruk-Aksoy] Gives a block read from elsewhere (a parent class's defaults) to this actor as its own copy.
 	void OwnExt () { if (FuaExt != nullptr) ExtW (); }
 	// [Doruk-Aksoy] Sets one rare field, leaving the block unmade when the value is what the actor already reads.
