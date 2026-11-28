@@ -1748,8 +1748,8 @@ bool P_LookForEnemies (AActor *actor, INTBOOL allaround, FLookExParams *params)
 {
 	AActor *other;
 
-	// [Doruk-Aksoy] uzdoom@62afe5f0a9: FriendlySeeBlocks, 10 by default (features/decorate-uzdoom).
-	other = P_BlockmapSearch (actor, zx::decorateuzdoom::FriendlySeeBlocks(actor), LookForEnemiesInBlock, params);
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: FriendlySeeBlocks, 10 by default (features/decorate-uzdoom), a script's value capped so no look scans the whole map.
+	other = P_BlockmapSearch (actor, zx::acsparity::ComputeSeeBlocksSearch(zx::decorateuzdoom::FriendlySeeBlocks(actor)), LookForEnemiesInBlock, params);
 
 	if (other != NULL)
 	{

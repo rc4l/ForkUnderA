@@ -85,8 +85,6 @@
 // [BB] new #includes.
 #include "deathmatch.h"
 #include "features/trnslate/trnslate.h"
-#include "features/trnslate/computation/trnslate_compute.h"
-#include "features/net-replication/actorstate.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "invasion.h"
@@ -3416,38 +3414,16 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 //
 //===========================================================================
 
-static void SetActorTranslation(AActor *self, bool resetToDefault, int tnum)
-{
-	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does.
-	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
-		return;
-
-	switch (zx::trnslate::ComputeSetTranslationOutcome(resetToDefault, tnum != INVALID_TRANSLATION))
-	{
-	case zx::trnslate::kSetTranslationDefault:
-		self->Translation = self->GetDefault()->Translation;
-		break;
-	case zx::trnslate::kSetTranslationFound:
-		self->Translation = tnum;
-		break;
-	default:
-		return;
-	}
-
-	if ( NETWORK_IsActorClientHandled( self ) == false )
-		zx::netreplication::SendThingTranslation( self );
-}
-
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslation)
 {
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_NAME(trname, 0);
-	SetActorTranslation(self, false, R_FindCustomTranslation(trname));
+	zx::trnslate::SetActorTranslation(self, false, R_FindCustomTranslation(trname), false);
 }
 
 DEFINE_ACTION_FUNCTION(AActor, A_fua_ResetTranslation)
 {
-	SetActorTranslation(self, true, INVALID_TRANSLATION);
+	zx::trnslate::SetActorTranslation(self, true, INVALID_TRANSLATION, false);
 }
 
 //===========================================================================

@@ -18,14 +18,19 @@ const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", tex
 // [Doruk-Aksoy] A flat this pk3's TERRAIN names, since Doom's own gives no flat a terrain.
 const MUD_FLAT = "CEIL3_5";
 export const TERRAIN = `terrain ZxMud\n{\n}\nfloor ${MUD_FLAT} ZxMud\n`;
-export const SOUTH_LINE = 7, DIAGONAL_LINE = 8, ROOM_TAG = 5;
+export const SOUTH_LINE = 7, DIAGONAL_LINE = 8, ROOM_TAG = 5, POOL_TAG = 6;
 export const DIAGONAL = [[100, 300], [160, 380], [220, 300]];
-export const BARREL = { near: 11, mud: 12, far: 13 };
-export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46 };
+export const BARREL = { near: 11, mud: 12, far: 13, wet: 14, net: 15 };
+// [Doruk-Aksoy] Where each barrel stands, so a judge finds it in world.actors, and the pool's water, 48 deep.
+export const BARREL_AT = { near: [256, 128], mud: [160, 330], far: [420, 64], wet: [420, 420], net: [480, 410] };
+export const POOL = { x0: 400, y0: 400, x1: 500, y1: 500, top: 48 };
+// [Doruk-Aksoy] Ice, TRANSLATION(TRANSLATION_Standard, 7), which SetTranslation leaves the far and mud barrels on.
+export const ICE = (3 << 16) | 7;
+export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46, FriendlySeeBlocks: 48, WaterDepth: 49 };
 const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh"];
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", ""];
 export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
@@ -95,7 +100,27 @@ export const CHECKS = [
   { what: "SetActivatorByNetID(0)", words: call("SetActivatorByNetID", 0), want: 0 },
   { what: "SetActivatorByNetID(barrel)", words: call("SetActivatorByNetID", call("GetNetID", BARREL.near, 0)), want: 1 },
   { what: "the new activator's health", words: getProp(0, APROP.Health), want: 10 },
+  { what: "APROP_FriendlySeeBlocks, its class's", words: getProp(BARREL.far, APROP.FriendlySeeBlocks), want: 10 },
+  { what: "APROP_FriendlySeeBlocks set to 25", words: [...setProp(BARREL.far, APROP.FriendlySeeBlocks, 25), ...getProp(BARREL.far, APROP.FriendlySeeBlocks)], want: 25 },
+  { what: "APROP_FriendlySeeBlocks set to -4", words: [...setProp(BARREL.far, APROP.FriendlySeeBlocks, -4), ...getProp(BARREL.far, APROP.FriendlySeeBlocks)], want: -4 },
+  { what: "CheckActorProperty(FriendlySeeBlocks, -4)", words: call("CheckActorProperty", BARREL.far, APROP.FriendlySeeBlocks, -4), want: 1 },
+  { what: "APROP_WaterDepth, dry", words: getProp(BARREL.mud, APROP.WaterDepth), want: 0 },
+  { what: "APROP_WaterDepth, in the pool", words: getProp(BARREL.wet, APROP.WaterDepth), want: fixed(POOL.top) },
+  { what: "CheckActorProperty(WaterDepth, 48)", words: call("CheckActorProperty", BARREL.wet, APROP.WaterDepth, fixed(POOL.top)), want: 1 },
+  { what: "SetTranslation(far, Ice)", words: call("SetTranslation", BARREL.far, S.Ice), want: 1 },
+  { what: "SetTranslation(mud, Ice), then an unknown name", words: [...call("SetTranslation", BARREL.mud, S.Ice), PCD.DROP, ...call("SetTranslation", BARREL.mud, S.ZxNoTranslation)], want: 1 },
+  { what: "SetTranslation(wet, Ice), then \"\"", words: [...call("SetTranslation", BARREL.wet, S.Ice), PCD.DROP, ...call("SetTranslation", BARREL.wet, S[""])], want: 1 },
 ];
+
+// [Doruk-Aksoy] What is wrong with a machine's barrels after script 1, from its world.actors rows: far and mud on Ice, wet given back its class's (near is pushed by DamageActor, so isn't used).
+export function judgeTranslations(rows, want = { far: ICE, mud: ICE, wet: 0 }) {
+  const at = ([x, y]) => (rows || []).find((r) => Math.abs(r.x - x) < 1 && Math.abs(r.y - y) < 1);
+  return Object.entries(want).flatMap(([name, want]) => {
+    const r = at(BARREL_AT[name]);
+    if (!r) return [`no ${name} barrel in world.actors`];
+    return r.tr === want ? [] : [`the ${name} barrel's translation is ${r.tr}, not ${want}`];
+  });
+}
 
 // [Doruk-Aksoy] The words that print one check's value after a space, a string inside < >.
 const printValue = (c) => [PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, ...(c.str
@@ -138,7 +163,11 @@ export const OURS_STEPS = [[ROOM_TAG, 10, S.ZxPlasma, 1, 256], [ROOM_TAG, 10, S.
 // [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsparity's CLIENTSIDE copies and player starts do.
 export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
-  m.room(0, 0, 512, 512, { ...ROOM, id: ROOM_TAG }, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
+  const room = m.room(0, 0, 512, 512, { ...ROOM, id: ROOM_TAG }, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
+  // [Doruk-Aksoy] A pool in the far corner, out of the proximity checks' reach: a swimmable 3D floor to 48 from a control sector off the map.
+  m.block(POOL.x0, POOL.y0, POOL.x1, POOL.y1, { ...ROOM, texturefloor: "FLAT14", id: POOL_TAG }, room);
+  m.room(3200, 0, 3264, 64, { ...ROOM, heightfloor: 0, heightceiling: POOL.top, textureceiling: "FWATER1" }, (edge) => ({ side: { texturemiddle: "COMPBLUE" },
+    line: edge === "west" ? { special: SPECIAL.Sector_Set3DFloor, arg0: POOL_TAG, arg1: 2, arg2: 0, arg3: 128 } : {} }));
   const first = m.lines.length;
   m.shape(DIAGONAL, { ...ROOM, texturefloor: MUD_FLAT }, 0);
   m.lines[first].id = DIAGONAL_LINE;
@@ -146,6 +175,9 @@ export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} }
   m.thing({ x: 256, y: 128, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.near });
   m.thing({ x: 160, y: 330, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.mud });
   m.thing({ x: 420, y: 64, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.far });
+  m.thing({ x: BARREL_AT.wet[0], y: BARREL_AT.wet[1], angle: 0, type: THING.ExplosiveBarrel, id: BARREL.wet });
+  // [Doruk-Aksoy] One only a server's script recolours, which netacsparity reads on every client.
+  m.thing({ x: BARREL_AT.net[0], y: BARREL_AT.net[1], angle: 0, type: THING.ExplosiveBarrel, id: BARREL.net });
   withMap(m);
   // [Doruk-Aksoy] Scripts with jump labels go first, each starting where the ones before end.
   const s3 = sectorDamageScript(SHARED_STEPS), w3 = s3.words(0), w4 = sectorDamageScript(OURS_STEPS).words(w3.length);
@@ -203,6 +235,7 @@ export function judgeSectorDamage(shared, ours) {
 export async function judgeLaunch(c, inst, label) {
   await cap.waitTics(c, 10);
   const faults = judgeParity(await cap.exec(c, "puke 1", { quietMs: 400 }));
+  faults.push(...judgeTranslations((await c.rpc("world.actors", {}))?.actors));
   faults.push(...judgeNullDamage(await cap.exec(c, "puke 2", { quietMs: 300 })));
   // [Doruk-Aksoy] The sandbox makes the player a god, which no sector can hurt.
   for (let i = 0; i < 2 && !/(God|Degreelessness) mode off/i.test(await cap.exec(c, "god", { quietMs: 200 })); i++);
@@ -215,7 +248,7 @@ export async function judgeLaunch(c, inst, label) {
     return heard.text();
   };
   faults.push(...judgeSectorDamage(await run(3), await run(4)));
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${CHECKS.length} checks answer as UZDoom's (Ceil keeps a whole number), DamageActor on a missing tid gives -1, SetSectorDamage hurts once a beat and stops when cleared`, failed: faults.length ? 1 : 0 };
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${CHECKS.length} checks answer as UZDoom's (Ceil keeps a whole number), SetTranslation's barrels hold their translations, DamageActor on a missing tid gives -1, SetSectorDamage hurts once a beat and stops when cleared`, failed: faults.length ? 1 : 0 };
 }
 
 export const SIDES = [{ name: "vk" }];

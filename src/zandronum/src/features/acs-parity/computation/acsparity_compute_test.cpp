@@ -79,6 +79,10 @@ TEST(AcsParity, FunctionNumbersAreUZDooms)
 	EXPECT_EQ(kSetActivatorByNetID, 216);
 	EXPECT_EQ(kGetLineX, 300);
 	EXPECT_EQ(kGetLineY, 301);
+	EXPECT_EQ(kSetTranslation, 203);
+	EXPECT_EQ(kSetTeamScore, 19621);
+	EXPECT_EQ(kAPropFriendlySeeBlocks, 48);
+	EXPECT_EQ(kAPropWaterDepth, 49);
 	EXPECT_EQ(kCpxSetOnPtr, 0x800);
 	EXPECT_EQ(kCpxCheckSight, 0x1000);
 }
@@ -308,4 +312,88 @@ TEST(AcsParity, SectorDamageAmountsFitTheShortSectorsKeep)
 	EXPECT_EQ(ComputeSectorDamageAmount(0), 0);
 	EXPECT_EQ(ComputeSectorDamageAmount(-5), 0);
 	EXPECT_EQ(ComputeSectorDamageAmount(100000), 32767);
+}
+
+TEST(AcsParity, FriendlySeeBlocksKeepsAnActorsOwnValueOverItsClasss)
+{
+	EXPECT_EQ(ComputeSeeBlocksRead(0, 10), 10);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(25), 10), 25);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(0), 10), 0);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(-4), 10), -4);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(INT32_MAX), 10), INT32_MAX);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(INT32_MIN), 10), 10);
+	EXPECT_EQ(ComputeSeeBlocksRead(ComputeSeeBlocksStore(500), 10), 500);
+}
+
+TEST(AcsParity, AFriendlysSearchIsCappedAndNeverNegative)
+{
+	EXPECT_EQ(ComputeSeeBlocksSearch(10), 10);
+	EXPECT_EQ(ComputeSeeBlocksSearch(0), 0);
+	EXPECT_EQ(ComputeSeeBlocksSearch(-3), 0);
+	EXPECT_EQ(ComputeSeeBlocksSearch(kMaxFriendlySeeBlocks), kMaxFriendlySeeBlocks);
+	EXPECT_EQ(ComputeSeeBlocksSearch(500), kMaxFriendlySeeBlocks);
+}
+
+namespace {
+
+// [Doruk-Aksoy] A dry actor 56 high standing at z 0.
+WaterDepthIn Dry()
+{
+	WaterDepthIn in = {};
+	in.z = 0;
+	in.height = 56 * kOne;
+	return in;
+}
+
+} // namespace
+
+TEST(AcsParity, AnUnderwaterSectorIsAsDeepAsTheActorIsTall)
+{
+	WaterDepthIn in = Dry();
+	EXPECT_EQ(ComputeWaterDepth(in), 0);
+	in.underwater = true;
+	in.heightSec = true;
+	in.heightSecWater = true;
+	in.heightSecFloor = 8 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 56 * kOne);
+}
+
+TEST(AcsParity, AHeightsecIsWaterOnlyWhenItSaysSo)
+{
+	WaterDepthIn in = Dry();
+	in.heightSec = true;
+	in.heightSecFloor = 24 * kOne;
+	in.heightSecCeiling = 128 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 0);
+	in.heightSecWater = true;
+	EXPECT_EQ(ComputeWaterDepth(in), 24 * kOne);
+	in.z = 30 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 0);
+	in.heightSecCeiling = 64 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 56 * kOne);
+	in.fakeFloorOnly = true;
+	EXPECT_EQ(ComputeWaterDepth(in), 0);
+}
+
+TEST(AcsParity, ASwimmable3DFloorIsDeepToItsTop)
+{
+	WaterDepthIn in = Dry();
+	in.swimFloor = true;
+	in.swimTop = 40 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 40 * kOne);
+	in.z = 50 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 0);
+	in.heightSec = true;
+	in.heightSecWater = true;
+	in.heightSecFloor = 100 * kOne;
+	in.heightSecCeiling = 200 * kOne;
+	EXPECT_EQ(ComputeWaterDepth(in), 50 * kOne);
+}
+
+TEST(AcsParity, TeamScoresAreFragsWinsOrPointsByTheGameMode)
+{
+	EXPECT_EQ(ComputeTeamScoreKind(true, false), kTeamScoreFrags);
+	EXPECT_EQ(ComputeTeamScoreKind(true, true), kTeamScoreFrags);
+	EXPECT_EQ(ComputeTeamScoreKind(false, true), kTeamScoreWins);
+	EXPECT_EQ(ComputeTeamScoreKind(false, false), kTeamScorePoints);
 }

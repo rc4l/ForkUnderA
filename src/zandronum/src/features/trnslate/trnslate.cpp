@@ -2,18 +2,43 @@
 #include "features/trnslate/trnslate.h"
 #include "features/trnslate/computation/trnslate_compute.h"
 
+#include "actor.h"
 #include "doomerrors.h"
 #include "i_system.h"
+#include "network.h"
 #include "r_data/r_translate.h"
 #include "tarray.h"
 #include "w_wad.h"
 #include "zstring.h"
+#include "features/net-replication/actorstate.h"
 
 #include <string>
 
 using namespace zx::trnslate;
 
 static TMap<FName, int> customTranslationMap;
+
+void zx::trnslate::SetActorTranslation(AActor *actor, bool resetToDefault, int tnum, bool localOnly)
+{
+	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does, unless a clientside script changes its own copy.
+	if ( actor == NULL || ( !localOnly && NETWORK_InClientModeAndActorNotClientHandled( actor )))
+		return;
+
+	switch (ComputeSetTranslationOutcome(resetToDefault, tnum != INVALID_TRANSLATION))
+	{
+	case kSetTranslationDefault:
+		actor->Translation = actor->GetDefault()->Translation;
+		break;
+	case kSetTranslationFound:
+		actor->Translation = tnum;
+		break;
+	default:
+		return;
+	}
+
+	if ( !localOnly && NETWORK_IsActorClientHandled( actor ) == false )
+		zx::netreplication::SendThingTranslation( actor );
+}
 
 int R_FindCustomTranslation(FName name)
 {

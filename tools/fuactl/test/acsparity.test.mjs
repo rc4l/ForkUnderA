@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CHECKS, judgeParity, judgeNullDamage, judgeSectorDamage, judgeUzdoom, UZDOOM_CHAIN, sectorHealths, sectorDamageScript, SHARED_STEPS, OURS_STEPS, SET_SECTOR_DAMAGE, parseParity, lineCoord,
-  buildScript, buildAcsParityPk3, TERRAIN } from "../scenarios/acsparity.mjs";
+  buildScript, buildAcsParityPk3, TERRAIN, judgeTranslations, BARREL_AT, ICE, POOL, STRINGS } from "../scenarios/acsparity.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
 const logOf = (values) => `parity ${values.map((v) => (typeof v === "string" ? `<${v}>` : v)).join(" ")}\n`;
@@ -73,4 +73,22 @@ test("UZDoom's acsparity log passes with UZDoom's answers and the healths ours l
   assert.match(judgeUzdoom(log.replace("sectordamage 90 90", "sectordamage 100 100")).join(), /healths 100,100, not 90,90/);
   assert.match(judgeUzdoom("").join(), /script 1 logged no checks/);
   assert.doesNotMatch(UZDOOM_CHAIN, /puke 2/);
+});
+
+test("SetTranslation's barrels are found where they stand, far and mud on Ice and wet given back its class's", () => {
+  const rows = (far, mud, wet) => [{ x: BARREL_AT.far[0], y: BARREL_AT.far[1], tr: far }, { x: BARREL_AT.mud[0], y: BARREL_AT.mud[1], tr: mud },
+    { x: BARREL_AT.wet[0], y: BARREL_AT.wet[1], tr: wet }];
+  assert.equal(ICE, 196615);
+  assert.deepEqual(judgeTranslations(rows(ICE, ICE, 0)), []);
+  assert.match(judgeTranslations(rows(ICE, 0, 0)).join(), /mud barrel's translation is 0, not 196615/);
+  assert.match(judgeTranslations(rows(ICE, ICE, ICE)).join(), /wet barrel's translation is 196615, not 0/);
+  assert.deepEqual(judgeTranslations([]), ["no far barrel in world.actors", "no mud barrel in world.actors", "no wet barrel in world.actors"]);
+  assert.equal(judgeTranslations(undefined).length, 3);
+});
+
+test("the wet barrel stands in the pool, out of the proximity checks' 300-unit reach of the player", () => {
+  const [x, y] = BARREL_AT.wet;
+  assert.ok(x > POOL.x0 && x < POOL.x1 && y > POOL.y0 && y < POOL.y1);
+  assert.ok(Math.hypot(x - 256, y - 64) > 300);
+  assert.ok(STRINGS.includes("") && STRINGS.includes("Ice"));
 });

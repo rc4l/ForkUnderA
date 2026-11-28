@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CHECKS } from "../scenarios/acsparity.mjs";
-import { ANSWERS, STEPS, LATE, STARTS, CLIENT_HEALTHS, wantFor, judgeMachine, godOff, buildNetParityPk3 } from "../scenarios/netacsparity.mjs";
+import { ANSWERS, STEPS, LATE, STARTS, CLIENT_HEALTHS, wantFor, judgeMachine, godOff, buildNetParityPk3, judgeNetplay } from "../scenarios/netacsparity.mjs";
+import { BARREL_AT, ICE } from "../scenarios/acsparity.mjs";
 
 // [Doruk-Aksoy] A log line of every check's answer for `role`, as script 1 prints it.
 const lineFor = (role) => `parity ${CHECKS.map((c) => { const v = wantFor(c, role); return c.str ? `<${v}>` : v; }).join(" ")}\n`;
@@ -45,9 +46,24 @@ test("the player's client turns god mode off, toggling at most twice", async () 
 });
 
 test("the pk3 runs every step through the copies, the late joiner the checks and the read, with starts for three more players", () => {
-  assert.deepEqual(STEPS.map((s) => s.script), [1, 2, 3, 4, 5]);
+  assert.deepEqual(STEPS.map((s) => s.script), [1, 2, 3, 4, 5, 6]);
+  assert.equal(STEPS.find((s) => s.script === 6).clients, false);
   assert.equal(STEPS.find((s) => s.script === 5).server, false);
   assert.deepEqual(LATE.map((s) => s.script), [1, 2, 5]);
   assert.equal(STARTS.length, 3);
   assert.ok(buildNetParityPk3().toString("latin1").includes("maps/MAP01.wad"));
+});
+
+test("after the logs, every machine's barrels are read from its own world.actors", async () => {
+  const rows = (wetTr) => ({ actors: [{ x: BARREL_AT.far[0], y: BARREL_AT.far[1], tr: ICE }, { x: BARREL_AT.mud[0], y: BARREL_AT.mud[1], tr: ICE },
+    { x: BARREL_AT.wet[0], y: BARREL_AT.wet[1], tr: wetTr }, { x: BARREL_AT.net[0], y: BARREL_AT.net[1], tr: ICE }] });
+  const member = (role, wetTr) => ({ role, c: { rpc: async () => rows(wetTr) } });
+  const set = { server: member("server", 0), clients: [member("player", 0), member("latejoin", ICE)] };
+  const passed = { line: "PASS x: fine", failed: 0 };
+  assert.equal((await judgeNetplay({ ...set, clients: [set.clients[0]] }, "MAP01 lan", {}, { judge: async () => passed })).failed, 0);
+  const r = await judgeNetplay(set, "MAP01 lan", {}, { judge: async () => passed });
+  assert.equal(r.failed, 1);
+  assert.match(r.line, /the late joiner: the wet barrel's translation is 196615, not 0/);
+  const logs = await judgeNetplay({ ...set, clients: [] }, "MAP01 lan", {}, { judge: async () => ({ line: "FAIL MAP01 lan: the server: script 1 logged no checks", failed: 1 }) });
+  assert.match(logs.line, /^FAIL MAP01 lan: the server: script 1 logged no checks$/);
 });

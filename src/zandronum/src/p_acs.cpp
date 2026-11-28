@@ -1609,12 +1609,67 @@ static int CheckInventory (AActor *activator, const char *type)
 // [Dusk] Moved this out of ACSF_GetTeamScore
 //
 //============================================================================
+// [Doruk-Aksoy] features/acs-parity: the score GetTeamScore reads and SetTeamScore writes in this game mode, as a SCORE_ kind.
+static int TeamScoreNow( )
+{
+	const DWORD flags = GAMEMODE_GetCurrentFlags( );
+	switch ( zx::acsparity::ComputeTeamScoreKind( ( flags & GMF_PLAYERSEARNFRAGS ) != 0, ( flags & GMF_PLAYERSEARNWINS ) != 0 ))
+	{
+	case zx::acsparity::kTeamScoreFrags: return SCORE_FRAGS;
+	case zx::acsparity::kTeamScoreWins: return SCORE_WINS;
+	default: return SCORE_POINTS;
+	}
+}
+
 static LONG GetTeamScore (ULONG team) {
-	if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSEARNFRAGS )
-		return TEAM_GetFragCount( team );
-	else if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSEARNWINS )
-		return TEAM_GetWinCount( team );
-	return TEAM_GetPointCount( team );
+	switch ( TeamScoreNow( ))
+	{
+	case SCORE_FRAGS: return TEAM_GetFragCount( team );
+	case SCORE_WINS: return TEAM_GetWinCount( team );
+	default: return TEAM_GetPointCount( team );
+	}
+}
+
+// [Doruk-Aksoy] ChangeTeamScore's work, which SetTeamScore shares: the team's `which` score set to `score`, 1 when it changed.
+static int SetTeamScoreOf( ULONG ulTeam, int which, LONG score, bool bAnnounce )
+{
+	// [AK] With the exception of frags, the new score must not be a negative value.
+	const LONG lScore = ( which == SCORE_FRAGS || score >= 0 ) ? score : 0;
+
+	if ( TEAM_CheckIfValid( ulTeam ) == false )
+		return 0;
+
+	switch ( which )
+	{
+		case SCORE_FRAGS:
+			// [AK] Don't do anything if the frag count won't change.
+			if ( teams[ulTeam].lFragCount == lScore )
+				return 0;
+			TEAM_SetFragCount( ulTeam, lScore, bAnnounce );
+			return 1;
+
+		case SCORE_POINTS:
+			// [AK] Don't do anything if the point count won't change.
+			if ( teams[ulTeam].lPointCount == lScore )
+				return 0;
+			TEAM_SetPointCount( ulTeam, lScore, bAnnounce );
+			return 1;
+
+		case SCORE_WINS:
+			// [AK] Don't do anything if the win count won't change.
+			if ( teams[ulTeam].lWinCount == lScore )
+				return 0;
+			TEAM_SetWinCount( ulTeam, lScore, bAnnounce );
+			return 1;
+
+		case SCORE_DEATHS:
+			// [AK] Don't do anything if the death count won't change.
+			if ( teams[ulTeam].lDeathCount == lScore )
+				return 0;
+			TEAM_SetDeathCount( ulTeam, lScore );
+			return 1;
+	}
+	return 0;
 }
 
 //============================================================================
@@ -5186,6 +5241,11 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		actor->DamageType = FBehavior::StaticLookupString(value);
 		break;
 
+	// [Doruk-Aksoy] features/acs-parity: how far a friendly monster looks, the actor's own over its class's; only a server's monsters look.
+	case APROP_FriendlySeeBlocks:
+		zx::acsparity::SetFriendlySeeBlocks( actor, value );
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5307,6 +5367,8 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_MaxStepHeight:	return (int)(actor->MaxStepHeight);
 	case APROP_MaxDropOffHeight:	return (int)(actor->MaxDropOffHeight);
 	case APROP_DamageType:	return GlobalACSStrings.AddString(actor->DamageType.GetChars());
+	case APROP_FriendlySeeBlocks:	return zx::acsparity::FriendlySeeBlocks(actor);
+	case APROP_WaterDepth:	return zx::acsparity::WaterDepth(actor);
 
 	default:				return 0;
 	}
@@ -5357,6 +5419,8 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_AttackZOffset:
 		case APROP_MaxStepHeight:
 		case APROP_MaxDropOffHeight:
+		case APROP_FriendlySeeBlocks:
+		case APROP_WaterDepth:
 		case APROP_StencilColor:
 		case APROP_MvType:
 		case APROP_IsCrouchSliding:
@@ -5794,6 +5858,8 @@ enum EACSFunctions
 	// [Doruk-Aksoy] features/acs-parity: uzdoom@3299a29c44 (CheckClass), d7b5bdc0f7 (DamageActor).
 	ACSF_CheckClass = 200,
 	ACSF_DamageActor = 201,
+	// [Doruk-Aksoy] features/acs-parity: SetTranslation, by the names TRNSLATE and the built-in ones give.
+	ACSF_SetTranslation = 203,
 	// [BB] Out of order ZDoom backport.
 	ACSF_GetActorFloorTexture = 204,
 	// [Doruk-Aksoy] uzdoom@85488f2f30 (GetActorFloorTerrain), f82ab889b2 (StrArg), 1ff4016498 (Floor, Round, Ceil).
@@ -5982,7 +6048,8 @@ static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
-	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
+	&& ACSF_GetLineY == zx::acsparity::kGetLineY && ACSF_SetTranslation == zx::acsparity::kSetTranslation && ACSF_SetTeamScore == zx::acsparity::kSetTeamScore
+	&& APROP_FriendlySeeBlocks == zx::acsparity::kAPropFriendlySeeBlocks && APROP_WaterDepth == zx::acsparity::kAPropWaterDepth, "UZDoom's functions keep UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -8643,61 +8710,11 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			}
 
 		case ACSF_ChangeTeamScore:
-			{
-				const ULONG ulTeam = static_cast<ULONG>( args[0] );
-				const bool bAnnounce = argCount > 3 ? !!args[3] : true;
+			return SetTeamScoreOf( static_cast<ULONG>( args[0] ), args[1], args[2], argCount > 3 ? !!args[3] : true );
 
-				// [AK] With the exception of frags, the new score must not be a negative value.
-				const LONG lScore = ( args[1] == SCORE_FRAGS || args[2] >= 0 ) ? args[2] : 0;
-
-				if ( TEAM_CheckIfValid( ulTeam ) )
-				{
-					switch ( args[1] )
-					{
-						case SCORE_FRAGS:
-						{
-							// [AK] Don't do anything if the frag count won't change.
-							if ( teams[ulTeam].lFragCount == lScore )
-								return 0;
-
-							TEAM_SetFragCount( ulTeam, lScore, bAnnounce );
-							return 1;
-						}
-
-						case SCORE_POINTS:
-						{
-							// [AK] Don't do anything if the point count won't change.
-							if ( teams[ulTeam].lPointCount == lScore )
-								return 0;
-
-							TEAM_SetPointCount( ulTeam, lScore, bAnnounce );
-							return 1;
-						}
-
-						case SCORE_WINS:
-						{
-							// [AK] Don't do anything if the win count won't change.
-							if ( teams[ulTeam].lWinCount == lScore )
-								return 0;
-
-							TEAM_SetWinCount( ulTeam, lScore, bAnnounce );
-							return 1;
-						}
-
-						case SCORE_DEATHS:
-						{
-							// [AK] Don't do anything if the death count won't change.
-							if ( teams[ulTeam].lDeathCount == lScore )
-								return 0;
-
-							TEAM_SetDeathCount( ulTeam, lScore );
-							return 1;
-						}
-					}
-				}
-
-				return 0;
-			}
+		// [Doruk-Aksoy] features/acs-parity: ZDaemon's SetTeamScore, which our list declared without code: the score GetTeamScore reads, announced as ChangeTeamScore does.
+		case ACSF_SetTeamScore:
+			return SetTeamScoreOf( static_cast<ULONG>( args[0] ), TeamScoreNow( ), args[1], true );
 
 		case ACSF_SetGameplaySetting:
 			{
@@ -9705,6 +9722,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				return -1;
 			return P_DamageMobj(target, inflictor, inflictor, args[4], FName(FBehavior::StaticLookupString(args[5])));
 		}
+
+		case ACSF_SetTranslation:
+			zx::acsparity::SetTranslation(activator, args[0], FBehavior::StaticLookupString(args[1]));
+			return 1;
 
 		case ACSF_GetActorFloorTerrain:
 			actor = SingleActorFromTID(args[0], activator);

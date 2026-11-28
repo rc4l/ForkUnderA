@@ -18,6 +18,7 @@ enum Function
 	kCheckActorState = 99,
 	kCheckClass = 200,
 	kDamageActor = 201,
+	kSetTranslation = 203,
 	kGetActorFloorTerrain = 205,
 	kStrArg = 206,
 	kFloor = 207,
@@ -27,6 +28,7 @@ enum Function
 	kSetActivatorByNetID = 216,
 	kGetLineX = 300,
 	kGetLineY = 301,
+	kSetTeamScore = 19621,
 };
 
 // [Doruk-Aksoy] UZDoom's CheckProximity flags (CPXF_ in p_local.h), which zt-bcc's zcommon.bcs names too.
@@ -184,6 +186,52 @@ struct InventoryState
 };
 
 int ComputeInventoryAmount(const InventoryState& state, bool max);
+
+// [Doruk-Aksoy] UZDoom's actor property numbers for the values of its own these answer.
+enum ActorProperty
+{
+	kAPropFriendlySeeBlocks = 48,
+	kAPropWaterDepth = 49,
+};
+
+// [Doruk-Aksoy] APROP_FriendlySeeBlocks: how far, in blockmap blocks, a friendly monster looks for enemies; 128 at most per search, so a script can't make every look scan the map.
+const int32_t kMaxFriendlySeeBlocks = 128;
+
+// [Doruk-Aksoy] An actor's own value as it keeps it, 0 meaning none so its class's stands: the value with its top bit flipped, so any value but INT32_MIN reads back.
+int32_t ComputeSeeBlocksStore(int32_t value);
+
+// [Doruk-Aksoy] What GetActorProperty reads: the actor's own value, else its class's.
+int32_t ComputeSeeBlocksRead(int32_t stored, int32_t classDefault);
+
+// [Doruk-Aksoy] The blocks a search of `blocks` takes, none for a negative value and kMaxFriendlySeeBlocks at most.
+int32_t ComputeSeeBlocksSearch(int32_t blocks);
+
+// [Doruk-Aksoy] What UZDoom's UpdateWaterDepth sees of an actor's sector, in fixed point, without the splash checks: an underwater sector, a Boom
+// heightsec counted only as real water (UNDERWATERMASK), or the first swimmable, non-solid 3D floor whose top is above the actor and bottom at or below its middle.
+struct WaterDepthIn
+{
+	bool underwater;		// [Doruk-Aksoy] SECF_UNDERWATER: the whole sector is water.
+	bool heightSec;		// [Doruk-Aksoy] It takes its look from a Boom heightsec...
+	bool heightSecWater;	// [Doruk-Aksoy] ...that is real water...
+	bool fakeFloorOnly;	// [Doruk-Aksoy] ...and that only fakes the floor.
+	int64_t heightSecFloor, heightSecCeiling;	// [Doruk-Aksoy] Its planes at the actor.
+	bool swimFloor;		// [Doruk-Aksoy] A 3D floor of water holds the actor, with its top here.
+	int64_t swimTop;
+	int64_t z, height;
+};
+
+// [Doruk-Aksoy] APROP_WaterDepth: how deep in water the actor stands, never below 0.
+int64_t ComputeWaterDepth(const WaterDepthIn &in);
+
+// [Doruk-Aksoy] Which team score GetTeamScore reads and SetTeamScore writes in a game mode: frags where players earn frags, else wins where they earn wins, else points.
+enum TeamScoreKind
+{
+	kTeamScoreFrags,
+	kTeamScoreWins,
+	kTeamScorePoints,
+};
+
+TeamScoreKind ComputeTeamScoreKind(bool earnsFrags, bool earnsWins);
 
 }} // namespace zx::acsparity
 

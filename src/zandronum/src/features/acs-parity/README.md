@@ -1,6 +1,7 @@
 # features/acs-parity
 
-UZDoom's ACS functions and actor properties at UZDoom's numbers, answering as UZDoom's do. Modder
+UZDoom's ACS functions and actor properties at UZDoom's numbers, answering as UZDoom's do, and ZDaemon's
+`SetTeamScore`, which our function list declared without code. Modder
 reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/acs/UZDoom_functions.md).
 
 | Number | Function | Upstream |
@@ -11,6 +12,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | 99 | `CheckActorState` | uzdoom@df4a8e38c5 |
 | 200 | `CheckClass` | uzdoom@3299a29c44 |
 | 201 | `DamageActor` | uzdoom@d7b5bdc0f7 |
+| 203 | `SetTranslation` | UZDoom's `ACSF_SetTranslation` and `AActor::SetTranslation` |
 | 205 | `GetActorFloorTerrain` | uzdoom@85488f2f30 |
 | 206 | `StrArg` | uzdoom@f82ab889b2 |
 | 207-209 | `Floor`, `Round`, `Ceil` | uzdoom@1ff4016498 |
@@ -18,6 +20,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | 300, 301 | `GetLineX`, `GetLineY` | uzdoom@3a569f176d |
 | APROP 44, 45 | `MaxStepHeight`, `MaxDropOffHeight` | uzdoom@1d286d5bd5 |
 | APROP 46 | `DamageType` | uzdoom@d09ec5a930 |
+| APROP 48 | `FriendlySeeBlocks` | UZDoom's `friendlyseeblocks` |
+| APROP 49 | `WaterDepth` | UZDoom's `UpdateWaterDepth` |
+| 19621 | `SetTeamScore` (ZDaemon) | ours, on `ChangeTeamScore` |
 
 - None of the numbers clash: Zandronum's own functions run 100 to 191, and 204 is already UZDoom's
   `GetActorFloorTexture`.
@@ -32,13 +37,30 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - A step or drop-off height a script changes goes to clients through `SetThingProperty`, and to a
   joining client when it differs from the default, since clients move their own pawn and walking
   monsters through `P_TryMove`. A damage type stays on the server.
+- `SetTranslation` names a translation as `features/trnslate` does, `""` giving the class's back, as UZDoom's
+  `AActor::SetTranslation` does; it goes through `trnslate::SetActorTranslation`, which the server sends and a
+  clientside script keeps on its own machine. A tid acts on every actor with it, 0 on the activator.
+- `APROP_FriendlySeeBlocks` is an actor's own value over its class's: kept in `AActor::fua_seeBlocks` with its
+  top bit flipped (`ComputeSeeBlocksStore`), so 0 means none and every value but `INT32_MIN` reads back, and
+  saved from SAVEVER 4544. `decorateuzdoom::FriendlySeeBlocks` reads it through `FriendlySeeBlocks`, and the
+  look's search takes at most `kMaxFriendlySeeBlocks` (128) blocks (`ComputeSeeBlocksSearch`).
+- `APROP_WaterDepth` is worked out when a script asks (`ComputeWaterDepth`), from UpdateWaterLevel's own tests
+  without the splash ones, so no actor stores a depth each move.
+- `SetTeamScore` sets the score `GetTeamScore` reads (`ComputeTeamScoreKind`: frags, wins or points by the game
+  mode) through `ChangeTeamScore`'s code, `SetTeamScoreOf`, announced.
 
 ## Hooks
 
 - `p_acs.cpp`: the numbers in `EACSFunctions`, their cases in `CallFunction`, `CheckInventory` through
   `InventoryAmount`, and the three properties in `DoSetActorProperty`, `GetActorProperty` and
   `CheckActorProperty`.
-- `p_acs.h`: `APROP_MaxStepHeight`, `APROP_MaxDropOffHeight`, `APROP_DamageType`.
+- `p_acs.h`: `APROP_MaxStepHeight`, `APROP_MaxDropOffHeight`, `APROP_DamageType`, `APROP_FriendlySeeBlocks`,
+  `APROP_WaterDepth`.
+- `p_acs.cpp`: `GetTeamScore`, `TeamScoreNow` and `SetTeamScoreOf`, which `ChangeTeamScore` and `SetTeamScore` share.
+- `actor.h`, `p_mobj.cpp`: `AActor::fua_seeBlocks` and its save; `version.h`: SAVEVER 4544.
+- `p_enemy.cpp`: `P_LookForEnemies`' search capped by `ComputeSeeBlocksSearch`.
+- `features/decorate-uzdoom/classprops.h`: `FriendlySeeBlocks` reads the actor's own value.
+- `features/trnslate`: `SetActorTranslation`, shared with `A_SetTranslation`.
 - `sv_commands.cpp`, `cl_main.cpp`, `sv_main.cpp`: the two heights in `SetThingProperty` and in
   `SERVER_UpdateActorProperties`.
 - `p_interaction.cpp`: `isFakePain` answers no for a null target.
@@ -47,17 +69,23 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 ## Tests
 
 - `computation/acsparity_compute_test.cpp`: the rounding, `GetLineX`/`GetLineY`, net ids, the
-  `CheckProximity` scan and its flags, and `GetMaxInventory`, each against UZDoom's formula.
-- `fuactl scenarios acsparity`: every function and property in one script, and `DamageActor` on a
-  missing tid; it fails on a build without this feature, and crashes on one without the
+  `CheckProximity` scan and its flags, `GetMaxInventory`, the stored `FriendlySeeBlocks`, the water depth and the
+  team score's kind, each against UZDoom's formula.
+- `fuactl scenarios acsparity`: every function and property in one script (a barrel 48 deep in a 3D-floor pool,
+  three barrels' translations read back from `world.actors`), and `DamageActor` on a missing tid; it fails on a build without this feature, and crashes on one without the
   `isFakePain` check.
 - `fuactl scenarios netacsparity`: `acsparity`'s checks run by the player on the server and as CLIENTSIDE
   copies on the player's client, an observer and a late joiner, each machine against its own answers; it
   fails on a build whose client `DamageActor` hurts a synced barrel. `SetSectorDamage` runs the same way:
   a client's own call hurts no one, the server's hurts the player, and every client then holds the health
-  the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them).
+  the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them). Every machine's
+  barrels end on the translations the server set, a server-only script's barrel included
+  (`fua_debug_netdrop=64`, `SVC_SETTHINGTRANSLATION` unsent, fails the clients and the late joiner).
+- `fuactl scenarios acsteamscore`: `SetTeamScore` in team deathmatch, CTF and team LMS, read back by
+  `GetTeamScore`; `netacsteamscore`: the server's scores read back on every client and a late joiner
+  (`fua_debug_netdrop=108`, `SVC_SETTEAMSCORE` unsent, fails them).
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.
-- Against UZDoom itself, the scenario's pk3 logged the same 48 values but for `Ceil(2.0)` and the
+- Against UZDoom itself, the scenario's pk3 logged the same 58 values but for `Ceil(2.0)` and the
   default terrain's spelling (`SOLID`).

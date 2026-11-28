@@ -13,4 +13,13 @@ int R_FindCustomTranslation(FName name);
 // [Doruk-Aksoy] Reads every TRNSLATE lump into TRANSLATION_Custom, after the standard tables and before DECORATE.
 void R_ParseTrnslate();
 
+class AActor;
+
+namespace zx { namespace trnslate {
+
+// [Doruk-Aksoy] Gives `actor` translation `tnum` (its class's with `resetToDefault`; an unknown one changes nothing), a server telling the clients; `localOnly`, for a clientside script, changes this machine's copy alone.
+void SetActorTranslation(AActor *actor, bool resetToDefault, int tnum, bool localOnly);
+
+}} // namespace zx::trnslate
+
 #endif // ZX_TRNSLATE_H

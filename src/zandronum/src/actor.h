@@ -1351,6 +1351,7 @@ public:
 
 	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
 	DWORD			fua_handleSlot;			// [Doruk-Aksoy] features/acs-handles: its slot in this machine's handle table, 0 until a script asks
+	int				fua_seeBlocks;			// [Doruk-Aksoy] features/acs-parity: APROP_FriendlySeeBlocks a script set, its top bit flipped, or 0 to use its class's
 	int				fua_spawnTic;			// [MGOOOOOO] features/hitboxviz: the gametic it was spawned in, so a box gone within that tic is still drawn
 
 	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are

@@ -439,6 +439,9 @@ enum
 	APROP_MaxDropOffHeight = 45,
 	APROP_DamageType	= 46,
 	// [ZandroX] 47-49 stay UZDoom's (SoundClass, FriendlySeeBlocks, WaterDepth), so fork-specific properties start at 50.
+	// [Doruk-Aksoy] features/acs-parity: FriendlySeeBlocks and WaterDepth at UZDoom's numbers; 47 (SoundClass) waits for its own PR.
+	APROP_FriendlySeeBlocks = 48,
+	APROP_WaterDepth	= 49,
 	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
 	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
 	APROP_MvType		= 52,	// [rc4l] Player.MvType (features/quake-movement)
