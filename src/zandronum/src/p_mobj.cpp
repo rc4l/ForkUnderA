@@ -4982,7 +4982,7 @@ void AActor::Tick ()
 		// Check for poison damage, but only once per PoisonPeriod tics (or once per second if none).
 		if (PoisonDurationReceived && (level.time % (Ext().PoisonPeriodReceived ? Ext().PoisonPeriodReceived : TICRATE) == 0))
 		{
-			P_DamageMobj(this, NULL, Ext().Poisoner, Ext().PoisonDamageReceived, Ext().PoisonDamageTypeReceived ? Ext().PoisonDamageTypeReceived : (FName)NAME_Poison, 0);
+			P_DamageMobj(this, NULL, Ext().Poisoner, Ext().PoisonDamageReceived, Ext().PoisonDamageTypeReceived ? (FName)Ext().PoisonDamageTypeReceived : (FName)NAME_Poison, 0);
 
 			--PoisonDurationReceived;
 
