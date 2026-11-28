@@ -6,22 +6,26 @@
 import { PCD, SCRIPT } from "../src/acs.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
-import { withNetCopies, addPlayerStarts, netJudge, answerFor, NET_CONFIGS } from "../src/netacs.mjs";
-import { CHECKS, S, PLAYERHEALTH, buildAcsParityPk3, parseParity, judgeNullDamage, judgeSectorDamage, sectorHealths } from "./acsparity.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, answerFor, who, result, NET_CONFIGS } from "../src/netacs.mjs";
+import { CHECKS, S, PLAYERHEALTH, BARREL, ICE, buildAcsParityPk3, parseParity, judgeNullDamage, judgeSectorDamage, sectorHealths, judgeTranslations } from "./acsparity.mjs";
+import { ACSF, callFunc } from "../src/acs.mjs";
 
 // [Doruk-Aksoy] The checks, then SetSectorDamage's two scripts on every machine (a client's own call hurting no one), then each client reading the player's
 // health the server left (script 5); the late joiner runs the checks and that read.
 export const STEPS = [{ script: 1, tags: ["parity"] }, { script: 2, tags: ["damagenull"] }, { script: 3, tags: ["sd3"], tics: 200 },
-  { script: 4, tags: ["sd4"], tics: 230 }, { script: 5, tags: ["sdh"], server: false }];
+  { script: 4, tags: ["sd4"], tics: 230 }, { script: 5, tags: ["sdh"], server: false }, { script: 6, tags: ["st"], clients: false }];
 export const LATE = [STEPS[0], STEPS[1], STEPS[4]];
 export const HEALTH_SCRIPT = [PCD.BEGINPRINT, PCD.PUSHNUMBER, S.sdh, PCD.PRINTSTRING, PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, PLAYERHEALTH, PCD.PRINTNUMBER, PCD.ENDLOG, PCD.TERMINATE];
+// [Doruk-Aksoy] Script 6, the server's alone: the net barrel on Ice, which a client can only hold through the server's send.
+export const SERVER_TRANSLATION_SCRIPT = [...callFunc(ACSF.SetTranslation, [BARREL.net, S.Ice]), PCD.DROP, PCD.TERMINATE];
 
 // [Doruk-Aksoy] Where players 2 to 4 start, clear of the first player's and the barrels.
 export const STARTS = [[48, 48], [48, 160], [464, 464]];
 
 export function buildNetParityPk3() {
   return buildAcsParityPk3({
-    withScripts: (s) => withNetCopies([...s, { code: HEALTH_SCRIPT, type: SCRIPT.CLOSED, number: 5 }], STEPS.map((x) => x.script)),
+    withScripts: (s) => withNetCopies([...s, { code: HEALTH_SCRIPT, type: SCRIPT.CLOSED, number: 5 }, { code: SERVER_TRANSLATION_SCRIPT, type: SCRIPT.CLOSED, number: 6 }],
+      STEPS.map((x) => x.script)),
     withMap: (m) => addPlayerStarts(m, STARTS),
   });
 }
@@ -64,8 +68,18 @@ export async function godOff(set, deps = {}) {
   for (let i = 0; i < 2 && !/(God|Degreelessness) mode off/i.test(await exec(set.clients[0].c, "god", { quietMs: 200 })); i++);
 }
 
-export const judgeNetplay = netJudge({ steps: STEPS, late: LATE, judge: judgeMachine, before: godOff,
-  passed: `${CHECKS.length} checks give each machine its answer, a client's copy changing nothing on the server, and SetSectorDamage hurts the player on the server alone, every client holding its health` });
+const PASSED = `${CHECKS.length} checks give each machine its answer, a client's copy changing nothing on the server, SetTranslation's barrels end the same on every machine, and SetSectorDamage hurts the player on the server alone, every client holding its health`;
+const judgeLogs = netJudge({ steps: STEPS, late: LATE, judge: judgeMachine, before: godOff, passed: PASSED });
+
+// [Doruk-Aksoy] The logs' faults, then each machine's barrels from its own world.actors, the late joiner's too, which SetTranslation left on Ice but the one given back.
+export async function judgeNetplay(set, label, opts, deps = {}) {
+  const { judge = judgeLogs } = deps;
+  const logged = await judge(set, label);
+  const faults = logged.failed ? [logged.line.replace(/^FAIL [^:]*: /, "")] : [];
+  for (const m of [set.server, ...set.clients])
+    faults.push(...judgeTranslations((await m.c.rpc("world.actors", {}).catch(() => null))?.actors, { far: ICE, mud: ICE, wet: 0, net: ICE }).map((f) => `${who(m)}: ${f}`));
+  return result(label, faults, PASSED);
+}
 
 export const CONFIGS = NET_CONFIGS;
 
