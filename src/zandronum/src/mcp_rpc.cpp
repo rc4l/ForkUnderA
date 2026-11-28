@@ -45,6 +45,9 @@
 #include "cl_main.h" // [rc4l] the client's connection and server tic, for net.state
 #include "r_data/sprites.h" // [rc4l] spritedef_t, for world.actors
 #include "r_data/colormaps.h" // [rc4l] FDynamicColormap, for world.sectorstate
+#include "r_data/r_translate.h" // [Doruk-Aksoy] TranslationToTable, for world.translation
+#include "v_palette.h" // [Doruk-Aksoy] GPalette, for world.translation
+#include "features/trnslate/trnslate.h" // [Doruk-Aksoy] R_FindCustomTranslation, for world.translation
 #include "g_shared/a_pickups.h" // [rc4l] AInventory, which world.actors leaves out when carried
 #include "features/mcp-bridge/computation/netrpc_compute.h"
 #include "features/net-snapshot/ghostactor.h"	// [Doruk-Aksoy] MirrorCount, MirrorAt, MirrorPlayerNum, for world.actors
@@ -60,6 +63,7 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <stdlib.h>
 #include "features/json/computation/json_compute.h"
 #include "features/telemetry/telemetry.h"
@@ -400,7 +404,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\",\"view.angle\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"world.translation\",\"net.state\",\"view.angle\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -1089,6 +1093,28 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// [rc4l] Every features/telemetry counter as fua_stats json gives it, so a driver reads the same numbers a player's console does.
 		body += ",\"telemetry\":" + zx::telemetry::StatsJson( "" ) + "}";
 		SendOk( id, body );
+	}
+	else if ( cmd == "world.translation" )
+	{
+		// [Doruk-Aksoy] One translation table by its actor value (args.translation) or TRNSLATE name (args.name): its remap and colours, with the
+		// game palette's colours and order, so a judge can check every entry a range wrote against the formula.
+		long value = 0;
+		std::string name;
+		if ( GetStr( args, "name", name ) && !name.empty() ) value = R_FindCustomTranslation( FName( name.c_str() ));
+		else GetInt( args, "translation", value );
+		FRemapTable *table = value > 0 ? TranslationToTable( (int)value ) : NULL;
+		if ( table == NULL || table->NumEntries < 256 ) { SendErr( id, "world.translation: no such translation" ); return; }
+		int64_t remap[256], colors[256], base[256], order[256];
+		const auto rgb = []( PalEntry p ) { return (int64_t)( ( p.r << 16 ) | ( p.g << 8 ) | p.b ); };
+		for ( int i = 0; i < 256; i++ )
+		{
+			remap[i] = table->Remap[i];
+			colors[i] = rgb( table->Palette[i] );
+			base[i] = rgb( GPalette.BaseColors[i] );
+			order[i] = GPalette.Remap[i];
+		}
+		SendOk( id, "{\"translation\":" + I( (int)value ) + "," + zx::mcp::ComputeIntListJson( "remap", remap, 256 ) + "," + zx::mcp::ComputeIntListJson( "palette", colors, 256 )
+			+ "," + zx::mcp::ComputeIntListJson( "base", base, 256 ) + "," + zx::mcp::ComputeIntListJson( "order", order, 256 ) + "}" );
 	}
 	else if ( cmd == "world.sectors" )
 	{

@@ -378,4 +378,42 @@ SetTranslationOutcome ComputeSetTranslationOutcome(bool resetToDefault, bool fou
 	return found ? kSetTranslationFound : kSetTranslationKeep;
 }
 
+namespace {
+
+// [Doruk-Aksoy] The byte a PalEntry keeps of a channel UZDoom computed as a float, held inside int first so a huge value can't overflow the cast.
+unsigned char ChannelByte(double v)
+{
+	if (v >= 2147483647.0) v = 2147483647.0;
+	if (v <= -2147483648.0) v = -2147483648.0;
+	return static_cast<unsigned char>(static_cast<unsigned>(static_cast<int>(v)) & 0xFFu);
+}
+
+} // namespace
+
+RangeColor ComputeColourise(int baseR, int baseG, int baseB, int r, int g, int b)
+{
+	double grey = (baseR * 0.299 + baseG * 0.587 + baseB * 0.114) / 255.0f;
+	if (grey > 1.0) grey = 1.0;
+	return { ChannelByte(r * grey), ChannelByte(g * grey), ChannelByte(b * grey) };
+}
+
+RangeColor ComputeTint(int baseR, int baseG, int baseB, int r, int g, int b, int amount)
+{
+	// [Doruk-Aksoy] In float, as UZDoom's does, so a rounding edge lands on the same byte.
+	const float a = amount * 0.01f;
+	const float ia = 1.0f - a;
+	return { ChannelByte(float(baseR) * ia + r * a), ChannelByte(float(baseG) * ia + g * a), ChannelByte(float(baseB) * ia + b * a) };
+}
+
+bool ComputePaletteIndexFits(int index)
+{
+	return index >= 0 && index <= 255;
+}
+
+bool ComputeTranslationRangeFits(const TranslationRange &range)
+{
+	const bool ends = ComputePaletteIndexFits(range.start) && ComputePaletteIndexFits(range.end);
+	return range.kind == kRangePalette ? ends && ComputePaletteIndexFits(range.pal1) && ComputePaletteIndexFits(range.pal2) : ends;
+}
+
 }} // namespace zx::trnslate

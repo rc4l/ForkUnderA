@@ -37,6 +37,31 @@ A sector's terrain sets its friction, splashes, footclip and floor damage, and w
 reads, as the flat's TERRAIN does. A UDMF map gives a sector its own with UZDoom's `floorterrain` and
 `ceilingterrain` keys, which a map restart (`ResetMap`) gives back after a script's change.
 
+`CreateTranslation` takes UZDoom's two newer range forms, which zt-bcc and ACC compile to p-codes 383 and 384, and TRNSLATE
+and DECORATE's `Translation` take them too:
+
+```bcs
+#library "fuaembr"
+#import "zcommon.bcs"
+
+script "Embers" ( void ) {
+   // Colourise: each entry's brightness times the colour.
+   CreateTranslation( 1, 16:48 = #[ 255, 128, 0 ] );
+   // Tint: each entry 40% of the way to the colour.
+   CreateTranslation( 2, 16:48 = @40[ 0, 64, 255 ] );
+   Thing_SetTranslation( 0, 1 );
+   Log( s: "embers lit" );
+}
+```
+
+<!-- example
+pukename Embers => /embers lit/
+-->
+
+Unlike the other range forms, these two leave the last index (48 here) unchanged, as UZDoom does. A range naming an index
+outside 0 to 255 changes nothing and prints a warning. In a netgame the server sends each range to its clients, and to
+a player who joins later.
+
 `GetPlayerInfo(player, PLAYERINFO_FVIEWBOB)` (10) reads the player's `fviewbob`, UZDoom's userinfo setting: with it
 off a flying player neither bobs up and down nor sways its view, as in UZDoom.
 

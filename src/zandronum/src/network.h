@@ -258,13 +258,7 @@ enum SetPlayerStatusFlag
 	SETPLAYERSTATUS_SERVERCANTSENDUPDATE	= 1 << 1,
 };
 
-// [AK] What kind of translation are we sending to clients?
-enum CreateTranslationType
-{
-	CREATETRANSLATION_PALETTE,
-	CREATETRANSLATION_RGB,
-	CREATETRANSLATION_DESATURATED,
-};
+// [Doruk-Aksoy] The kinds of translation range sent to clients are features/trnslate's TranslationRangeKind now.
 
 // [AK] If we're updating the map rotation then what exactly are we doing?
 enum UpdateMapRotationType

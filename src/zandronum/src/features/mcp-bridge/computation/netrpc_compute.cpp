@@ -94,6 +94,13 @@ std::string ComputeLineStateJson(const LineStateRow &row)
 	return "{\"i\":" + std::to_string(row.index) + ",\"alpha\":" + Num(row.alpha) + ",\"flags\":" + std::to_string(row.flags) + "}";
 }
 
+std::string ComputeIntListJson(const char *key, const int64_t *values, int count)
+{
+	std::string out = Quoted(key) + ":[";
+	for (int i = 0; i < count; ++i) out += (i ? "," : "") + std::to_string(values[i]);
+	return out + "]";
+}
+
 void ComputePageRange(int total, long first, long count, int &begin, int &end)
 {
 	const long t = total > 0 ? total : 0;

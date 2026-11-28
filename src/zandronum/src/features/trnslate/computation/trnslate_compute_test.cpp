@@ -337,3 +337,150 @@ TEST(TrnslateSetTranslation, ResetRestoresKnownAppliesUnknownKeeps)
 	EXPECT_EQ(ComputeSetTranslationOutcome(false, true), kSetTranslationFound);
 	EXPECT_EQ(ComputeSetTranslationOutcome(false, false), kSetTranslationKeep);
 }
+
+// [Doruk-Aksoy] UZDoom's AddColourisation, worked out by hand: the target times (.299 r + .587 g + .114 b) / 255, each channel's low byte kept.
+TEST(TrnslateRanges, ColouriseScalesTheTargetByLuminance)
+{
+	const auto same = [](RangeColor c, int r, int g, int b) { return c.r == r && c.g == g && c.b == b; };
+	EXPECT_TRUE(same(ComputeColourise(255, 255, 255, 200, 100, 50), 200, 100, 50));
+	EXPECT_TRUE(same(ComputeColourise(100, 0, 0, 200, 100, 50), 23, 11, 5));
+	EXPECT_TRUE(same(ComputeColourise(0, 0, 0, 200, 100, 50), 0, 0, 0));
+	EXPECT_TRUE(same(ComputeColourise(64, 128, 192, 255, 255, 255), 116, 116, 116));
+	// [Doruk-Aksoy] Past a byte, as UZDoom's PalEntry keeps it: 300 is 44, -50 is 206, 1000 is 232.
+	EXPECT_TRUE(same(ComputeColourise(255, 255, 255, 300, -50, 1000), 44, 206, 232));
+	// [Doruk-Aksoy] A value too big for an int is held at its edge rather than overflowing the cast.
+	EXPECT_TRUE(same(ComputeColourise(255, 255, 255, 2147483647, -2147483647 - 1, 0), 255, 0, 0));
+}
+
+// [Doruk-Aksoy] UZDoom's AddTint: amount percent of the way from the colour to the target, in float.
+TEST(TrnslateRanges, TintMovesTowardsTheTarget)
+{
+	const auto same = [](RangeColor c, int r, int g, int b) { return c.r == r && c.g == g && c.b == b; };
+	EXPECT_TRUE(same(ComputeTint(100, 50, 0, 200, 100, 50, 50), 150, 75, 25));
+	EXPECT_TRUE(same(ComputeTint(100, 50, 0, 200, 100, 50, 25), 125, 62, 12));
+	EXPECT_TRUE(same(ComputeTint(255, 255, 255, 0, 0, 0, 33), 170, 170, 170));
+	EXPECT_TRUE(same(ComputeTint(100, 50, 0, 200, 100, 50, 0), 100, 50, 0));
+	// [Doruk-Aksoy] UZDoom clamps neither the amount nor the target, so the result wraps.
+	EXPECT_TRUE(same(ComputeTint(0, 0, 0, 200, 0, 0, 200), 144, 0, 0));
+	EXPECT_TRUE(same(ComputeTint(100, 0, 0, 0, 0, 0, -100), 200, 0, 0));
+	EXPECT_TRUE(same(ComputeTint(10, 10, 10, -50, 0, 0, 100), 206, 0, 0));
+}
+
+TEST(TrnslateRanges, OnlyThe256PaletteEntriesFit)
+{
+	EXPECT_TRUE(ComputePaletteIndexFits(0));
+	EXPECT_TRUE(ComputePaletteIndexFits(255));
+	EXPECT_FALSE(ComputePaletteIndexFits(-1));
+	EXPECT_FALSE(ComputePaletteIndexFits(256));
+}
+
+TEST(TrnslateRanges, ARangeFitsWhenEveryIndexItNamesDoes)
+{
+	TranslationRange range;
+	range.kind = kRangeColourise;
+	range.start = 0; range.end = 255;
+	EXPECT_TRUE(ComputeTranslationRangeFits(range));
+	range.end = 300;
+	EXPECT_FALSE(ComputeTranslationRangeFits(range));
+	range.end = 10; range.start = -1;
+	EXPECT_FALSE(ComputeTranslationRangeFits(range));
+	// [Doruk-Aksoy] A palette range's targets are indices too; another kind's colours aren't.
+	range.start = 0; range.pal2 = 256;
+	EXPECT_TRUE(ComputeTranslationRangeFits(range));
+	range.kind = kRangePalette;
+	EXPECT_FALSE(ComputeTranslationRangeFits(range));
+	range.pal2 = 0; range.pal1 = -1;
+	EXPECT_FALSE(ComputeTranslationRangeFits(range));
+	range.pal1 = 255;
+	EXPECT_TRUE(ComputeTranslationRangeFits(range));
+}
+
+namespace {
+
+// [Doruk-Aksoy] What a range's write did, field by field: b byte, s short-byte, l long, f float.
+struct Ops
+{
+	std::string kinds;
+	std::vector<double> values;
+	size_t next = 0;
+	void shortByte(int v, int bits) { kinds += 's'; values.push_back(v); values.push_back(bits); }
+	void byte(int v) { kinds += 'b'; values.push_back(v); }
+	void longValue(int v) { kinds += 'l'; values.push_back(v); }
+	void floatValue(float v) { kinds += 'f'; values.push_back(v); }
+	// [Doruk-Aksoy] The same fields read back in order, the short-byte's width checked.
+	int shortByte(int bits) { const int v = int(values[next]); EXPECT_EQ(bits, int(values[next + 1])); next += 2; return v; }
+	int byte() { return int(values[next++]); }
+	int longValue() { return int(values[next++]); }
+	float floatValue() { return float(values[next++]); }
+};
+
+TranslationRange RangeOf(int kind)
+{
+	TranslationRange r;
+	r.kind = kind;
+	r.start = 16; r.end = 31;
+	r.pal1 = 112; r.pal2 = 127;
+	r.r1 = 255; r.g1 = 128; r.b1 = 7; r.r2 = 1; r.g2 = 2; r.b2 = 3;
+	r.fr1 = 0.5f; r.fg1 = 1.25f; r.fb1 = 2.0f; r.fr2 = 0.0f; r.fg2 = 0.75f; r.fb2 = 1.5f;
+	r.amount = 40;
+	return r;
+}
+
+} // namespace
+
+TEST(TrnslateRanges, EachKindWritesItsOwnFields)
+{
+	// [Doruk-Aksoy] The first three as the server always sent them; colourise and tint carry whole ints, as UZDoom applies them unclamped.
+	const struct { int kind; const char *ops; } cases[] = {
+		{ kRangePalette, "sbbbb" }, { kRangeRgb, "sbbbbbbbb" }, { kRangeDesaturated, "sbbffffff" },
+		{ kRangeColourise, "sbblll" }, { kRangeTint, "sbbllll" },
+	};
+	for (const auto &c : cases)
+	{
+		Ops ops;
+		ComputeWriteTranslationRange(ops, RangeOf(c.kind));
+		EXPECT_EQ(c.ops, ops.kinds) << c.kind;
+		EXPECT_EQ(c.kind, int(ops.values[0]));
+		EXPECT_EQ(7, int(ops.values[1]));
+	}
+	Ops tint;
+	ComputeWriteTranslationRange(tint, RangeOf(kRangeTint));
+	EXPECT_EQ((std::vector<double>{ 4, 7, 16, 31, 40, 255, 128, 7 }), tint.values);
+}
+
+TEST(TrnslateRanges, EachKindReadsBackWhatWasWritten)
+{
+	for (int kind = kRangePalette; kind < kRangeKinds; kind++)
+	{
+		Ops ops;
+		const TranslationRange sent = RangeOf(kind);
+		ComputeWriteTranslationRange(ops, sent);
+		TranslationRange got;
+		ASSERT_TRUE(ComputeReadTranslationRange(ops, got)) << kind;
+		EXPECT_EQ(ops.values.size(), ops.next) << kind;
+		EXPECT_EQ(sent.kind, got.kind);
+		EXPECT_EQ(sent.start, got.start);
+		EXPECT_EQ(sent.end, got.end);
+		if (kind == kRangePalette) { EXPECT_EQ(sent.pal1, got.pal1); EXPECT_EQ(sent.pal2, got.pal2); }
+		if (kind == kRangeRgb) { EXPECT_EQ(sent.r2, got.r2); EXPECT_EQ(sent.g2, got.g2); EXPECT_EQ(sent.b2, got.b2); }
+		if (kind == kRangeDesaturated) { EXPECT_EQ(sent.fr1, got.fr1); EXPECT_EQ(sent.fg2, got.fg2); EXPECT_EQ(sent.fb2, got.fb2); }
+		if (kind != kRangePalette && kind != kRangeDesaturated) { EXPECT_EQ(sent.r1, got.r1); EXPECT_EQ(sent.g1, got.g1); EXPECT_EQ(sent.b1, got.b1); }
+		EXPECT_EQ(kind == kRangeTint ? sent.amount : 0, got.amount);
+	}
+}
+
+TEST(TrnslateRanges, AnUnknownKindWritesOnlyItsKindAndIsNotRead)
+{
+	// [Doruk-Aksoy] The client read any kind past the first two as a desaturation's six floats.
+	for (int kind : { -1, int(kRangeKinds), 127 })
+	{
+		Ops ops;
+		TranslationRange range = RangeOf(kRangePalette);
+		range.kind = kind;
+		ComputeWriteTranslationRange(ops, range);
+		EXPECT_EQ("s", ops.kinds) << kind;
+		TranslationRange got;
+		EXPECT_FALSE(ComputeReadTranslationRange(ops, got)) << kind;
+		EXPECT_EQ(2u, ops.next);
+	}
+}

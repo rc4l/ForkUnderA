@@ -59,6 +59,7 @@
 #include "r_data/sprites.h"
 #include "network/packetarchive.h"
 #include "network_enums.h"   // [KI] SVC, SVC2 and CLC in the sv_dumppackets declarations below
+#include "features/trnslate/computation/trnslate_compute.h"   // [Doruk-Aksoy] zx::trnslate::TranslationRange, header-pure
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
@@ -543,32 +544,8 @@ struct EDITEDTRANSLATION_s
 	// Which index in the list of translations is this?
 	ULONG			ulIdx;
 
-	// [BB] Type of the translation, i.e. PCD_TRANSLATIONRANGE1 or PCD_TRANSLATIONRANGE2
-	ULONG			ulType;
-
-	// The start/end range of the translation.
-	ULONG			ulStart;
-	ULONG			ulEnd;
-
-	// translation using palette shifting (compare PCD_TRANSLATIONRANGE1)
-	ULONG			ulPal1;
-	ULONG			ulPal2;
-
-	// [BB] translation like PCD_TRANSLATIONRANGE2
-	ULONG			ulR1;
-	ULONG			ulG1;
-	ULONG			ulB1;
-	ULONG			ulR2;
-	ULONG			ulG2;
-	ULONG			ulB2;
-
-	// [AK] translations like PCD_TRANSLATIONRANGE3
-	float			fR1;
-	float			fG1;
-	float			fB1;
-	float			fR2;
-	float			fG2;
-	float			fB2;
+	// [Doruk-Aksoy] The range a script added to it, of any kind (features/trnslate).
+	zx::trnslate::TranslationRange	range;
 };
 
 //*****************************************************************************
@@ -652,9 +629,7 @@ int			SERVER_GetMapMusicOrder( void );
 void		SERVER_SetMapMusic( const char *pszMusic, int order );
 void		SERVER_SetMapMusicVolume( float volume );   // [Doruk-Aksoy] what clients play the map music at, for those joining
 void		SERVER_ResetInventory( ULONG ulClient, const bool bChangeClientWeapon = true, bool bGiveReverseOrder = true ); // [RK] Added bGiveReverseOrder
-void		SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulPal1, ULONG ulPal2 );
-void		SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulR1, ULONG ulG1, ULONG ulB1, ULONG ulR2, ULONG ulG2, ULONG ulB2 );
-void		SERVER_AddEditedDesaturatedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, float fR1, float fG1, float fB1, float fR2, float fG2, float fB2 );
+void		SERVER_AddEditedTranslation( ULONG ulTranslation, const zx::trnslate::TranslationRange &range );
 void		SERVER_RemoveEditedTranslation( ULONG ulTranslation );
 bool		SERVER_IsTranslationEdited( ULONG ulTranslation );
 void		SERVER_ClearEditedTranslations( void );

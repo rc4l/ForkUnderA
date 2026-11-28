@@ -26,6 +26,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | APROP 48 | `FriendlySeeBlocks` | UZDoom's `friendlyseeblocks` |
 | APROP 49 | `WaterDepth` | UZDoom's `UpdateWaterDepth` |
 | 19621 | `SetTeamScore` (ZDaemon) | ours, on `ChangeTeamScore` |
+| p-code 383, 384 | `TRANSLATIONRANGE4`, `TRANSLATIONRANGE5` (`features/trnslate`) | UZDoom's `AddColourisation`, `AddTint` |
 | PLAYERINFO 10 | `FVIEWBOB`, the `fviewbob` userinfo | UZDoom's `fviewbob` |
 
 - None of the numbers clash: Zandronum's own functions run 100 to 191, and 204 is already UZDoom's

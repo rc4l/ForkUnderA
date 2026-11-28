@@ -316,10 +316,28 @@ FNativePalette *FRemapTable::GetNative()
 //
 //----------------------------------------------------------------------------
 
+// [Doruk-Aksoy] Ported from UZDoom: a range naming an index outside the palette warns and changes nothing, where it read and wrote past the tables.
+static bool IndexOutOfRange(int index)
+{
+	if (zx::trnslate::ComputePaletteIndexFits(index))
+		return false;
+	Printf(TEXTCOLOR_ORANGE "Palette index %i is out of range [0..255]\n", index);
+	return true;
+}
+
+static bool IndexOutOfRange(int start, int end)
+{
+	const bool outOfRange = IndexOutOfRange(start);
+	return IndexOutOfRange(end) || outOfRange;
+}
+
 void FRemapTable::AddIndexRange(int start, int end, int pal1, int pal2)
 {
 	fixed_t palcol, palstep;
 
+	const bool endsOutOfRange = IndexOutOfRange(start, end);
+	if (IndexOutOfRange(pal1, pal2) || endsOutOfRange)
+		return;
 	if (start > end)
 	{
 		swapvalues (start, end);
@@ -362,6 +380,8 @@ void FRemapTable::AddColorRange(int start, int end, int _r1,int _g1, int _b1, in
 	fixed_t r, g, b;
 	fixed_t rs, gs, bs;
 
+	if (IndexOutOfRange(start, end))
+		return;
 	if (start > end)
 	{
 		swapvalues (start, end);
@@ -413,6 +433,8 @@ void FRemapTable::AddColorRange(int start, int end, int _r1,int _g1, int _b1, in
 
 void FRemapTable::AddDesaturation(int start, int end, double r1, double g1, double b1, double r2, double g2, double b2)
 {
+	if (IndexOutOfRange(start, end))
+		return;
 	r1 = clamp(r1, 0.0, 2.0);
 	g1 = clamp(g1, 0.0, 2.0);
 	b1 = clamp(b1, 0.0, 2.0);
@@ -459,6 +481,35 @@ void FRemapTable::AddDesaturation(int start, int end, double r1, double g1, doub
 //
 //----------------------------------------------------------------------------
 
+void FRemapTable::AddColourisation(int start, int end, int r, int g, int b)
+{
+	if (IndexOutOfRange(start, end))
+		return;
+	// [Doruk-Aksoy] The end is left out, as UZDoom's leaves it.
+	for (int i = start; i < end; ++i)
+	{
+		const PalEntry base = GPalette.BaseColors[i];
+		const zx::trnslate::RangeColor c = zx::trnslate::ComputeColourise(base.r, base.g, base.b, r, g, b);
+		const int j = GPalette.Remap[i];
+		Palette[j] = PalEntry(j == 0 ? 0 : 255, c.r, c.g, c.b);
+		Remap[j] = ColorMatcher.Pick(Palette[j]);
+	}
+}
+
+void FRemapTable::AddTint(int start, int end, int r, int g, int b, int amount)
+{
+	if (IndexOutOfRange(start, end))
+		return;
+	for (int i = start; i < end; ++i)
+	{
+		const PalEntry base = GPalette.BaseColors[i];
+		const zx::trnslate::RangeColor c = zx::trnslate::ComputeTint(base.r, base.g, base.b, r, g, b, amount);
+		const int j = GPalette.Remap[i];
+		Palette[j] = PalEntry(j == 0 ? 0 : 255, c.r, c.g, c.b);
+		Remap[j] = ColorMatcher.Pick(Palette[j]);
+	}
+}
+
 void FRemapTable::AddToTranslation(const char *range)
 {
 	int start,end;
@@ -484,7 +535,41 @@ void FRemapTable::AddToTranslation(const char *range)
 
 		sc.MustGetAnyToken();
 
-		if (sc.TokenType != '[' && sc.TokenType != '%')
+		if (sc.TokenType == '#')
+		{
+			// [Doruk-Aksoy] Ported from UZDoom: "a:b=#[r,g,b]" colourises.
+			int r, g, b;
+			sc.MustGetToken('[');
+			sc.MustGetToken(TK_IntConst);
+			r = sc.Number;
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			g = sc.Number;
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			b = sc.Number;
+			sc.MustGetToken(']');
+			AddColourisation(start, end, r, g, b);
+		}
+		else if (sc.TokenType == '@')
+		{
+			// [Doruk-Aksoy] Ported from UZDoom: "a:b=@amount[r,g,b]" tints.
+			int a, r, g, b;
+			sc.MustGetToken(TK_IntConst);
+			a = sc.Number;
+			sc.MustGetToken('[');
+			sc.MustGetToken(TK_IntConst);
+			r = sc.Number;
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			g = sc.Number;
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			b = sc.Number;
+			sc.MustGetToken(']');
+			AddTint(start, end, r, g, b, a);
+		}
+		else if (sc.TokenType != '[' && sc.TokenType != '%')
 		{
 			int pal1,pal2;
 

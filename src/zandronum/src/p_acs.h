@@ -992,7 +992,10 @@ public:
 		// [CW] Begin team additions.
 		PCD_GETTEAMPLAYERCOUNT,
 		// [CW] End team additions.
-/*381*/	PCODE_COMMAND_COUNT
+		// [Doruk-Aksoy] features/acs-parity: UZDoom's colourise and tint ranges at UZDoom's numbers, past its LSPEC5EX pair at 381 and 382.
+/*383*/	PCD_TRANSLATIONRANGE4 = 383,
+		PCD_TRANSLATIONRANGE5,
+/*385*/	PCODE_COMMAND_COUNT
 	};
 
 	// Some constants used by ACS scripts
