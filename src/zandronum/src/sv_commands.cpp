@@ -62,6 +62,7 @@
 #include "network.h"
 #include "p_local.h"
 #include "p_spec.h"
+#include "p_terrain.h"
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
@@ -3638,6 +3639,22 @@ void SERVERCOMMANDS_SetSectorGravity( ULONG ulSector, ULONG ulPlayerExtra, Serve
 	ServerCommands::SetSectorGravity command;
 	command.SetSector( &sectors[ulSector] );
 	command.SetGravity( sectors[ulSector].gravity );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+// [Doruk-Aksoy] features/acs-parity: each plane's own terrain by name, None for its flat's.
+void SERVERCOMMANDS_SetSectorTerrain( ULONG ulSector, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( ulSector >= (ULONG)numsectors )
+		return;
+
+	const sector_t &sec = sectors[ulSector];
+	const auto nameOf = []( int terrain ) { return terrain >= 0 && terrain < (int)Terrains.Size( ) ? Terrains[terrain].Name : FName( NAME_None ); };
+	ServerCommands::SetSectorTerrain command;
+	command.SetSector( &sectors[ulSector] );
+	command.SetFloorTerrain( nameOf( sec.terrainnum[sector_t::floor] ));
+	command.SetCeilingTerrain( nameOf( sec.terrainnum[sector_t::ceiling] ));
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 

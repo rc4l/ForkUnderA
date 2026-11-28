@@ -5846,6 +5846,7 @@ enum EACSFunctions
 	// [Doruk-Aksoy] features/acs-parity: UZDoom's functions at UZDoom's numbers, uzdoom@c51abb0161.
 	ACSF_GetMaxInventory = 93,
 	ACSF_SetSectorDamage,		// [Doruk-Aksoy] 94, uzdoom@d0c372692b: (int tag, int amount [, str type [, int interval [, int leakiness]]]), the last two ignored
+	ACSF_SetSectorTerrain,		// [Doruk-Aksoy] 95, uzdoom@7f454358b9: (int tag, int plane, str terrain)
 
 	// [Doruk-Aksoy] uzdoom@a1e8d83724: out of order, at upstream's number, which ACC compiles SetMusicVolume to (-97).
 	ACSF_SetMusicVolume = 97,
@@ -6055,7 +6056,7 @@ static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_
 	&& ACSF_fua_Trace == zx::acstraces::kTrace && ACSF_fua_TraceCallback == zx::acstraces::kTraceCallback
 	&& ACSF_fua_TraceHitCount == zx::acstraces::kTraceHitCount && ACSF_fua_SectorInfo == zx::acstraces::kSectorInfo, "the fua_ trace functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
-static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
+static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_SetSectorTerrain == zx::acsparity::kSetSectorTerrain && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
 	&& ACSF_GetLineY == zx::acsparity::kGetLineY && ACSF_SetActorFlag == zx::acsparity::kSetActorFlag && ACSF_SetTranslation == zx::acsparity::kSetTranslation && ACSF_SetTeamScore == zx::acsparity::kSetTeamScore
 	&& APROP_SoundClass == zx::acsparity::kAPropSoundClass && APROP_FriendlySeeBlocks == zx::acsparity::kAPropFriendlySeeBlocks && APROP_WaterDepth == zx::acsparity::kAPropWaterDepth, "UZDoom's functions keep UZDoom's numbers");
@@ -9757,6 +9758,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		// [Doruk-Aksoy] features/acs-parity: our sectors damage on a fixed 32-tic beat with leaks set by the amount, so UZDoom's interval and leakiness are left for later.
 		case ACSF_SetSectorDamage:
 			zx::acsparity::SetSectorDamage( args[0], args[1], argCount > 2 ? FBehavior::StaticLookupString( args[2] ) : NULL );
+			break;
+
+		case ACSF_SetSectorTerrain:
+			zx::acsparity::SetSectorTerrain( args[0], args[1], FBehavior::StaticLookupString( args[2] ));
 			break;
 
 		case ACSF_Ceil:

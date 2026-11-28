@@ -283,3 +283,12 @@ Command SetPlayerSoundClass
 	Player player
 	Name soundClass
 EndCommand
+
+# [Doruk-Aksoy] features/acs-parity: UZDoom's SetSectorTerrain and UDMF floorterrain/ceilingterrain, each plane's own terrain by name (None for
+# its flat's), since friction, splashes and a client's own scripts read it; its id is appended last so no existing one moves.
+Command SetSectorTerrain
+	ExtendedCommand
+	Sector sector
+	Name floorTerrain
+	Name ceilingTerrain
+EndCommand

@@ -66,6 +66,8 @@ TEST(AcsParity, ProximityCountingAnswersHowManyCounted)
 TEST(AcsParity, FunctionNumbersAreUZDooms)
 {
 	EXPECT_EQ(kGetMaxInventory, 93);
+	EXPECT_EQ(kSetSectorDamage, 94);
+	EXPECT_EQ(kSetSectorTerrain, 95);
 	EXPECT_EQ(kCheckProximity, 98);
 	EXPECT_EQ(kCheckActorState, 99);
 	EXPECT_EQ(kCheckClass, 200);
@@ -398,4 +400,26 @@ TEST(AcsParity, TeamScoresAreFragsWinsOrPointsByTheGameMode)
 	EXPECT_EQ(ComputeTeamScoreKind(true, true), kTeamScoreFrags);
 	EXPECT_EQ(ComputeTeamScoreKind(false, true), kTeamScoreWins);
 	EXPECT_EQ(ComputeTeamScoreKind(false, false), kTeamScorePoints);
+}
+
+TEST(AcsParity, ASectorPlanesOwnTerrainWinsOverItsFlats)
+{
+	EXPECT_EQ(ComputeSectorTerrain(-1, 4), 4);
+	EXPECT_EQ(ComputeSectorTerrain(0, 4), 0);
+	EXPECT_EQ(ComputeSectorTerrain(7, 4), 7);
+}
+
+TEST(AcsParity, SetSectorTerrainTakesOnlyTheFloorOrTheCeiling)
+{
+	EXPECT_TRUE(ComputeTerrainPlane(0));
+	EXPECT_TRUE(ComputeTerrainPlane(1));
+	EXPECT_FALSE(ComputeTerrainPlane(-1));
+	EXPECT_FALSE(ComputeTerrainPlane(2));
+}
+
+TEST(AcsParity, AnActorOnItsSectorsFloorWalksTheSectorsTerrain)
+{
+	// [Doruk-Aksoy] On a 3D floor of another flat, the base sector's script terrain is not the one underfoot.
+	EXPECT_EQ(ComputeThingFloorTerrain(true, 5, 2), 5);
+	EXPECT_EQ(ComputeThingFloorTerrain(false, -1, 2), 2);
 }

@@ -77,6 +77,9 @@ public:
 
 extern FTerrainTypeArray TerrainTypes;
 
+// [Doruk-Aksoy] The index of the TERRAIN definition named so, or -1 for none.
+int P_FindTerrain (FName name);
+
 // at game start
 void P_InitTerrainTypes ();
 

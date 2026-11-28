@@ -49,6 +49,7 @@
 #include "p_tags.h"
 // [BB] New #includes.
 #include "g_game.h"
+#include "p_terrain.h"
 #include "features/udmf-desaturation/computation/udmfdesaturation_compute.h"
 
 //===========================================================================
@@ -1331,6 +1332,8 @@ public:
 		// killough 3/7/98: end changes
 
 		sec->gravity = 1.f;	// [RH] Default sector gravity of 1.0
+		// [Doruk-Aksoy] Both planes walk their flat's terrain until a script or the map gives one.
+		sec->terrainnum[sector_t::floor] = sec->terrainnum[sector_t::ceiling] = -1;
 		sec->ZoneNumber = 0xFFFF;
 
 		// killough 8/28/98: initialize all sectors to normal friction
@@ -1469,6 +1472,15 @@ public:
 
 				case NAME_Gravity:
 					sec->gravity = float(CheckFloat(key));
+					continue;
+
+				// [Doruk-Aksoy] Ported from UZDoom: a plane's own terrain, whatever its flat.
+				case NAME_floorterrain:
+					sec->terrainnum[sector_t::floor] = P_FindTerrain(CheckString(key));
+					continue;
+
+				case NAME_ceilingterrain:
+					sec->terrainnum[sector_t::ceiling] = P_FindTerrain(CheckString(key));
 					continue;
 
 				case NAME_Lightcolor:

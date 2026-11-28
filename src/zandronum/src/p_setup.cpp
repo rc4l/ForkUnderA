@@ -1630,6 +1630,8 @@ void P_LoadSectors (MapData *map, FMissingTextureTracker &missingtex)
 		// killough 3/7/98: end changes
 
 		ss->gravity = 1.f;	// [RH] Default sector gravity of 1.0
+		// [Doruk-Aksoy] Both planes walk their flat's terrain until a script or the map gives one.
+		ss->terrainnum[sector_t::floor] = ss->terrainnum[sector_t::ceiling] = -1;
 		ss->ZoneNumber = 0xFFFF;
 
 		// [RH] Sectors default to white light with the default fade.

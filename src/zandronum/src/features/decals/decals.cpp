@@ -166,7 +166,8 @@ MarkSurface SurfaceOf (const Hit &h)
 	}
 	const FTexture *t = h.texture.isValid () ? TexMan[h.texture] : NULL;
 	s.sky = h.texture == skyflatnum;
-	s.liquid = Terrains[TerrainTypes[h.texture]].IsLiquid;
+	// [Doruk-Aksoy] The plane's own terrain, so a script's SetSectorTerrain wets or dries it as UZDoom's does.
+	s.liquid = Terrains[sectors[h.anchorSector].GetTerrain(h.anchorPlane)].IsLiquid;
 	s.portal = h.portal;
 	s.translucent = h.translucent;
 	s.scrolls = h.scrolls;

@@ -3962,6 +3962,17 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				zx::netreplication::TouchSector( ulIdx );
 		}
 
+		// [Doruk-Aksoy] A script's SetSectorTerrain gives back the map's own.
+		if (( sectors[ulIdx].SavedTerrainnum[sector_t::floor] != sectors[ulIdx].terrainnum[sector_t::floor] ) ||
+			( sectors[ulIdx].SavedTerrainnum[sector_t::ceiling] != sectors[ulIdx].terrainnum[sector_t::ceiling] ))
+		{
+			sectors[ulIdx].terrainnum[sector_t::floor] = sectors[ulIdx].SavedTerrainnum[sector_t::floor];
+			sectors[ulIdx].terrainnum[sector_t::ceiling] = sectors[ulIdx].SavedTerrainnum[sector_t::ceiling];
+
+			if ( zx::net::IsServer( ))
+				zx::netreplication::TouchSector( ulIdx );
+		}
+
 		if ( sectors[ulIdx].SavedSpecial != sectors[ulIdx].special )
 		{
 			sectors[ulIdx].special = sectors[ulIdx].SavedSpecial;

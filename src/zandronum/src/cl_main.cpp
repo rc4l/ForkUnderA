@@ -97,6 +97,7 @@
 #include "cl_main.h"
 #include "features/identity/zx_identitynet.h"
 #include "p_effect.h"
+#include "p_terrain.h"
 #include "p_lnspec.h"
 #include "possession.h"
 #include "c_console.h"
@@ -7551,6 +7552,14 @@ void ServerCommands::SetSectorAngleYOffset::Execute()
 void ServerCommands::SetSectorGravity::Execute()
 {
 	sector->gravity = gravity;
+}
+
+//*****************************************************************************
+// [Doruk-Aksoy] features/acs-parity: a plane's terrain a server script or the map gave it, a name this client's TERRAIN lumps lack giving its flat's.
+void ServerCommands::SetSectorTerrain::Execute()
+{
+	sector->terrainnum[sector_t::floor] = P_FindTerrain( floorTerrain );
+	sector->terrainnum[sector_t::ceiling] = P_FindTerrain( ceilingTerrain );
 }
 
 //*****************************************************************************

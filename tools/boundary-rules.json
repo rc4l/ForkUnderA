@@ -96,6 +96,15 @@
    "patterns": [
     {"name": "packet or socket outside the netcode", "regex": "\\bNETWORK_LaunchPacket\\s*\\(|\\bNETWORK_LaunchBroadcast\\s*\\(|\\bg_NetworkSocket\\b|\\bsendto\\s*\\(|\\brecvfrom\\s*\\("}
    ]
+  },
+  {
+   "name": "terrain-through-the-sector",
+   "why": "A sector plane's terrain may be its own, from a script's SetSectorTerrain or the map's UDMF floorterrain and ceilingterrain, so the playsim asks sector_t::GetTerrain or P_GetThingFloorType rather than indexing TerrainTypes by flat: the readers left have no sector to ask, and their allowances only shrink.",
+   "files": ["*.cpp", "*.h"],
+   "exclude": ["*/computation/*", "*_test.cpp"],
+   "patterns": [
+    {"name": "terrain read by flat", "regex": "\\bTerrainTypes\\s*\\["}
+   ]
   }
  ]
 }

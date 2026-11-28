@@ -679,6 +679,8 @@ struct sector_t : SectorReads<sector_t>
 	void SetFade(int r, int g, int b, bool bInformClients = true, bool bExecuteOnClient = false);
 	void ClosestPoint(fixed_t x, fixed_t y, fixed_t &ox, fixed_t &oy) const;
 	sector_t *GetHeightSec() const;
+	// [Doruk-Aksoy] The terrain a plane walks, splashes and clips feet by: its own if a script or the map gave one, else its flat's.
+	int GetTerrain(int pos) const;
 
 	DInterpolation *SetInterpolation(int position, bool attach);
 	void StopInterpolation(int position);
@@ -890,6 +892,8 @@ struct sector_t : SectorReads<sector_t>
 	struct msecnode_t *touching_thinglist;				// phares 3/14/98
 
 	float gravity;		// [RH] Sector gravity (1.0 is normal)
+	// [Doruk-Aksoy] A script's terrain for the floor and ceiling (ACS SetSectorTerrain, UDMF floorterrain/ceilingterrain), -1 for the flat's own.
+	int terrainnum[2];
 	short damage;		// [RH] Damage to do while standing on floor
 	short mod;			// [RH] Means-of-death for applied damage
 
@@ -963,6 +967,7 @@ struct sector_t : SectorReads<sector_t>
 	// [BC] Backup other numberous elements for resetting the map.
 	FDynamicColormap	*SavedColorMap;
 	float				SavedGravity;
+	int				SavedTerrainnum[2];
 	fixed_t				SavedFloorXOffset;
 	fixed_t				SavedFloorYOffset;
 	fixed_t				SavedCeilingXOffset;

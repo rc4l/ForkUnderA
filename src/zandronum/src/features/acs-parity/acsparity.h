@@ -37,6 +37,9 @@ const char* FloorTerrainName(AActor* actor);
 // [Doruk-Aksoy] SetSectorDamage: `amount` of damage of `type` to players in sectors with `tag`, as Sector_SetDamage gives it; a type sectors can't hold is normal damage, warned once, and a negative amount none.
 void SetSectorDamage(int tag, int32_t amount, const char* type);
 
+// [Doruk-Aksoy] SetSectorTerrain: the named TERRAIN on the floor (0) or ceiling (1) of the sectors with `tag`, a name no TERRAIN lump defines giving back the flat's.
+void SetSectorTerrain(int tag, int plane, const char* name);
+
 // [Doruk-Aksoy] Whether `name` is an actor class.
 bool IsActorClass(const char* name);
 

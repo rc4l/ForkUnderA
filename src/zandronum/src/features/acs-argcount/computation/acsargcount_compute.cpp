@@ -99,6 +99,7 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 92, 6, "Warp" },
 	{ 93, 2, "GetMaxInventory" },
 	{ 94, 2, "SetSectorDamage" },
+	{ 95, 3, "SetSectorTerrain" },
 	{ 97, 1, "SetMusicVolume" },
 	{ 98, 3, "CheckProximity" },
 	{ 99, 2, "CheckActorState" },
