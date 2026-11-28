@@ -29,7 +29,7 @@ enum Function
 	kSectorInfo = 24061,
 };
 
-// [Doruk-Aksoy] The TRF_ flags at UZDoom's values, plus one of ours far above them.
+// [Doruk-Aksoy] The TRF_ flags at UZDoom's values, plus ours far above them.
 enum TraceFlag
 {
 	kTrfAbsPosition = 1,
@@ -45,6 +45,15 @@ enum TraceFlag
 	kTrfBlockSelf = 1024,
 	kTrfFuaPhysicalSize = 1 << 20,
 	kTrfFuaAllLines = 1 << 21,
+	kTrfFuaNoUnlagged = 1 << 22,
+};
+
+// [Doruk-Aksoy] Whose view a rule trace's rewind takes: its ignored actor's, its activator's, or no one's.
+enum RewindViewer
+{
+	kViewerNone,
+	kViewerIgnored,
+	kViewerActivator,
 };
 
 // [Doruk-Aksoy] What a trace hit, at UZDoom's TRACE_Hit values.
@@ -261,6 +270,12 @@ Fixed3 ComputeLineTraceStart(int flags, const Fixed3 &actor, int64_t floorclip, 
 
 // [Doruk-Aksoy] UZDoom's CheckLineTrace: stop at anything but an actor the flags let the trace pass, or a snapshot mirror, which it always passes.
 TraceStatus ComputeLineTraceDecision(int type, bool mirror, bool thruActors, bool thruSpecies, bool sameSpecies);
+
+// [Doruk-Aksoy] Whether a trace rewinds the other players to what its player saw, as a hitscan does: a player's trace without TRF_FUA_NOUNLAGGED, unless the world is already rewound.
+bool ComputeTraceRewinds(bool playerTrace, int flags, bool alreadyRewound);
+
+// [Doruk-Aksoy] A rule trace has no shooter of its own, so it rewinds to its ignored actor's view when that is a player, else its activator's.
+RewindViewer ComputeRewindViewer(bool ignoredIsPlayer, bool activatorIsPlayer);
 
 // [Doruk-Aksoy] UZDoom's LinePart for a wall tier: 0 upper, 1 middle, 2 lower; a 3D floor's side counts as middle.
 int ComputeLinePart(int tier);

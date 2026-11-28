@@ -23,6 +23,7 @@
 #include "r_state.h"
 #include "tables.h"
 #include "textures/textures.h"
+#include "unlagged.h"
 #include "features/acs-fields/computation/fields_compute.h"
 #include "features/acs-handles/acshandles.h"
 #include "features/acs-queries/acsqueries.h"
@@ -56,6 +57,37 @@ bool g_warnedCallback = false;
 
 // [Doruk-Aksoy] How many callbacks are running, during which no trace may start.
 int g_callbackDepth = 0;
+
+// [Doruk-Aksoy] For one trace, the other players rewound to what `viewer` saw as a hitscan's are, with any rewind a callback's own attack starts inside it blocked.
+class RewindScope
+{
+public:
+	explicit RewindScope(AActor *viewer) : who(viewer)
+	{
+		if (who == NULL)
+			return;
+		UNLAGGED_Reconcile(who);
+		UNLAGGED_AddReconciliationBlocker();
+	}
+	~RewindScope()
+	{
+		if (who == NULL)
+			return;
+		UNLAGGED_RemoveReconciliationBlocker();
+		UNLAGGED_Restore(who);
+	}
+	RewindScope(const RewindScope &) = delete;
+	RewindScope &operator=(const RewindScope &) = delete;
+
+private:
+	AActor *const who;
+};
+
+// [Doruk-Aksoy] `viewer` when a trace of its rewinds by `flags`, else no one.
+AActor *RewindFor(AActor *viewer, int flags)
+{
+	return viewer != NULL && ComputeTraceRewinds(viewer->player != NULL, flags, UNLAGGED_IsReconciled()) ? viewer : NULL;
+}
 
 // [Doruk-Aksoy] What UZDoom's CheckLineTrace needs at each hit.
 struct LineTraceData
@@ -285,8 +317,11 @@ int LineTrace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t h, 
 	LineTraceData data = { t1, (flags & kTrfThruActors) != 0, (flags & kTrfThruSpecies) != 0 };
 	FTraceResults res;
 	const fixed_t sx = fixed_t::FromRaw(start.x), sy = fixed_t::FromRaw(start.y);
-	::Trace(sx, sy, fixed_t::FromRaw(start.z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
-		fixed_t::FromRaw(distance), masks.actors, masks.lines, t1, res, masks.trace, CheckLineTrace, &data);
+	{
+		const RewindScope rewind(RewindFor(t1, flags));
+		::Trace(sx, sy, fixed_t::FromRaw(start.z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
+			fixed_t::FromRaw(distance), masks.actors, masks.lines, t1, res, masks.trace, CheckLineTrace, &data);
+	}
 	const Hit hit = HitOf(res, dir);
 	tracers.SetResult(id, hit, hit.v[kTrHitType] != kHitNone ? std::vector<Hit>(1, hit) : std::vector<Hit>());
 	return hit.v[kTrHitType];
@@ -344,11 +379,16 @@ int Trace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t x, int3
 	RuleTrace run(tracers, id, activator, tracer->rules, dir, (flags & kTrfNoSky) != 0);
 	FTraceResults res;
 	const fixed_t sx = fixed_t::FromRaw(x), sy = fixed_t::FromRaw(y);
-	::Trace(sx, sy, fixed_t::FromRaw(z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
-		fixed_t::FromRaw(distance), masks.actors, masks.lines, skip, res, masks.trace, CheckRules, &run);
-	// [Doruk-Aksoy] Trace() ends on a floor or ceiling without asking, so the rules decide that hit here.
-	if (!run.run.aborted && res.HitType != TRACE_HitNone && !run.Saw(res))
-		run.Decide(res);
+	const RewindViewer viewer = ComputeRewindViewer(skip != NULL && skip->player != NULL, activator != NULL && activator->player != NULL);
+	{
+		// [Doruk-Aksoy] Callbacks run inside the rewound world, as the shooter saw it.
+		const RewindScope rewind(RewindFor(viewer == kViewerIgnored ? skip : viewer == kViewerActivator ? activator : NULL, flags));
+		::Trace(sx, sy, fixed_t::FromRaw(z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
+			fixed_t::FromRaw(distance), masks.actors, masks.lines, skip, res, masks.trace, CheckRules, &run);
+		// [Doruk-Aksoy] Trace() ends on a floor or ceiling without asking, so the rules decide that hit here.
+		if (!run.run.aborted && res.HitType != TRACE_HitNone && !run.Saw(res))
+			run.Decide(res);
+	}
 	const Hit last = run.run.aborted ? ComputeEmptyHit() : HitOf(res, dir);
 	tracers.SetResult(id, last, run.run.hits);
 	return int(run.run.hits.size());

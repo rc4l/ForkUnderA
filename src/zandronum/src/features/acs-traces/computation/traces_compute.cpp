@@ -88,6 +88,18 @@ TraceStatus ComputeLineTraceDecision(int type, bool mirror, bool thruActors, boo
 	return mirror || thruActors || (thruSpecies && sameSpecies) ? kTraceSkip : kTraceStop;
 }
 
+bool ComputeTraceRewinds(bool playerTrace, int flags, bool alreadyRewound)
+{
+	return playerTrace && (flags & kTrfFuaNoUnlagged) == 0 && !alreadyRewound;
+}
+
+RewindViewer ComputeRewindViewer(bool ignoredIsPlayer, bool activatorIsPlayer)
+{
+	if (ignoredIsPlayer)
+		return kViewerIgnored;
+	return activatorIsPlayer ? kViewerActivator : kViewerNone;
+}
+
 int ComputeLinePart(int tier)
 {
 	switch (tier)
