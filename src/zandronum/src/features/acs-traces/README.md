@@ -10,6 +10,12 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   dropped. Actors are hit at their attack extents unless `TRF_FUA_PHYSICALSIZE` asks for `TRACE_NoPassWidth`.
 - A trace passes through a client's snapshot mirror (`NETFL_MIRROR`), which only draws the actor scripts
   read, so no hit is ever a mirror.
+- A server's trace from a player is unlagged, as its hitscans are (`RewindScope`): `UNLAGGED_Reconcile` puts the other
+  players and the planes back where its client saw them, a reconciliation blocker keeps a callback's own attack
+  from rewinding again, and `UNLAGGED_Restore` ends it. `ComputeTraceRewinds` decides (a player's trace,
+  no `TRF_FUA_NOUNLAGGED`, not already rewound) and `ComputeRewindViewer` picks `fua_Trace`'s player: its
+  `ignore` actor, else its activator. Reconcile itself does nothing on a client, for a bot, a player with
+  `cl_unlagged` off or under `sv_nounlagged`.
 - A hit is turned into ACS values once (`ComputeTraceHit`): its actor as a handle, lines and sectors as
   indices plus their first ID or tag, positions cut to ACS fixed point, the texture as a name.
 - `fua_Trace`'s rules stand in for `LineTracer.TraceCallback`: `ComputeRuleAction` picks the first rule
@@ -39,12 +45,14 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
 - `g_level.cpp`: `EnterLevel`, so the full-script warning shows once a map.
 - `version.h`: SAVEVER 4541, 4542 and 4543.
 - `features/acs-argcount`: each function's minimum argument count.
+- `unlagged.cpp`: `UNLAGGED_Reconcile`, `UNLAGGED_Restore`, `UNLAGGED_IsReconciled` and the reconciliation
+  blocker, around each trace.
 
 ## Tests
 
 - `computation/traces_compute_test.cpp`: the `TRF_` masks and `TRF_BLOCKSELF` per shooter, angles,
   direction and start offsets, the pass-or-stop decision, wall parts and textures, hits of every kind as
-  ACS values, the 16-tracer and 64-hit limits, and saved tracers with damaged inputs; rule kinds, actions
+  ACS values, the 16-tracer and 64-hit limits, saved tracers with damaged inputs, and whose view a trace rewinds to; rule kinds, actions
   and filters, which filter fits which kind, first-match decisions, recording and aborting, planes ending
   the trace, 32 rules a tracer, and rules saved with their names and loaded from runs without them.
 - `fuactl scenarios acstraces`: a wall with every `TR_` property, a `BLOCKHITSCAN` line, a step's upper and
@@ -64,3 +72,8 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   observer and a late joiner, then on the server, each tracing its own copy of the map and its actors
   with its own tracer ids; the callback that removes an imp runs last, on every machine. The server runs
   the snapshot netcode at `fua_snap_nolegacy 2`.
+- `fuactl scenarios netacsunlagged`: the first player's client runs `fixtures/acsunlagged/unlagged.bcs`' NET
+  script, three traces at where the second player stands now: at 200 ms a strafing target dodges the
+  rewound one alone, as the shooter saw it elsewhere, while `TRF_FUA_NOUNLAGGED` and a MapSpot's trace hit
+  it; standing still, it is hit by all three. It fails on a build without the rewind and with
+  `sv_nounlagged 1`.
