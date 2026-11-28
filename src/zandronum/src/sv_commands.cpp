@@ -63,6 +63,7 @@
 #include "p_local.h"
 #include "p_spec.h"
 #include "p_terrain.h"
+#include "features/trnslate/computation/trnslate_compute.h"   // [Doruk-Aksoy] ComputeWriteTranslationRange
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
@@ -5756,60 +5757,23 @@ void SERVERCOMMANDS_SetCameraToTexture( AActor *pCamera, const char *pszTexture,
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_CreateTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulPal1, ULONG ulPal2, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_CreateTranslation( ULONG ulTranslation, const zx::trnslate::TranslationRange &range, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	const bool bIsEdited = SERVER_IsTranslationEdited ( ulTranslation );
 
 	NetCommand command ( SVC_CREATETRANSLATION );
 	command.addShort ( ulTranslation );
 	command.addBit ( bIsEdited );
-	command.addShortByte ( CREATETRANSLATION_PALETTE, 7 );
-	command.addByte ( ulStart );
-	command.addByte ( ulEnd );
-	command.addByte ( ulPal1 );
-	command.addByte ( ulPal2 );
-	command.sendCommandToClients ( ulPlayerExtra, flags );
-
-}
-//*****************************************************************************
-//
-void SERVERCOMMANDS_CreateTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulR1, ULONG ulG1, ULONG ulB1, ULONG ulR2, ULONG ulG2, ULONG ulB2, ULONG ulPlayerExtra, ServerCommandFlags flags )
-{
-	const bool bIsEdited = SERVER_IsTranslationEdited ( ulTranslation );
-
-	NetCommand command ( SVC_CREATETRANSLATION );
-	command.addShort ( ulTranslation );
-	command.addBit ( bIsEdited );
-	command.addShortByte ( CREATETRANSLATION_RGB, 7 );
-	command.addByte ( ulStart );
-	command.addByte ( ulEnd );
-	command.addByte ( ulR1 );
-	command.addByte ( ulG1 );
-	command.addByte ( ulB1 );
-	command.addByte ( ulR2 );
-	command.addByte ( ulG2 );
-	command.addByte ( ulB2 );
-	command.sendCommandToClients ( ulPlayerExtra, flags );
-}
-
-//*****************************************************************************
-//
-void SERVERCOMMANDS_CreateDesaturatedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, float fR1, float fG1, float fB1, float fR2, float fG2, float fB2, ULONG ulPlayerExtra, ServerCommandFlags flags )
-{
-	const bool bIsEdited = SERVER_IsTranslationEdited ( ulTranslation );
-
-	NetCommand command ( SVC_CREATETRANSLATION );
-	command.addShort ( ulTranslation );
-	command.addBit ( bIsEdited );
-	command.addShortByte ( CREATETRANSLATION_DESATURATED, 7 );
-	command.addByte ( ulStart );
-	command.addByte ( ulEnd );
-	command.addFloat ( fR1 );
-	command.addFloat ( fG1 );
-	command.addFloat ( fB1 );
-	command.addFloat ( fR2 );
-	command.addFloat ( fG2 );
-	command.addFloat ( fB2 );
+	// [Doruk-Aksoy] The range's kind and fields in features/trnslate's one layout, which the client reads back.
+	struct Sink
+	{
+		NetCommand &c;
+		void shortByte( int v, int bits ) { c.addShortByte( v, bits ); }
+		void byte( int v ) { c.addByte( v ); }
+		void longValue( int v ) { c.addLong( v ); }
+		void floatValue( float v ) { c.addFloat( v ); }
+	} sink = { command };
+	zx::trnslate::ComputeWriteTranslationRange( sink, range );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 

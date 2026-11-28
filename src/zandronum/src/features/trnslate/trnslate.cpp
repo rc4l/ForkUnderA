@@ -18,6 +18,20 @@ using namespace zx::trnslate;
 
 static TMap<FName, int> customTranslationMap;
 
+void zx::trnslate::AddTranslationRange(FRemapTable *table, const TranslationRange &range)
+{
+	if (table == NULL)
+		return;
+	switch (range.kind)
+	{
+	case kRangePalette: table->AddIndexRange(range.start, range.end, range.pal1, range.pal2); break;
+	case kRangeRgb: table->AddColorRange(range.start, range.end, range.r1, range.g1, range.b1, range.r2, range.g2, range.b2); break;
+	case kRangeDesaturated: table->AddDesaturation(range.start, range.end, range.fr1, range.fg1, range.fb1, range.fr2, range.fg2, range.fb2); break;
+	case kRangeColourise: table->AddColourisation(range.start, range.end, range.r1, range.g1, range.b1); break;
+	case kRangeTint: table->AddTint(range.start, range.end, range.r1, range.g1, range.b1, range.amount); break;
+	}
+}
+
 void zx::trnslate::SetActorTranslation(AActor *actor, bool resetToDefault, int tnum, bool localOnly)
 {
 	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does, unless a clientside script changes its own copy.

@@ -261,6 +261,19 @@ export function teamInfo(lines) {
   return `ClearTeams\n\n${Object.keys(lines).map(team).join("\n")}`;
 }
 
+// [Doruk-Aksoy] A Doom-format picture `width` by `height` (up to 254) of the one palette `index`, its offsets putting its bottom middle on the actor by default.
+export function doomPicture(width, height, index, { left = width >> 1, top = height } = {}) {
+  const head = Buffer.alloc(8 + 4 * width);
+  head.writeUInt16LE(width, 0);
+  head.writeUInt16LE(height, 2);
+  head.writeInt16LE(left, 4);
+  head.writeInt16LE(top, 6);
+  // [Doruk-Aksoy] Each column one post from the top, padded a byte either side, then the 0xFF that ends it.
+  const column = Buffer.from([0, height, 0, ...new Array(height).fill(index), 0, 0xFF]);
+  for (let x = 0; x < width; x++) head.writeUInt32LE(head.length + x * column.length, 8 + 4 * x);
+  return Buffer.concat([head, ...new Array(width).fill(column)]);
+}
+
 // [rc4l] A pk3 from files by path ({ name, data }), stored rather than deflated: what MODELDEF needs, since it finds a model by full path and a wad's lumps have none.
 // [Doruk-Aksoy] { deflate: true } compresses every file as most mods ship theirs, which the engine then inflates whole to read.
 export function pk3(files, { deflate = false } = {}) {

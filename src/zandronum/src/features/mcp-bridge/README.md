@@ -82,6 +82,8 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   page through every sector's plane heights, light, colour, fade, flats, gravity, friction, special,
   reflection, scale and rotation, every sidedef's textures, light and flags, and every line's alpha and the
   flags clients move by (`features/net-protocol/lineflags.h`).
+  `world.translation {translation | name}` reads one translation table, by an actor's translation value or a
+  TRNSLATE name: its remap and colours, with the game palette's colours and order (`ComputeIntListJson`).
 - **Netgames**: `net.state` is this instance's side of a netgame: its role, a client's connection, the
   server tic it last heard of and its ping, and a server's clients with each one's ping and the last
   server tic it said it saw. `fuactl netdiff` and `netplay` read it.

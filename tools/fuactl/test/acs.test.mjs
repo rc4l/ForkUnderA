@@ -100,8 +100,18 @@ test("a special's arguments are pushed in order, then LSPECn names the special",
 test("every named p-code is numbered as p_acs.h's enum orders it", async () => {
   const { readFileSync } = await import("node:fs");
   const header = readFileSync(new URL("../../../src/zandronum/src/p_acs.h", import.meta.url), "latin1");
-  const order = [...header.slice(header.indexOf("PCD_NOP")).matchAll(/\b(PCD_\w+)\s*,/g)].map((m) => m[1]);
-  for (const [name, num] of Object.entries(PCD)) assert.equal(order.indexOf(`PCD_${name}`), num, name);
+  const start = header.indexOf("PCD_NOP");
+  // [Doruk-Aksoy] Counting on from each explicit number, as UZDoom's TRANSLATIONRANGE4 = 383 starts past a gap.
+  const body = header.slice(start, header.indexOf("PCODE_COMMAND_COUNT", start)).replace(/\/\/.*$/gm, "").replace(/\/\*.*?\*\//g, "");
+  const values = new Map();
+  let next = 0;
+  for (const m of body.matchAll(/\b(PCD_\w+)\s*(?:=\s*(\d+))?\s*,/g)) {
+    const v = m[2] !== undefined ? Number(m[2]) : next;
+    values.set(m[1], v);
+    next = v + 1;
+  }
+  assert.equal(values.get("PCD_GETTEAMPLAYERCOUNT"), 381);
+  for (const [name, num] of Object.entries(PCD)) assert.equal(values.get(`PCD_${name}`), num, name);
 });
 
 // [rc4l] Each ACS function by its value in p_acs.cpp's EACSFunctions, counting on from each explicit number.
@@ -175,6 +185,8 @@ test("CreateTranslation pushes the number, then each range's four indices before
   assert.deepEqual(createTranslation(2, [[0, 255, 112, 127], [16, 31, 176, 191]]), [PCD.PUSHNUMBER, 2, PCD.STARTTRANSLATION,
     PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 255, PCD.PUSHNUMBER, 112, PCD.PUSHNUMBER, 127, PCD.TRANSLATIONRANGE1,
     PCD.PUSHNUMBER, 16, PCD.PUSHNUMBER, 31, PCD.PUSHNUMBER, 176, PCD.PUSHNUMBER, 191, PCD.TRANSLATIONRANGE1, PCD.ENDTRANSLATION]);
+  assert.deepEqual(createTranslation(1, [{ op: "TRANSLATIONRANGE5", args: [16, 48, 40, 0, 64, 255] }]), [PCD.PUSHNUMBER, 1, PCD.STARTTRANSLATION,
+    ...[16, 48, 40, 0, 64, 255].flatMap((v) => [PCD.PUSHNUMBER, v]), 384, PCD.ENDTRANSLATION]);
 });
 
 // [rc4l] The bitmask puke tagmanager and udmfuserkeys judge maps by, one bit per check so a failure names which.

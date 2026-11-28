@@ -3111,14 +3111,7 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// Send out any translations that have been edited since the start of the level.
 	for ( ulIdx = 0; ulIdx < g_EditedTranslationList.Size( ); ulIdx++ )
-	{
-		if ( g_EditedTranslationList[ulIdx].ulType == DLevelScript::PCD_TRANSLATIONRANGE1 )
-			SERVERCOMMANDS_CreateTranslation( g_EditedTranslationList[ulIdx].ulIdx, g_EditedTranslationList[ulIdx].ulStart, g_EditedTranslationList[ulIdx].ulEnd, g_EditedTranslationList[ulIdx].ulPal1, g_EditedTranslationList[ulIdx].ulPal2, ulClient, SVCF_ONLYTHISCLIENT );
-		else if ( g_EditedTranslationList[ulIdx].ulType == DLevelScript::PCD_TRANSLATIONRANGE2 )
-			SERVERCOMMANDS_CreateTranslation( g_EditedTranslationList[ulIdx].ulIdx, g_EditedTranslationList[ulIdx].ulStart, g_EditedTranslationList[ulIdx].ulEnd, g_EditedTranslationList[ulIdx].ulR1, g_EditedTranslationList[ulIdx].ulG1, g_EditedTranslationList[ulIdx].ulB1, g_EditedTranslationList[ulIdx].ulR2, g_EditedTranslationList[ulIdx].ulG2, g_EditedTranslationList[ulIdx].ulB2, ulClient, SVCF_ONLYTHISCLIENT );
-		else
-			SERVERCOMMANDS_CreateDesaturatedTranslation( g_EditedTranslationList[ulIdx].ulIdx, g_EditedTranslationList[ulIdx].ulStart, g_EditedTranslationList[ulIdx].ulEnd, g_EditedTranslationList[ulIdx].fR1, g_EditedTranslationList[ulIdx].fG1, g_EditedTranslationList[ulIdx].fB1, g_EditedTranslationList[ulIdx].fR2, g_EditedTranslationList[ulIdx].fG2, g_EditedTranslationList[ulIdx].fB2, ulClient, SVCF_ONLYTHISCLIENT );
-	}
+		SERVERCOMMANDS_CreateTranslation( g_EditedTranslationList[ulIdx].ulIdx, g_EditedTranslationList[ulIdx].range, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [AK] Send out any looping sounds that might be playing on an actor's sound channels.
 	for ( const ZxLoopingSound &loop : g_LoopingSounds )
@@ -4497,57 +4490,12 @@ void SERVER_ResetInventory( ULONG ulClient, const bool bChangeClientWeapon, bool
 
 //*****************************************************************************
 //
-void SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulPal1, ULONG ulPal2 )
+void SERVER_AddEditedTranslation( ULONG ulTranslation, const zx::trnslate::TranslationRange &range )
 {
 	EDITEDTRANSLATION_s	Translation;
 
 	Translation.ulIdx = ulTranslation;
-	Translation.ulStart = ulStart;
-	Translation.ulEnd = ulEnd;
-	Translation.ulPal1 = ulPal1;
-	Translation.ulPal2 = ulPal2;
-	Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE1;
-
-	g_EditedTranslationList.Push( Translation );
-}
-
-//*****************************************************************************
-//
-void SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulR1, ULONG ulG1, ULONG ulB1, ULONG ulR2, ULONG ulG2, ULONG ulB2 )
-{
-	EDITEDTRANSLATION_s	Translation;
-
-	Translation.ulIdx = ulTranslation;
-	Translation.ulStart = ulStart;
-	Translation.ulEnd = ulEnd;
-	Translation.ulR1 = ulR1;
-	Translation.ulG1 = ulG1;
-	Translation.ulB1 = ulB1;
-	Translation.ulR2 = ulR2;
-	Translation.ulG2 = ulG2;
-	Translation.ulB2 = ulB2;
-	Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE2;
-
-	g_EditedTranslationList.Push( Translation );
-}
-
-//*****************************************************************************
-//
-void SERVER_AddEditedDesaturatedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, float fR1, float fG1, float fB1, float fR2, float fG2, float fB2 )
-{
-	EDITEDTRANSLATION_s	Translation;
-
-	Translation.ulIdx = ulTranslation;
-	Translation.ulStart = ulStart;
-	Translation.ulEnd = ulEnd;
-	Translation.fR1 = fR1;
-	Translation.fG1 = fG1;
-	Translation.fB1 = fB1;
-	Translation.fR2 = fR2;
-	Translation.fG2 = fG2;
-	Translation.fB2 = fB2;
-	Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE3;
-
+	Translation.range = range;
 	g_EditedTranslationList.Push( Translation );
 }
 

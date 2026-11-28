@@ -191,3 +191,10 @@ TEST(ComputeSortActorRows, ByNetworkIdKeepingTiesInOrder)
 	EXPECT_EQ(2u, rows[2].netId);
 	EXPECT_EQ(9u, rows[3].netId);
 }
+
+TEST(ComputeIntListJson, AKeyAndItsNumbers)
+{
+	const int64_t values[] = { 0, -3, 16777215, 4294967296LL };
+	EXPECT_EQ("\"remap\":[0,-3,16777215,4294967296]", ComputeIntListJson("remap", values, 4));
+	EXPECT_EQ("\"none\":[]", ComputeIntListJson("none", values, 0));
+}

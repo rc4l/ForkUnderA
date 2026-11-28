@@ -226,6 +226,9 @@ std2:
 		"^"							{ RET('^'); }
 		"|"							{ RET('|'); }
 		"?"							{ RET('?'); }
+		/* [Doruk-Aksoy] Ported from uzdoom@ad89d3eea0: the colourise and tint range forms' marks. */
+		"#"							{ RET('#'); }
+		"@"							{ RET('@'); }
 
 		[ \t\v\f\r]+				{ goto std1; }
 		"\n"						{ goto newline; }

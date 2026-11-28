@@ -115,6 +115,9 @@
 #include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
 #include "computation/acsautomap_compute.h"   // [rc4l] ComputeAutomapStatus
 #include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
+#include "features/net-replication/translations.h"   // [Doruk-Aksoy] SendTranslationRange
+#include "features/trnslate/computation/trnslate_compute.h"   // [Doruk-Aksoy] TranslationRange
+#include "features/trnslate/trnslate.h"   // [Doruk-Aksoy] AddTranslationRange
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
@@ -9847,6 +9850,17 @@ static bool CharArrayParms(int &capacity, int &offset, int &a, FACSStackMemory& 
 	return true;
 }
 
+// [Doruk-Aksoy] A TRANSLATIONRANGE opcode's range on the translation StartTranslation opened, which a server sends its clients and keeps for joiners.
+static void AddScriptTranslationRange( FRemapTable *translation, const zx::trnslate::TranslationRange &range )
+{
+	if ( translation == NULL )
+		return;
+	zx::trnslate::AddTranslationRange( translation, range );
+	// [Doruk-Aksoy] A range the table refused changed nothing, and its indices would wrap to valid ones in the send's bytes.
+	if ( zx::trnslate::ComputeTranslationRangeFits( range ))
+		zx::netreplication::SendTranslationRange( ACS_GetTranslationIndex( translation ), range );
+}
+
 int DLevelScript::RunScript ()
 {
 	DACSThinker *controller = DACSThinker::ActiveThinker;
@@ -12912,99 +12926,89 @@ scriptwait:
 
 		case PCD_TRANSLATIONRANGE1:
 			{ // translation using palette shifting
-				int start = STACK(4);
-				int end = STACK(3);
-				int pal1 = STACK(2);
-				int pal2 = STACK(1);
+				zx::trnslate::TranslationRange range;
+				range.kind = zx::trnslate::kRangePalette;
+				range.start = STACK(4);
+				range.end = STACK(3);
+				range.pal1 = STACK(2);
+				range.pal2 = STACK(1);
 				sp -= 4;
-
-				if (translation != NULL)
-					translation->AddIndexRange(start, end, pal1, pal2);
-
-				// [BC] If we're the server, send the new translation off to clients, and
-				// store it in our list so we can tell new clients who connect about the
-				// translation.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				{
-					// [BB] Obtain the index of the translation.
-					const int translationindex = ACS_GetTranslationIndex( translation );
-					SERVERCOMMANDS_CreateTranslation(translationindex, start, end, pal1, pal2 );
-					SERVER_AddEditedTranslation(translationindex, start, end, pal1, pal2 );
-				}
+				AddScriptTranslationRange( translation, range );
 			}
 			break;
 
 		case PCD_TRANSLATIONRANGE2:
 			{ // translation using RGB values
 			  // (would HSV be a good idea too?)
-				int start = STACK(8);
-				int end = STACK(7);
-				int r1 = STACK(6);
-				int g1 = STACK(5);
-				int b1 = STACK(4);
-				int r2 = STACK(3);
-				int g2 = STACK(2);
-				int b2 = STACK(1);
+				zx::trnslate::TranslationRange range;
+				range.kind = zx::trnslate::kRangeRgb;
+				range.start = STACK(8);
+				range.end = STACK(7);
+				range.r1 = STACK(6);
+				range.g1 = STACK(5);
+				range.b1 = STACK(4);
+				range.r2 = STACK(3);
+				range.g2 = STACK(2);
+				range.b2 = STACK(1);
 				sp -= 8;
-
-				if (translation != NULL)
-					translation->AddColorRange(start, end, r1, g1, b1, r2, g2, b2);
-
-				// [BC] If we're the server, send the new translation off to clients, and
-				// store it in our list so we can tell new clients who connect about the
-				// translation.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				{
-					// [BB] Obtain the index of the translation.
-					const int translationindex = ACS_GetTranslationIndex( translation );
-					SERVERCOMMANDS_CreateTranslation( translationindex, start, end, r1, g1, b1, r2, g2, b2 );
-					SERVER_AddEditedTranslation( translationindex, start, end, r1, g1, b1, r2, g2, b2 );
-				}
+				AddScriptTranslationRange( translation, range );
 			}
 			break;
 
 		case PCD_TRANSLATIONRANGE3:
 			{ // translation using desaturation
-				int start = STACK(8);
-				int end = STACK(7);
-				fixed_t r1 = STACK(6);
-				fixed_t g1 = STACK(5);
-				fixed_t b1 = STACK(4);
-				fixed_t r2 = STACK(3);
-				fixed_t g2 = STACK(2);
-				fixed_t b2 = STACK(1);
+				// [Doruk-Aksoy] In float, as the clients get it, which holds every fixed-point value the range keeps (0 to 2) exactly.
+				zx::trnslate::TranslationRange range;
+				range.kind = zx::trnslate::kRangeDesaturated;
+				range.start = STACK(8);
+				range.end = STACK(7);
+				range.fr1 = FIXED2FLOAT( fixed_t( STACK(6) ));
+				range.fg1 = FIXED2FLOAT( fixed_t( STACK(5) ));
+				range.fb1 = FIXED2FLOAT( fixed_t( STACK(4) ));
+				range.fr2 = FIXED2FLOAT( fixed_t( STACK(3) ));
+				range.fg2 = FIXED2FLOAT( fixed_t( STACK(2) ));
+				range.fb2 = FIXED2FLOAT( fixed_t( STACK(1) ));
 				sp -= 8;
+				AddScriptTranslationRange( translation, range );
+			}
+			break;
 
-				if (translation != NULL)
-					translation->AddDesaturation(start, end,
-						FIXED2DBL(r1), FIXED2DBL(g1), FIXED2DBL(b1),
-						FIXED2DBL(r2), FIXED2DBL(g2), FIXED2DBL(b2));
+		case PCD_TRANSLATIONRANGE4:
+			{ // [Doruk-Aksoy] Ported from UZDoom: colourise translation.
+				zx::trnslate::TranslationRange range;
+				range.kind = zx::trnslate::kRangeColourise;
+				range.start = STACK(5);
+				range.end = STACK(4);
+				range.r1 = STACK(3);
+				range.g1 = STACK(2);
+				range.b1 = STACK(1);
+				sp -= 5;
+				AddScriptTranslationRange( translation, range );
+			}
+			break;
 
-				// [AK] If we're the server, send the new translation off to clients, and
-				// store it in our list so we can tell new clients who connect about the
-				// translation.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				{
-					// [AK] Obtain the index of the translation.
-					const int translationindex = ACS_GetTranslationIndex( translation );
-					float fR1 = FIXED2FLOAT( r1 );
-					float fG1 = FIXED2FLOAT( g1 );
-					float fB1 = FIXED2FLOAT( b1 );
-					float fR2 = FIXED2FLOAT( r2 );
-					float fG2 = FIXED2FLOAT( g2 );
-					float fB2 = FIXED2FLOAT( b2 );
-
-					SERVERCOMMANDS_CreateDesaturatedTranslation( translationindex, start, end, fR1, fG1, fB1, fR2, fG2, fB2 );
-					SERVER_AddEditedDesaturatedTranslation( translationindex, start, end, fR1, fG1, fB1, fR2, fG2, fB2 );
-				}
+		case PCD_TRANSLATIONRANGE5:
+			{ // [Doruk-Aksoy] Ported from UZDoom: tint translation.
+				zx::trnslate::TranslationRange range;
+				range.kind = zx::trnslate::kRangeTint;
+				range.start = STACK(6);
+				range.end = STACK(5);
+				range.amount = STACK(4);
+				range.r1 = STACK(3);
+				range.g1 = STACK(2);
+				range.b1 = STACK(1);
+				sp -= 6;
+				AddScriptTranslationRange( translation, range );
 			}
 			break;
 
 		case PCD_ENDTRANSLATION:
 			if (translation != NULL)
 			{
+				const int translationindex = ACS_GetTranslationIndex(translation);
+				zx::netreplication::SendTranslationEnd(translationindex);
 				// [Doruk-Aksoy] features/handoff: from a tic on its own thread the palette is remade in the handoff, since a frame beside it reads the palettes.
-				R_UpdateTranslationNative(TRANSLATION(TRANSLATION_LevelScripted, ACS_GetTranslationIndex(translation) - 1));
+				R_UpdateTranslationNative(TRANSLATION(TRANSLATION_LevelScripted, translationindex - 1));
 				translation = NULL;
 			}
 			break;

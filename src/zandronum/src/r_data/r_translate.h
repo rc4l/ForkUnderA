@@ -40,6 +40,9 @@ struct FRemapTable
 	void AddIndexRange(int start, int end, int pal1, int pal2);
 	void AddColorRange(int start, int end, int r1,int g1, int b1, int r2, int g2, int b2);
 	void AddDesaturation(int start, int end, double r1, double g1, double b1, double r2, double g2, double b2);
+	// [Doruk-Aksoy] Ported from uzdoom@ad89d3eea0: entries start to end - 1 coloured by their luminance, or tinted `amount` percent towards a colour.
+	void AddColourisation(int start, int end, int r, int g, int b);
+	void AddTint(int start, int end, int r, int g, int b, int amount);
 	void AddToTranslation(const char * range);
 	// [Doruk-Aksoy] uzdoom@0c04cddd: count palette-lump colours (RGB triplets) from start, index 0 kept transparent.
 	bool AddColors(int start, int count, const BYTE *colors);

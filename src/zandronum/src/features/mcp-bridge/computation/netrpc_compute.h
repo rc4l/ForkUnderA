@@ -108,6 +108,9 @@ struct LineStateRow
 
 std::string ComputeLineStateJson(const LineStateRow &row);
 
+// [Doruk-Aksoy] `"key":[v0,v1,...]`, a JSON member of `count` whole numbers.
+std::string ComputeIntListJson(const char *key, const int64_t *values, int count);
+
 // [rc4l] The page [first, first + count) of total rows a paged read covers, clamped to what exists.
 void ComputePageRange(int total, long first, long count, int &begin, int &end);
 

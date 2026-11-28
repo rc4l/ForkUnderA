@@ -64,6 +64,8 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/trnslate/trnslate.h"   // [Doruk-Aksoy] AddTranslationRange
+#include "features/trnslate/computation/trnslate_compute.h"   // [Doruk-Aksoy] ComputeReadTranslationRange
 #include "features/server-hosting/zx_punchclient.h"
 #include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/reconnect_compute.h"
@@ -10375,61 +10377,40 @@ static void client_SetCameraToTexture( BYTESTREAM_s *pByteStream )
 //
 static void client_CreateTranslation( BYTESTREAM_s *pByteStream )
 {
-	EDITEDTRANSLATION_s	Translation = { };
 	FRemapTable	*pTranslation;
 
 	// Read in which translation is being created.
-	Translation.ulIdx = pByteStream->ReadShort();
+	const ULONG ulIdx = pByteStream->ReadShort();
 
-	// [AK] Read in the boolean that tell us if this translation is edited, and the
-	// type of translation this is supposed to be.
+	// [AK] Read in the boolean that tell us if this translation is edited.
 	const bool bIsEdited = pByteStream->ReadBit();
-	const LONG lType = pByteStream->ReadShortByte( 7 );
 
-	// Read in the range that's being translated.
-	Translation.ulStart = pByteStream->ReadByte();
-	Translation.ulEnd = pByteStream->ReadByte();
-
-	if ( lType == CREATETRANSLATION_PALETTE )
+	// [Doruk-Aksoy] Each kind reads its own fields, and one this build doesn't know is not applied, where any unknown kind was read as a desaturation.
+	struct Source
 	{
-		Translation.ulPal1 = pByteStream->ReadByte();
-		Translation.ulPal2 = pByteStream->ReadByte();
-		Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE1;
-	}
-	else if ( lType == CREATETRANSLATION_RGB )
-	{
-		Translation.ulR1 = pByteStream->ReadByte();
-		Translation.ulG1 = pByteStream->ReadByte();
-		Translation.ulB1 = pByteStream->ReadByte();
-		Translation.ulR2 = pByteStream->ReadByte();
-		Translation.ulG2 = pByteStream->ReadByte();
-		Translation.ulB2 = pByteStream->ReadByte();
-		Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE2;
-	}
-	else
-	{
-		Translation.fR1 = pByteStream->ReadFloat();
-		Translation.fG1 = pByteStream->ReadFloat();
-		Translation.fB1 = pByteStream->ReadFloat();
-		Translation.fR2 = pByteStream->ReadFloat();
-		Translation.fG2 = pByteStream->ReadFloat();
-		Translation.fB2 = pByteStream->ReadFloat();
-		Translation.ulType = DLevelScript::PCD_TRANSLATIONRANGE3;
-	}
+		BYTESTREAM_s &s;
+		int shortByte( int bits ) { return s.ReadShortByte( bits ); }
+		int byte( ) { return s.ReadByte( ); }
+		int longValue( ) { return s.ReadLong( ); }
+		float floatValue( ) { return s.ReadFloat( ); }
+	} source = { *pByteStream };
+	zx::trnslate::TranslationRange range;
+	if ( zx::trnslate::ComputeReadTranslationRange( source, range ) == false )
+		return;
 
 	// [BB] We need to do this check here, otherwise the client could be crashed
 	// by sending a SVC_CREATETRANSLATION packet with an illegal tranlation number.
-	if ( Translation.ulIdx < 1 || Translation.ulIdx > MAX_ACS_TRANSLATIONS )
+	if ( ulIdx < 1 || ulIdx > MAX_ACS_TRANSLATIONS )
 	{
 		return;
 	}
 
-	pTranslation = translationtables[TRANSLATION_LevelScripted].GetVal(Translation.ulIdx - 1);
+	pTranslation = translationtables[TRANSLATION_LevelScripted].GetVal(ulIdx - 1);
 
 	if (pTranslation == NULL)
 	{
 		pTranslation = new FRemapTable;
-		translationtables[TRANSLATION_LevelScripted].SetVal(Translation.ulIdx - 1, pTranslation);
+		translationtables[TRANSLATION_LevelScripted].SetVal(ulIdx - 1, pTranslation);
 		// [BB] It's mandatory to initialize the translation with the identity, because the server can only send
 		// "bIsEdited == false" if the client is already in the game when the translation is created.
 		pTranslation->MakeIdentity();
@@ -10438,13 +10419,7 @@ static void client_CreateTranslation( BYTESTREAM_s *pByteStream )
 	if ( bIsEdited == false )
 		pTranslation->MakeIdentity();
 
-	if ( Translation.ulType == DLevelScript::PCD_TRANSLATIONRANGE1 )
-		pTranslation->AddIndexRange( Translation.ulStart, Translation.ulEnd, Translation.ulPal1, Translation.ulPal2 );
-	else if ( Translation.ulType == DLevelScript::PCD_TRANSLATIONRANGE2 )
-		pTranslation->AddColorRange( Translation.ulStart, Translation.ulEnd, Translation.ulR1, Translation.ulG1, Translation.ulB1, Translation.ulR2, Translation.ulG2, Translation.ulB2 );
-	else
-		pTranslation->AddDesaturation( Translation.ulStart, Translation.ulEnd, Translation.fR1, Translation.fG1, Translation.fB1, Translation.fR2, Translation.fG2, Translation.fB2 );
-
+	zx::trnslate::AddTranslationRange( pTranslation, range );
 	pTranslation->UpdateNative();
 }
 
