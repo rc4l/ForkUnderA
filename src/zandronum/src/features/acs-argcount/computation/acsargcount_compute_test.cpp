@@ -83,6 +83,7 @@ TEST(AcsArgCount, UZDoomParityFunctionsNeedUZDoomsMinimum)
 	EXPECT_EQ(Needed(94), 2);    // [Doruk-Aksoy] SetSectorDamage
 	EXPECT_EQ(Needed(98), 3);    // [Doruk-Aksoy] CheckProximity
 	EXPECT_EQ(Needed(201), 6);   // [Doruk-Aksoy] DamageActor
+	EXPECT_EQ(Needed(203), 2);   // [Doruk-Aksoy] SetTranslation
 	EXPECT_EQ(Needed(215), 2);   // [Doruk-Aksoy] GetNetID
 	EXPECT_EQ(Needed(300), 3);   // [Doruk-Aksoy] GetLineX
 	EXPECT_EQ(Needed(301), 3);   // [Doruk-Aksoy] GetLineY
@@ -121,6 +122,14 @@ TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)
 	EXPECT_EQ(shortCall->needed, 1);
 	EXPECT_STREQ(shortCall->name, "GetTeamScore");
 	EXPECT_EQ(ComputeShortCall(19620, 1), nullptr);
+}
+
+TEST(AcsArgCount, ZDaemonsSetTeamScoreTakesATeamAndAScore)
+{
+	const FunctionArgs *shortCall = ComputeShortCall(19621, 1);
+	ASSERT_NE(shortCall, nullptr);
+	EXPECT_STREQ(shortCall->name, "SetTeamScore");
+	EXPECT_EQ(ComputeShortCall(19621, 2), nullptr);
 }
 
 TEST(AcsArgCount, TableAscendsAndEveryEntryIsFoundAndJudgedAtItsCount)

@@ -6,6 +6,7 @@
 
 #include "actor.h"
 #include "p_local.h"
+#include "features/acs-parity/acsparity.h"
 
 // [Doruk-Aksoy] The per-class values of UZDoom's DECORATE properties, read from the class as the defaults they are.
 namespace zx { namespace decorateuzdoom {
@@ -13,7 +14,8 @@ namespace zx { namespace decorateuzdoom {
 inline fixed_t MissileChanceMult(AActor *a) { return a->GetClass()->Meta.GetMetaFixed(AMETA_MissileChanceMult, FRACUNIT); }
 inline fixed_t SelfDamageFactor(AActor *a) { return a->GetClass()->Meta.GetMetaFixed(AMETA_SelfDamageFactor, FRACUNIT); }
 inline fixed_t StealthAlpha(AActor *a) { return a->GetClass()->Meta.GetMetaFixed(AMETA_StealthAlpha, 0); }
-inline int FriendlySeeBlocks(AActor *a) { return a->GetClass()->Meta.GetMetaInt(AMETA_FriendlySeeBlocks, 10); }
+// [Doruk-Aksoy] Its own APROP_FriendlySeeBlocks, set by a script, over its class's (features/acs-parity).
+inline int FriendlySeeBlocks(AActor *a) { return zx::acsparity::FriendlySeeBlocks(a); }
 inline int MinRespawnTics(AActor *a) { return a->GetClass()->Meta.GetMetaInt(AMETA_MinRespawnTics, 0); }
 inline int RespawnDice(AActor *a) { return a->GetClass()->Meta.GetMetaInt(AMETA_RespawnDice, 4); }
 inline int DefThreshold(AActor *a) { return a->GetClass()->Meta.GetMetaInt(AMETA_DefThreshold, BASETHRESHOLD); }

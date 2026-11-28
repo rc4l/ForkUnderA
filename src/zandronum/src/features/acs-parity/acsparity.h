@@ -40,6 +40,16 @@ void SetSectorDamage(int tag, int32_t amount, const char* type);
 // [Doruk-Aksoy] Whether `name` is an actor class.
 bool IsActorClass(const char* name);
 
+// [Doruk-Aksoy] SetTranslation: the named translation on the actors with `tid`, the activator for 0, "" giving back each one's class's and an unknown name changing nothing.
+void SetTranslation(AActor* activator, int tid, const char* name);
+
+// [Doruk-Aksoy] APROP_FriendlySeeBlocks: the actor's own value, set by a script, else its class's (10 by default).
+int FriendlySeeBlocks(AActor* actor);
+void SetFriendlySeeBlocks(AActor* actor, int32_t blocks);
+
+// [Doruk-Aksoy] APROP_WaterDepth: how deep in water the actor stands, as GetActorProperty gives fixed values, worked out when asked.
+int WaterDepth(AActor* actor);
+
 }} // namespace zx::acsparity
 
 #endif

@@ -20,8 +20,9 @@ FromPal = "MYPAL", 16                            // a palette lump's colours fro
   fatal, as UZDoom's are; a bad range prints and is skipped.
 - `A_SetTranslation(name)`: a known name applies, `"None"` clears the translation as UZDoom's does (DECORATE hands `""`
   over as `None` too, as UZDoom's DECORATE does), and an unknown name is ignored. `A_fua_ResetTranslation()` restores the
-  class's own translation, which UZDoom's DECORATE has no way to ask for. The server sets it and sends it through
-  `features/net-replication`'s `SendThingTranslation`.
+  class's own translation, which UZDoom's DECORATE has no way to ask for. Both go through `SetActorTranslation`,
+  which ACS's `SetTranslation` shares (`features/acs-parity`): the server sets it and sends it through
+  `features/net-replication`'s `SendThingTranslation`, and a clientside script's change stays on its machine.
 - Not ported: `RainPillar1..8` (we have no rain pillar tables), and the ZScript-only users (particles, `A_OverlayTranslation`).
 
 ## In-engine hooks
@@ -30,7 +31,8 @@ FromPal = "MYPAL", 16                            // a palette lump's colours fro
 - `d_main.cpp`: `R_InitTranslationTables` and `R_ParseTrnslate` before `FActorInfo::StaticInit`, so DECORATE can name
   them; `r_utility.cpp`: `R_Init` no longer builds the tables.
 - `thingdef/thingdef_properties.cpp`: `Translation "Name"` looks the name up (this replaces the old `"Ice"` case).
-- `thingdef/thingdef_codeptr.cpp` + `wadsrc/static/actors/actor.txt`: `A_SetTranslation`.
+- `thingdef/thingdef_codeptr.cpp` + `wadsrc/static/actors/actor.txt`: `A_SetTranslation` and `A_fua_ResetTranslation`,
+  through `trnslate.cpp`'s `SetActorTranslation`.
 
 ## Tests
 

@@ -597,6 +597,9 @@ void AActor::Serialize (FArchive &arc)
 	zx::actormaterials::SerializeActor(arc, this);
 	// [Doruk-Aksoy] features/acs-handles: its handle slot, from 4533 on.
 	zx::acshandles::SerializeActor(arc, this);
+	// [Doruk-Aksoy] features/acs-parity: its own APROP_FriendlySeeBlocks, from 4544 on.
+	if (SaveVersion >= 4544)
+		arc << fua_seeBlocks;
 
 	{
 		FString tagstr;

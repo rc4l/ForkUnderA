@@ -14,6 +14,7 @@
 | `CheckActorState(tid, state [, exact])` | 99 | whether the actor's class has the state |
 | `CheckClass(class)` | 200 | whether an actor class of that name exists |
 | `DamageActor(tid, ptr, inflictor, ptr, amount, damagetype)` | 201 | the damage dealt, or -1 when none was |
+| `SetTranslation(tid, name)` | 203 | 1; the actors take the named translation (TRNSLATE, `Ice`, `Player1`..), `""` their class's own |
 | `GetActorFloorTerrain(tid)` | 205 | the name of the TERRAIN under the actor |
 | `StrArg(string)` | 206 | a name an action special takes, such as a named script for `ACS_Execute` |
 | `Floor(x)`, `Round(x)`, `Ceil(x)` | 207-209 | a fixed-point value made whole |
@@ -26,6 +27,12 @@
 | `APROP_MaxStepHeight` | 44 | fixed; how high the actor steps up |
 | `APROP_MaxDropOffHeight` | 45 | fixed; how far a monster walks down |
 | `APROP_DamageType` | 46 | string; the damage type the actor deals |
+| `APROP_FriendlySeeBlocks` | 48 | how many blockmap blocks a friendly monster looks for enemies across; its class's (10) until set |
+| `APROP_WaterDepth` | 49 | fixed, read only; how deep in water the actor stands |
+
+ZDaemon's `SetTeamScore(team, score)` (19621), which earlier builds declared without code, sets the score
+`GetTeamScore` reads: frags in team deathmatch, wins in team LMS, points otherwise, announced as
+`ChangeTeamScore` does. It returns 1 when the score changed, 0 when it didn't or the team doesn't exist.
 
 ## Usage
 
@@ -48,7 +55,12 @@ SetActorProperty(0, APROP_MaxStepHeight, 40.0);
 In a netgame:
 - A step or drop-off height a server script sets reaches every client, and players who join later,
   since a client moves its own player and walking monsters itself.
-- A damage type stays on the server, which deals all damage.
+- A damage type stays on the server, which deals all damage, and so does `APROP_FriendlySeeBlocks`,
+  since only the server's monsters look for enemies.
+- A translation a server script sets reaches every client and players who join later; a clientside
+  script's `SetTranslation` changes that client's copy alone.
+- Team scores a server script sets reach every client.
+- Every machine works out `APROP_WaterDepth` from its own world.
 - A net id names the same actor on the server and on each client, so a script can pass one to a
   clientside script.
 
@@ -146,6 +158,9 @@ pukename FlashActor 31 => /flashing a DoomImp/
   built-in ones (`Fire`, `Slime`, `Ice`, `Poison`, `Electric`, `Drowning`, `Crush` and the rest of
   `Sector_SetDamage`'s); another name does normal damage and warns once. A negative amount, which heals
   in UZDoom, sets no damage.
+- A friendly monster's search covers 128 blockmap blocks at most, whatever `APROP_FriendlySeeBlocks` or
+  its class says, so a script can't make every look scan a whole map; the property reads back what was set.
+- `SetTranslation` knows no `RainPillar1`..`8`, which need tables this engine doesn't have.
 
 ## Implementation notes
 

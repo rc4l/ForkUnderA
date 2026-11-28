@@ -165,4 +165,47 @@ int ComputeInventoryAmount(const InventoryState& state, bool max)
 	return state.held ? state.amount : 0;
 }
 
+int32_t ComputeSeeBlocksStore(int32_t value)
+{
+	return int32_t(uint32_t(value) ^ 0x80000000u);
+}
+
+int32_t ComputeSeeBlocksRead(int32_t stored, int32_t classDefault)
+{
+	return stored == 0 ? classDefault : int32_t(uint32_t(stored) ^ 0x80000000u);
+}
+
+int32_t ComputeSeeBlocksSearch(int32_t blocks)
+{
+	if (blocks < 0)
+		return 0;
+	return blocks > kMaxFriendlySeeBlocks ? kMaxFriendlySeeBlocks : blocks;
+}
+
+int64_t ComputeWaterDepth(const WaterDepthIn &in)
+{
+	int64_t depth = 0;
+	if (in.underwater)
+		depth = in.height;
+	else if (in.heightSec)
+	{
+		if (in.heightSecWater)
+		{
+			depth = in.heightSecFloor - in.z;
+			if (depth <= 0 && !in.fakeFloorOnly && in.z + in.height > in.heightSecCeiling)
+				depth = in.height;
+		}
+	}
+	else if (in.swimFloor)
+		depth = in.swimTop - in.z;
+	return depth < 0 ? 0 : depth;
+}
+
+TeamScoreKind ComputeTeamScoreKind(bool earnsFrags, bool earnsWins)
+{
+	if (earnsFrags)
+		return kTeamScoreFrags;
+	return earnsWins ? kTeamScoreWins : kTeamScorePoints;
+}
+
 }} // namespace zx::acsparity
