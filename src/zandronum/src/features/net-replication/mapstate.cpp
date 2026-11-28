@@ -55,6 +55,8 @@ SectorLook ReadSector(int i)
 	look.angleFloor = s.GetAngle(sector_t::floor, false);
 	look.angleCeiling = s.GetAngle(sector_t::ceiling, false);
 	look.special = s.special;
+	look.terrainFloor = s.terrainnum[sector_t::floor];
+	look.terrainCeiling = s.terrainnum[sector_t::ceiling];
 	return look;
 }
 
@@ -87,6 +89,7 @@ void SendSector(int i, unsigned bits, ULONG extra, ServerCommandFlags flags)
 	if (bits & kSectorScale) SERVERCOMMANDS_SetSectorScale(i, extra, flags);
 	if (bits & kSectorRotation) SERVERCOMMANDS_SetSectorRotation(i, extra, flags);
 	if (bits & kSectorSpecial) SERVERCOMMANDS_SetSectorSpecial(i, extra, flags);
+	if (bits & kSectorTerrain) SERVERCOMMANDS_SetSectorTerrain(i, extra, flags);
 }
 
 void SendLine(int i, unsigned bits, ULONG extra, ServerCommandFlags flags)

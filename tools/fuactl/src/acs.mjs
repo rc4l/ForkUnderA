@@ -16,7 +16,7 @@ export const ACSF = { GetLineUDMFInt: 1, GetSectorUDMFInt: 5, GetSideUDMFInt: 7,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005,
   // [Doruk-Aksoy] UZDoom's, at UZDoom's numbers (features/acs-parity).
-  GetMaxInventory: 93, CheckProximity: 98, CheckActorState: 99, CheckClass: 200, DamageActor: 201, SetActorFlag: 202, SetTranslation: 203, GetActorFloorTerrain: 205, StrArg: 206,
+  GetMaxInventory: 93, SetSectorTerrain: 95, CheckProximity: 98, CheckActorState: 99, CheckClass: 200, DamageActor: 201, SetActorFlag: 202, SetTranslation: 203, GetActorFloorTerrain: 205, StrArg: 206,
   Floor: 207, Round: 208, Ceil: 209, GetNetID: 215, SetActivatorByNetID: 216, GetLineX: 300, GetLineY: 301,
   // [Doruk-Aksoy] ZDaemon's team scores.
   GetTeamScore: 19620, SetTeamScore: 19621 };

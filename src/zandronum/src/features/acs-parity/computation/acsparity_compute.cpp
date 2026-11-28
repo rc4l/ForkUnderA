@@ -208,4 +208,19 @@ TeamScoreKind ComputeTeamScoreKind(bool earnsFrags, bool earnsWins)
 	return earnsWins ? kTeamScoreWins : kTeamScorePoints;
 }
 
+int ComputeSectorTerrain(int own, int flat)
+{
+	return own >= 0 ? own : flat;
+}
+
+bool ComputeTerrainPlane(int plane)
+{
+	return plane == 0 || plane == 1;
+}
+
+int ComputeThingFloorTerrain(bool onSectorFloor, int sectorTerrain, int floorPicTerrain)
+{
+	return onSectorFloor ? sectorTerrain : floorPicTerrain;
+}
+
 }} // namespace zx::acsparity

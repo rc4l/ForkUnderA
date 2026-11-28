@@ -32,6 +32,7 @@
 // The reason should be investigated.
 #include "features/decorate-uzdoom/classprops.h"
 #include "features/decorate-uzdoom/computation/decorateprops_compute.h"
+#include "features/acs-parity/computation/acsparity_compute.h"
 #include "network.h"
 
 #include "templates.h"
@@ -5808,7 +5809,7 @@ void AActor::AdjustFloorClip ()
 		sector_t *hsec = m->m_sector->GetHeightSec();
 		if (hsec == NULL && m->m_sector->floorplane.ZatPoint (x, y) == z)
 		{
-			fixed_t clip = Terrains[TerrainTypes[m->m_sector->GetTexture(sector_t::floor)]].FootClip;
+			fixed_t clip = Terrains[m->m_sector->GetTerrain(sector_t::floor)].FootClip;
 			if (clip < shallowestclip)
 			{
 				shallowestclip = clip;
@@ -7307,14 +7308,12 @@ void P_RipperBlood (AActor *mo, AActor *bleeder)
 
 int P_GetThingFloorType (AActor *thing)
 {
-	if (thing->floorpic.isValid())
-	{		
-		return TerrainTypes[thing->floorpic];
-	}
-	else
-	{
-		return TerrainTypes[thing->Sector->GetTexture(sector_t::floor)];
-	}
+	if (!thing->floorpic.isValid())
+		return thing->Sector->GetTerrain(sector_t::floor);
+	// [Doruk-Aksoy] A floor picked from a 3D floor keeps the base sector, so only a floor showing that sector's own flat takes its terrain.
+	const sector_t *sec = thing->floorsector;
+	const bool sectorFloor = sec != NULL && thing->floorpic == sec->GetTexture(sector_t::floor);
+	return zx::acsparity::ComputeThingFloorTerrain(sectorFloor, sectorFloor ? sec->GetTerrain(sector_t::floor) : -1, TerrainTypes[thing->floorpic]);
 }
 
 //---------------------------------------------------------------------------
@@ -7384,7 +7383,7 @@ bool P_HitWater (AActor * thing, sector_t * sec, fixed_t x, fixed_t y, fixed_t z
 		{
 			if (rover->flags & (FF_SOLID|FF_SWIMMABLE) )
 			{
-				terrainnum = TerrainTypes[*rover->top.texture];
+				terrainnum = rover->model->GetTerrain(rover->top.isceiling);
 				goto foundone;
 			}
 		}
@@ -7395,11 +7394,11 @@ bool P_HitWater (AActor * thing, sector_t * sec, fixed_t x, fixed_t y, fixed_t z
 	hsec = sec->GetHeightSec();
 	if (hsec == NULL || !(hsec->MoreFlags & SECF_CLIPFAKEPLANES))
 	{
-		terrainnum = TerrainTypes[sec->GetTexture(sector_t::floor)];
+		terrainnum = sec->GetTerrain(sector_t::floor);
 	}
 	else
 	{
-		terrainnum = TerrainTypes[hsec->GetTexture(sector_t::floor)];
+		terrainnum = hsec->GetTerrain(sector_t::floor);
 	}
 #ifdef _3DFLOORS
 foundone:

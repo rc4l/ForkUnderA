@@ -191,7 +191,8 @@ int GetRevisionNumber();
 // [Doruk-Aksoy] 4543: ACS tracers save their callback function (features/acs-traces, guarded in SerializeScript).
 // [Doruk-Aksoy] 4544: AActor serializes its own APROP_FriendlySeeBlocks (features/acs-parity, guarded in AActor::Serialize).
 // [Doruk-Aksoy] 4545: player_t serializes a script's APROP_SoundClass (features/acs-parity, guarded in player_t::Serialize).
-#define SAVEVER 4545
+// [Doruk-Aksoy] 4546: each sector saves its planes' terrain by name (features/acs-parity, ACS SetSectorTerrain and the UDMF terrain keys, guarded in P_SerializeWorld).
+#define SAVEVER 4546
 
 
 #define SAVEVERSTRINGIFY2(x) #x

@@ -39,6 +39,8 @@
 #include "cl_demo.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
+#include "features/acs-parity/computation/acsparity_compute.h"
+#include "p_terrain.h"
 
 
 // [RH]
@@ -825,6 +827,11 @@ ASkyViewpoint *sector_t::GetSkyBox(int which)
 	return level.DefaultSkybox;
 }
 
+
+int sector_t::GetTerrain(int pos) const
+{
+	return zx::acsparity::ComputeSectorTerrain(terrainnum[pos], TerrainTypes[GetTexture(pos)]);
+}
 
 sector_t *sector_t::GetHeightSec() const 
 {

@@ -6,7 +6,7 @@ when it changes, and the `SERVERCOMMANDS_*` calls game code still makes for ever
 ## The change set
 
 The families are the ones clients never compute for themselves: a sector's flats, colour, fade, gravity,
-friction, reflection, scale, rotation and special; a line's alpha, the flags clients move and draw by
+friction, reflection, scale, rotation, special and each plane's own terrain (ACS `SetSectorTerrain`); a line's alpha, the flags clients move and draw by
 (`features/net-protocol/lineflags.h`) and its six textures; a side's flags. Movers, lights, scrollers and
 polyobjects run on clients too and keep their own sends.
 
