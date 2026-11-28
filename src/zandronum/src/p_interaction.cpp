@@ -2096,17 +2096,17 @@ void P_PoisonMobj (AActor *target, AActor *inflictor, AActor *source, int damage
 		}
 	}
 
-	target->Poisoner = source;
-	target->PoisonDamageTypeReceived = type;
-	target->PoisonPeriodReceived = period;
+	target->SetExt(&ZxActorExt::Poisoner, source);
+	target->SetExt(&ZxActorExt::PoisonDamageTypeReceived, type);
+	target->SetExt(&ZxActorExt::PoisonPeriodReceived, period);
 
 	if (inflictor->flags6 & MF6_ADDITIVEPOISONDAMAGE)
 	{
-		target->PoisonDamageReceived += damage;
+		target->ExtW().PoisonDamageReceived += damage;
 	}
 	else
 	{
-		target->PoisonDamageReceived = damage;
+		target->SetExt(&ZxActorExt::PoisonDamageReceived, damage);
 	}
 
 	if (inflictor->flags6 & MF6_ADDITIVEPOISONDURATION)
@@ -2977,9 +2977,9 @@ void PLAYER_SetDefaultSpectatorValues( player_t *pPlayer )
 	}
 
 	// [BB] Remove all dynamic lights associated to the player's body.
-	for ( unsigned int i = 0; i < pPlayer->mo->dynamiclights.Size(); ++i )
-		pPlayer->mo->dynamiclights[i]->Destroy();
-	pPlayer->mo->dynamiclights.Clear();
+	for ( unsigned int i = 0; i < pPlayer->mo->Ext().dynamiclights.Size(); ++i )
+		pPlayer->mo->Ext().dynamiclights[i]->Destroy();
+	if (pPlayer->mo->Ext().dynamiclights.Size() > 0) pPlayer->mo->ExtW().dynamiclights.Clear();
 }
 
 //*****************************************************************************
@@ -3655,7 +3655,7 @@ void PLAYER_RemoveFriends( const ULONG ulPlayer )
 			pActor->FriendPlayer = 0;
 			if ( !(GAMEMODE_GetCurrentFlags() & GMF_COOPERATIVE)
 				// [BB] In a gamemode with teams, monsters with DesignatedTeam need to keep MF_FRIENDLY.
-				&& ( !(GAMEMODE_GetCurrentFlags() & GMF_PLAYERSONTEAMS) || !TEAM_CheckIfValid ( pActor->DesignatedTeam ) ) )
+				&& ( !(GAMEMODE_GetCurrentFlags() & GMF_PLAYERSONTEAMS) || !TEAM_CheckIfValid ( pActor->Ext().DesignatedTeam ) ) )
 				pActor->flags &= ~MF_FRIENDLY; // this is required in DM or monsters will be friendly to all players
 		}
 	}

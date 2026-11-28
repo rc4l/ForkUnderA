@@ -878,7 +878,7 @@ static BYTE snap_ClassifyCosmetic(const PClass* pType)
 		// +CLIENTSIDEONLY only: a non-ripper with no damage, poison or
 		// +FORCEPAIN returns from PIT_CheckThing before P_DamageMobj.
 		if (((pDef->NetworkFlags & NETFL_CLIENTSIDEONLY) == 0) || (pDef->Damage != 0)
-			|| (pDef->PoisonDamage > 0) || (pDef->flags2 & MF2_RIP) || (pDef->flags6 & MF6_FORCEPAIN))
+			|| (pDef->Ext().PoisonDamage > 0) || (pDef->flags2 & MF2_RIP) || (pDef->flags6 & MF6_FORCEPAIN))
 			return snap_CosFail(id, "is", "a missile");
 		g_cosFlags[id] |= SNAPCOSF_MISSILE;
 	}

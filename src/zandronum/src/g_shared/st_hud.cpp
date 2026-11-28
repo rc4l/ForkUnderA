@@ -499,7 +499,7 @@ static bool HUD_BuildTargetText( player_t *pPlayer, zx::crosshair::TargetText &t
 
 		// [AK] If the target is not a player, then check their designated team.
 		if ( pTargetPlayer == NULL )
-			ulTeam = pTargetActor->DesignatedTeam;
+			ulTeam = pTargetActor->Ext().DesignatedTeam;
 		else if ( pTargetPlayer->bOnTeam )
 			ulTeam = pTargetPlayer->Team;
 

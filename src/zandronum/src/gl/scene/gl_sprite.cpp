@@ -786,7 +786,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 
 	lightlevel = (byte)gl_CheckSpriteGlow(rendersector, lightlevel, thingx, thingy, thingz);
 
-	ThingColor = (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? thing->fillcolor : 0xffffff;
+	ThingColor = (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? thing->Ext().fillcolor : 0xffffff;
 	ThingColor.a = 255;
 	RenderStyle = thing->RenderStyle;
 

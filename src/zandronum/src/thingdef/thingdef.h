@@ -375,8 +375,15 @@ int MatchString (const char *in, const char **strings);
 	static FVariableInfo GlobalDef__##name = { #name, intptr_t(&name), NULL }; \
 	MSVC_MSEG FVariableInfo *infoptr_GlobalDef__##name GCC_MSEG = &GlobalDef__##name;
 
+#include "features/actor-layout/computation/actorext_compute.h"   // [Doruk-Aksoy] ComputeExtMemberCode
+
 #define DEFINE_MEMBER_VARIABLE(name, cls) \
 	static FVariableInfo GlobalDef__##name = { #name, static_cast<intptr_t>(myoffsetof(cls, name)), RUNTIME_CLASS(cls) }; \
+	MSVC_MSEG FVariableInfo *infoptr_GlobalDef__##name GCC_MSEG = &GlobalDef__##name;
+
+// [Doruk-Aksoy] A native member of AActor kept in its rare-field block (features/actor-layout): an offset past any actor, read through AActor::Ext.
+#define DEFINE_EXT_MEMBER_VARIABLE(name) \
+	static FVariableInfo GlobalDef__##name = { #name, zx::actorlayout::ComputeExtMemberCode(myoffsetof(ZxActorExt, name)), RUNTIME_CLASS(AActor) }; \
 	MSVC_MSEG FVariableInfo *infoptr_GlobalDef__##name GCC_MSEG = &GlobalDef__##name;
 
 #define DEFINE_MEMBER_VARIABLE_ALIAS(name, alias, cls) \

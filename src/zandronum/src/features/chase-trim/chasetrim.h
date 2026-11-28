@@ -5,11 +5,13 @@
 
 // [Doruk-Aksoy] Cheaper chasing: far monsters move every other call, walkers remember blocked directions, and stuck monsters still reach their missile check.
 
+#include <cstddef>
 #include <cstdint>
 
 #include "features/chase-trim/computation/chasetrim_compute.h"
 
 class AActor;
+class DObject;
 
 namespace zx { namespace chasetrim {
 
@@ -43,6 +45,15 @@ bool SkipJammedReplan(AActor *actor);
 
 // [Doruk-Aksoy] Inside a ChaseMove, fails the move in movedir at this step when that direction is known blocked; false when it must be tried.
 bool FailKnownBlocked(AActor *actor, int speed);
+
+// [Doruk-Aksoy] Gives a walker's memo back to the pool, as it moves or is destroyed.
+void ForgetMemo(AActor *actor);
+
+// [Doruk-Aksoy] Retargets the walker's remembered blockers from old to notOld, as pointer substitution did when they were the actor's own; returns how many changed.
+size_t SubstituteMemo(AActor *actor, DObject *old, DObject *notOld);
+
+// [Doruk-Aksoy] Marks the blockers a walker's memo holds, from AActor::PropagateMark, as its own pointers once were.
+void MarkMemo(AActor *actor);
 
 // [Doruk-Aksoy] Inside a ChaseMove, after P_Move tried a move: notes a failure on one thing or on a wall, and forgets the memo once the walker moved.
 void AfterMove(AActor *actor, int speed, bool moved, AActor *hardBlocker, bool wall, bool stayed);

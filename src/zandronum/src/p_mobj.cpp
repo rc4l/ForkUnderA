@@ -30,6 +30,7 @@
 
 // [BB] network.h has to be included before stats.h under Linux.
 // The reason should be investigated.
+#include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] ForgetMemo, MarkMemo
 #include "features/decorate-uzdoom/classprops.h"
 #include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "features/acs-parity/computation/acsparity_compute.h"
@@ -106,6 +107,7 @@
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip ledger gating
 #include <cstddef>
 #include <set>
+#include <climits>
 
 #include "features/fov-interp/fovcvar.h"
 #include "features/quake-movement/quakemove.h"
@@ -218,27 +220,93 @@ IMPLEMENT_POINTY_CLASS (AActor)
  DECLARE_POINTER (lastenemy)
  DECLARE_POINTER (tracer)
  DECLARE_POINTER (goal)
- DECLARE_POINTER (LastLookActor)
  DECLARE_POINTER (Inventory)
  DECLARE_POINTER (LastHeard)
  DECLARE_POINTER (master)
- DECLARE_POINTER (Poisoner)
- // [BC] Declare these so refrences to them get fixed if they're removed.
- DECLARE_POINTER (pMonsterSpot)
- DECLARE_POINTER (pPickupSpot)
- DECLARE_POINTER (Rune) // [TP]
- DECLARE_POINTER (FuaBlockers[0]) // [Doruk-Aksoy] features/chase-trim
- DECLARE_POINTER (FuaBlockers[1])
- DECLARE_POINTER (FuaBlockers[2])
- DECLARE_POINTER (FuaBlockers[3])
- DECLARE_POINTER (FuaBlockers[4])
- DECLARE_POINTER (FuaBlockers[5])
+ // [Doruk-Aksoy] LastLookActor, Poisoner, the invasion spots and Rune live in the rare-field block: MarkPooled and PointerSubstitution handle them.
 END_POINTERS
 
 AActor::~AActor ()
 {
 	// Please avoid calling the destructor directly (or through delete)!
 	// Use Destroy() instead.
+	delete FuaMapReset;
+	delete FuaNetDelta;
+	FreeOwnedExt ();
+}
+
+ZxActorExt &AActor::ExtW ()
+{
+	if (!OwnsExt ())
+	{
+		ZxActorExt *mine = new ZxActorExt (Ext ());
+		mine->owner = this;
+		FuaExt = mine;
+	}
+	return *FuaExt;
+}
+
+// [Doruk-Aksoy] Test tool (features/actor-layout): how many actor classes' defaults own their rare-field block, read another class's, or hold none; a shared one is read after its owner frees it at shutdown.
+DEV_MODE_CCMD (fua_dev_classblocks)
+{
+	int owned = 0, shared = 0, none = 0;
+	for (unsigned int i = 0; i < PClass::m_Types.Size(); ++i)
+	{
+		const PClass *type = PClass::m_Types[i];
+		if ((type == NULL) || (type->ActorInfo == NULL) || (type->Defaults == NULL))
+			continue;
+		const AActor *def = (const AActor *)type->Defaults;
+		if (def->FuaExt == NULL)
+			++none;
+		else if (def->OwnsExt ())
+			++owned;
+		else
+		{
+			++shared;
+			if (argv.argc () > 1)
+				Printf ("  %s reads a block it does not own\n", type->TypeName.GetChars ());
+		}
+	}
+	Printf ("fua_dev_classblocks: owned %d shared %d none %d\n", owned, shared, none);
+}
+
+// [Doruk-Aksoy] The block's pointers that were declared ones, retargeted as DObject::PointerSubstitution retargets those.
+size_t AActor::PointerSubstitution (DObject *old, DObject *notOld)
+{
+	size_t changed = Super::PointerSubstitution (old, notOld);
+	if (OwnsExt ())
+	{
+		DObject **const fields[] = { (DObject **)&FuaExt->LastLookActor, (DObject **)&FuaExt->Poisoner, (DObject **)&FuaExt->Rune,
+			(DObject **)&FuaExt->pMonsterSpot, (DObject **)&FuaExt->pPickupSpot };
+		for (DObject **field : fields)
+		{
+			if (*field == old)
+			{
+				*field = notOld;
+				changed++;
+			}
+		}
+	}
+	changed += zx::chasetrim::SubstituteMemo (this, old, notOld);
+	return changed;
+}
+
+void AActor::MarkPooled ()
+{
+	zx::chasetrim::MarkMemo (this);
+	// [Doruk-Aksoy] The rare-field block's GC pointers, which were declared ones; a block shared from the class defaults holds none of an actor's.
+	if (OwnsExt ())
+	{
+		GC::Mark (FuaExt->LastLookActor);
+		GC::Mark (FuaExt->Poisoner);
+		GC::Mark (FuaExt->Rune);
+		GC::Mark ((DObject **)&FuaExt->pMonsterSpot);
+		GC::Mark ((DObject **)&FuaExt->pPickupSpot);
+		for (unsigned i = 0; i < FuaExt->dynamiclights.Size (); i++)
+			GC::Mark (FuaExt->dynamiclights[i]);
+		for (unsigned i = 0; i < FuaExt->RipVictims.Size (); i++)
+			GC::Mark (FuaExt->RipVictims[i].victim);
+	}
 }
 
 // [MGOOOOOO] Ripper per-victim ledger (features/ripper). The TObjPtr is what makes an entry
@@ -261,6 +329,9 @@ FArchive &operator<< (FArchive &arc, FRipVictim &rv)
 
 int AActor::RipHitsOn (AActor *victim)
 {
+	if (Ext().RipVictims.Size() == 0)
+		return 0;
+	TArray<FRipVictim> &RipVictims = ExtW().RipVictims;
 	for (unsigned int i = 0; i < RipVictims.Size(); )
 	{
 		AActor *recorded = RipVictims[i].victim;
@@ -290,7 +361,7 @@ int AActor::RipHitsOn (AActor *victim)
 
 void AActor::RecordRipHit (AActor *victim)
 {
-	RipperHitsDone++;
+	ExtW().RipperHitsDone++;
 
 	zx::ripper::FRipLimits limits;
 	limits.perVictimHits = RipperCount;
@@ -298,6 +369,7 @@ void AActor::RecordRipHit (AActor *victim)
 	if (!zx::ripper::ComputeNeedsVictimLedger(limits, RipperDamageFactor.Raw()))
 		return;
 
+	TArray<FRipVictim> &RipVictims = ExtW().RipVictims;
 	for (unsigned int i = 0; i < RipVictims.Size(); ++i)
 	{
 		if (RipVictims[i].victim == victim)
@@ -332,9 +404,19 @@ void AActor::RecordRipHit (AActor *victim)
 
 void AActor::ResetRipCounters ()
 {
-	RipperDamageDone = 0;
-	RipperHitsDone = 0;
-	RipVictims.Clear();
+	SetExt(&ZxActorExt::RipperDamageDone, 0);
+	SetExt(&ZxActorExt::RipperHitsDone, 0);
+	if (Ext().RipVictims.Size() > 0)
+		ExtW().RipVictims.Clear();
+}
+
+// [Doruk-Aksoy] Archives one rare field at its old place in the save, making the actor's own block on load only when the value is not the one it reads.
+template<class T> static void ArcExt (FArchive &arc, AActor *self, T ZxActorExt::*field)
+{
+	T value = self->Ext().*field;
+	arc << value;
+	if (arc.IsLoading())
+		self->SetExt(field, value);
 }
 
 void AActor::Serialize (FArchive &arc)
@@ -363,12 +445,12 @@ void AActor::Serialize (FArchive &arc)
 		<< floorpic
 		<< ceilingpic
 		<< TIDtoHate
-		<< LastLookPlayerNumber
-		<< LastLookActor
-		<< effects
-		<< alpha
-		<< fillcolor
-		<< pitch
+		<< LastLookPlayerNumber;
+	ArcExt(arc, this, &ZxActorExt::LastLookActor);
+	arc << effects
+		<< alpha;
+	ArcExt(arc, this, &ZxActorExt::fillcolor);
+	arc << pitch
 		<< roll
 		<< Sector
 		<< floorz
@@ -421,9 +503,9 @@ void AActor::Serialize (FArchive &arc)
 		<< player
 		<< SpawnPoint[0] << SpawnPoint[1] << SpawnPoint[2]
 		<< SpawnAngle;
-	arc << StartHealth;
-	arc << skillrespawncount
-		<< tracer
+	ArcExt(arc, this, &ZxActorExt::StartHealth);
+	ArcExt(arc, this, &ZxActorExt::skillrespawncount);
+	arc << tracer
 		<< floorclip
 		<< tid
 		<< special;
@@ -436,7 +518,8 @@ void AActor::Serialize (FArchive &arc)
 		arc << args[0];
 	}
 	arc << args[1] << args[2] << args[3] << args[4];
-	arc << accuracy << stamina;
+	ArcExt(arc, this, &ZxActorExt::accuracy);
+	ArcExt(arc, this, &ZxActorExt::stamina);
 	arc << goal
 		<< waterlevel
 		<< MinMissileChance
@@ -490,23 +573,30 @@ void AActor::Serialize (FArchive &arc)
 		<< master
 		<< smokecounter
 		<< BlockingMobj
-		<< BlockingLine
-		<< VisibleToTeam // [BB]
-		<< pushfactor
-		<< Species
-		<< Score;
-	arc << DesignatedTeam;
+		<< BlockingLine;
+	ArcExt(arc, this, &ZxActorExt::VisibleToTeam); // [BB]
+	arc << pushfactor
+		<< Species;
+	ArcExt(arc, this, &ZxActorExt::Score);
+	ArcExt(arc, this, &ZxActorExt::DesignatedTeam);
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
 		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
 		<< TeleFogSourceType	// [rc4l] uzdoom@30acb7200
 		<< TeleFogDestType
-		<< WeaveIndexXY << WeaveIndexZ
-		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
-		<< PoisonDamage << PoisonDuration << PoisonPeriod;
-	arc << PoisonDamageType << PoisonDamageTypeReceived;
-	arc << ConversationRoot << Conversation;
+		<< WeaveIndexXY << WeaveIndexZ;
+	ArcExt(arc, this, &ZxActorExt::PoisonDamageReceived);
+	arc << PoisonDurationReceived;
+	ArcExt(arc, this, &ZxActorExt::PoisonPeriodReceived);
+	ArcExt(arc, this, &ZxActorExt::Poisoner);
+	ArcExt(arc, this, &ZxActorExt::PoisonDamage);
+	ArcExt(arc, this, &ZxActorExt::PoisonDuration);
+	ArcExt(arc, this, &ZxActorExt::PoisonPeriod);
+	ArcExt(arc, this, &ZxActorExt::PoisonDamageType);
+	ArcExt(arc, this, &ZxActorExt::PoisonDamageTypeReceived);
+	ArcExt(arc, this, &ZxActorExt::ConversationRoot);
+	ArcExt(arc, this, &ZxActorExt::Conversation);
 
 	// [rc4l] uzdoom@e1130b860: FriendPlayer records which player a friendly actor belongs to, and it
 	// was never written to the archive -- so a saved friendly monster came back owned by nobody.
@@ -521,20 +611,20 @@ void AActor::Serialize (FArchive &arc)
 	// Upstream guarded it on their SAVEVER 4511; ours is a separate line already past that.
 	if (SaveVersion >= 4516)
 	{
-		arc << weaponspecial;
+		ArcExt(arc, this, &ZxActorExt::weaponspecial);
 	}
 	
 	// [BB] Zandronum additions.
-	arc << LimitedToTeam // [BB]
-		<< FixedColormap // [BB]
-		// [BB] Before the snapshot is loaded, player bodies are spawned, which invalidates the old netIDs.
-		//<< NetID // [BC] We need to archive this so that it's restored properly when going between maps in a hub.
-		<< STFlags
-		<< NetworkFlags
-		<< InvasionWave
-		<< pMonsterSpot
-		<< pPickupSpot
-		<< Rune;
+	ArcExt(arc, this, &ZxActorExt::LimitedToTeam); // [BB]
+	ArcExt(arc, this, &ZxActorExt::FixedColormap); // [BB]
+	// [BB] Before the snapshot is loaded, player bodies are spawned, which invalidates the old netIDs.
+	//<< NetID // [BC] We need to archive this so that it's restored properly when going between maps in a hub.
+	arc << STFlags
+		<< NetworkFlags;
+	ArcExt(arc, this, &ZxActorExt::InvasionWave);
+	ArcExt(arc, this, &ZxActorExt::pMonsterSpot);
+	ArcExt(arc, this, &ZxActorExt::pPickupSpot);
+	ArcExt(arc, this, &ZxActorExt::Rune);
 
 	// [MGOOOOOO] Horizontal attack extent (ProjectilePassRadius). Version-guarded so older snapshots
 	// (which never stored it) still load with the class default.
@@ -559,17 +649,21 @@ void AActor::Serialize (FArchive &arc)
 	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
 	if (SaveVersion >= 4511)
 	{
-		arc << fua_flags
-			<< RipperLevel
-			<< RipLevelMin
-			<< RipLevelMax
-			<< RipperMaxDamage
+		arc << fua_flags;
+		ArcExt(arc, this, &ZxActorExt::RipperLevel);
+		ArcExt(arc, this, &ZxActorExt::RipLevelMin);
+		ArcExt(arc, this, &ZxActorExt::RipLevelMax);
+		arc << RipperMaxDamage
 			<< RipperCount
 			<< RipperMaxCount
-			<< RipperDamageFactor
-			<< RipperDamageDone
-			<< RipperHitsDone
-			<< RipVictims;
+			<< RipperDamageFactor;
+		ArcExt(arc, this, &ZxActorExt::RipperDamageDone);
+		ArcExt(arc, this, &ZxActorExt::RipperHitsDone);
+		// [Doruk-Aksoy] An empty ledger stays in the block the actor reads; a stored one makes the actor's own.
+		TArray<FRipVictim> victims = Ext().RipVictims;
+		arc << victims;
+		if (arc.IsLoading() && (victims.Size() > 0 || Ext().RipVictims.Size() > 0))
+			ExtW().RipVictims = victims;
 	}
 
 	// [rc4l] Movement-model flags (features/quake-movement). Version-guarded so older snapshots load
@@ -604,12 +698,12 @@ void AActor::Serialize (FArchive &arc)
 
 	{
 		FString tagstr;
-		if (arc.IsStoring() && Tag != NULL && Tag->Len() > 0) tagstr = *Tag;
+		if (arc.IsStoring() && Ext().Tag != NULL && Ext().Tag->Len() > 0) tagstr = *Ext().Tag;
 		arc << tagstr;
 		if (arc.IsLoading())
 		{
-			if (tagstr.Len() == 0) Tag = NULL;
-			else Tag = mStringPropertyData.Alloc(tagstr);
+			if (tagstr.Len() == 0) SetExt(&ZxActorExt::Tag, (FString *)NULL);
+			else ExtW().Tag = mStringPropertyData.Alloc(tagstr);
 		}
 	}
 
@@ -625,7 +719,7 @@ void AActor::Serialize (FArchive &arc)
 		touching_sectorlist = NULL;
 		LinkToWorld (Sector);
 		AddToHash ();
-		SetShade (fillcolor);
+		SetShade (Ext().fillcolor);
 		if (player)
 		{
 			if (playeringame[player - players] && 
@@ -660,11 +754,40 @@ AActor::AActor (const AActor &other) throw()
 	: DThinker()
 {
 	memcpy (&x, &other.x, (BYTE *)&this[1] - (BYTE *)&x);
+	// [Doruk-Aksoy] A copy owns its own saved values and sent motion, so the two never free one block twice.
+	FuaMapReset = zx::actorlayout::ComputeBlockCopy (other.FuaMapReset);
+	FuaNetDelta = zx::actorlayout::ComputeBlockCopy (other.FuaNetDelta);
+	// [Doruk-Aksoy] And its own rare-field block when the other had one, a shared class block staying shared.
+	if (FuaExt != NULL && FuaExt->owner == &other)
+	{
+		FuaExt = new ZxActorExt (*other.FuaExt);
+		FuaExt->owner = this;
+	}
 }
 
 AActor &AActor::operator= (const AActor &other)
 {
+	ZxMapResetState *const mine = FuaMapReset;
+	ZxNetDelta *const myDelta = FuaNetDelta;
+	ZxActorExt *const myExt = (OwnsExt ()) ? FuaExt : NULL;
 	memcpy (&x, &other.x, (BYTE *)&this[1] - (BYTE *)&x);
+	// [Doruk-Aksoy] The rare fields as the other reads them, in this actor's own block when it had one.
+	if (myExt != NULL)
+	{
+		*myExt = other.Ext ();
+		myExt->owner = this;
+		FuaExt = myExt;
+	}
+	else if (FuaExt != NULL && FuaExt->owner == &other)
+	{
+		FuaExt = new ZxActorExt (*other.FuaExt);
+		FuaExt->owner = this;
+	}
+	// [Doruk-Aksoy] This actor keeps its own blocks, with the other's values in them.
+	FuaMapReset = mine;
+	zx::actorlayout::ComputeBlockAssign (FuaMapReset, other.FuaMapReset);
+	FuaNetDelta = myDelta;
+	zx::actorlayout::ComputeBlockAssign (FuaNetDelta, other.FuaNetDelta);
 	return *this;
 }
 
@@ -1416,13 +1539,13 @@ void AActor::CopyFriendliness (AActor *other, bool changeTarget, bool resetHealt
 		INVASION_UpdateMonsterCount( this, true );
 
 	TIDtoHate = other->TIDtoHate;
-	LastLookActor = other->LastLookActor;
+	SetExt(&ZxActorExt::LastLookActor, other->Ext().LastLookActor);
 	LastLookPlayerNumber = other->LastLookPlayerNumber;
 	flags  = (flags & ~MF_FRIENDLY) | (other->flags & MF_FRIENDLY);
 	flags3 = (flags3 & ~(MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS)) | (other->flags3 & (MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS));
 	flags4 = (flags4 & ~(MF4_NOHATEPLAYERS | MF4_BOSSSPAWNED)) | (other->flags4 & (MF4_NOHATEPLAYERS | MF4_BOSSSPAWNED));
 	FriendPlayer = other->FriendPlayer;
-	DesignatedTeam = other->DesignatedTeam;
+	SetExt(&ZxActorExt::DesignatedTeam, other->Ext().DesignatedTeam);
 	if (changeTarget && other->target != NULL && !(other->target->flags3 & MF3_NOTARGET) && !(other->target->flags7 & MF7_NEVERTARGET))
 	{
 		// LastHeard must be set as well so that A_Look can react to the new target if called
@@ -3713,7 +3836,7 @@ void P_NightmareRespawn (AActor *mobj)
 	AActor *mo;
 	AActor *info = mobj->GetDefault();
 
-	mobj->skillrespawncount++;
+	mobj->ExtW().skillrespawncount++;
 
 	// spawn the new monster (assume the spawn will be good)
 	if (info->flags & MF_SPAWNCEILING)
@@ -3792,7 +3915,7 @@ void P_NightmareRespawn (AActor *mobj)
 	mo->CopyFriendliness (mobj, false);
 	mo->Translation = mobj->Translation;
 
-	mo->skillrespawncount = mobj->skillrespawncount;
+	mo->SetExt(&ZxActorExt::skillrespawncount, mobj->Ext().skillrespawncount);
 
 	mo->PrevZ = z;		// Do not interpolate Z position if we changed it since spawning.
 
@@ -4236,12 +4359,12 @@ bool AActor::IsOkayToAttack (AActor *link)
 void AActor::SetShade (DWORD rgb)
 {
 	PalEntry *entry = (PalEntry *)&rgb;
-	fillcolor = rgb | (ColorMatcher.Pick (entry->r, entry->g, entry->b) << 24);
+	SetExt(&ZxActorExt::fillcolor, rgb | (ColorMatcher.Pick (entry->r, entry->g, entry->b) << 24));
 }
 
 void AActor::SetShade (int r, int g, int b)
 {
-	fillcolor = MAKEARGB(ColorMatcher.Pick (r, g, b), r, g, b);
+	SetExt(&ZxActorExt::fillcolor, MAKEARGB(ColorMatcher.Pick (r, g, b), r, g, b));
 }
 
 void AActor::SetPitch(int p, bool interpolate)
@@ -4882,15 +5005,15 @@ void AActor::Tick ()
 */
 
 		// Check for poison damage, but only once per PoisonPeriod tics (or once per second if none).
-		if (PoisonDurationReceived && (level.time % (PoisonPeriodReceived ? PoisonPeriodReceived : TICRATE) == 0))
+		if (PoisonDurationReceived && (level.time % (Ext().PoisonPeriodReceived ? Ext().PoisonPeriodReceived : TICRATE) == 0))
 		{
-			P_DamageMobj(this, NULL, Poisoner, PoisonDamageReceived, PoisonDamageTypeReceived ? PoisonDamageTypeReceived : (FName)NAME_Poison, 0);
+			P_DamageMobj(this, NULL, Ext().Poisoner, Ext().PoisonDamageReceived, Ext().PoisonDamageTypeReceived ? (FName)Ext().PoisonDamageTypeReceived : (FName)NAME_Poison, 0);
 
 			--PoisonDurationReceived;
 
 			// Must clear damage when duration is done, otherwise it
 			// could be added to with ADDITIVEPOISONDAMAGE.
-			if (!PoisonDurationReceived) PoisonDamageReceived = 0;
+			if (!PoisonDurationReceived) SetExt(&ZxActorExt::PoisonDamageReceived, 0);
 		}
 	}
 	// [BC] Don't tick states while predicting.
@@ -4962,7 +5085,7 @@ void AActor::Tick ()
 				return;
 
 			int limit = G_SkillProperty (SKILLP_RespawnLimit);
-			if (limit > 0 && skillrespawncount >= limit)
+			if (limit > 0 && Ext().skillrespawncount >= limit)
 				return;
 		}
 
@@ -5268,14 +5391,14 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	actor = static_cast<AActor *>(const_cast<PClass *>(type)->CreateNew ());
 
 	// Set default dialogue
-	actor->ConversationRoot = GetConversation(actor->GetClass()->TypeName);
-	if (actor->ConversationRoot != -1)
+	actor->SetExt(&ZxActorExt::ConversationRoot, GetConversation(actor->GetClass()->TypeName));
+	if (actor->Ext().ConversationRoot != -1)
 	{
-		actor->Conversation = StrifeDialogues[actor->ConversationRoot];
+		actor->SetExt(&ZxActorExt::Conversation, StrifeDialogues[actor->Ext().ConversationRoot]);
 	}
 	else
 	{
-		actor->Conversation = NULL;
+		actor->SetExt(&ZxActorExt::Conversation, (FStrifeDialogueNode *)NULL);
 	}
 
 	actor->x = actor->PrevX = ix;
@@ -5472,7 +5595,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	zx::netsnapshot::NoteCosmeticNetID( actor );
 
 	// [BB] Initilize the colormap of this actor.
-	actor->FixedColormap = NOFIXEDCOLORMAP;
+	actor->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 
 	// Check if the flag or skull has spawned in an instant return zone.
 	if (( TEAM_SpawningTemporaryTeamItem( ) == false ) &&
@@ -5739,6 +5862,9 @@ void AActor::Destroy ()
 
 	// [Kaori-Chani] features/net-snapshot: the cosmetic events mark goes with the actor.
 	zx::netsnapshot::ForgetCosmetic( this );
+
+	// [Doruk-Aksoy] features/chase-trim: its memo's pool entry goes back with it.
+	zx::chasetrim::ForgetMemo( this );
 
 	// [BC/BB] Free it's network ID.
 	g_ActorNetIDList.freeID ( NetID );
@@ -6056,7 +6182,7 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	mobj->angle = spawn_angle;
 	mobj->pitch = fixed_t::FromUnsignedBits(mobj->roll = 0);
 	mobj->health = p->health;
-	mobj->FixedColormap = NOFIXEDCOLORMAP;
+	mobj->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 
 	//Added by MC: Identification (number in the players[MAXPLAYERS] array)
     mobj->id = playernum;
@@ -6783,18 +6909,18 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	}
 
 	// [BC] Save the thing's special for resetting the map.
-	mobj->SavedSpecial = mobj->special;
+	mobj->SavedForWrite().SavedSpecial = mobj->special;
 
 	// [Dusk] Save args
 	for (int i = 0; i < 5; ++i)
-		mobj->SavedArgs[i] = mobj->args[i];
+		mobj->SavedForWrite().SavedArgs[i] = mobj->args[i];
 
 	// [RH] Add ThingID to mobj and link it in with the others
 	mobj->tid = mthing->thingid;
 	mobj->AddToHash ();
 
 	// [Dusk] Save TID for map resets.
-	mobj->SavedTID = mobj->tid;
+	mobj->SavedForWrite().SavedTID = mobj->tid;
 
 	// [rc4l] The conversion GAME_ResetMap shares (zandronum@28e63eb130d75a770e24a34373aab26973b76e37).
 	mobj->PrevAngle = mobj->angle = zx::map::ComputeMapThingAngle( mthing->angle );
@@ -6806,8 +6932,8 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		int root = GetConversation(mthing->Conversation);
 		if (root != -1)
 		{
-			mobj->ConversationRoot = root;
-			mobj->Conversation = StrifeDialogues[mobj->ConversationRoot];
+			mobj->SetExt(&ZxActorExt::ConversationRoot, root);
+			mobj->SetExt(&ZxActorExt::Conversation, StrifeDialogues[mobj->Ext().ConversationRoot]);
 		}
 	}
 
@@ -6825,9 +6951,9 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	if (mthing->roll)
 		mobj->roll = ANGLE_1 * mthing->roll;
 	if (mthing->score)
-		mobj->Score = mthing->score;
+		mobj->SetExt(&ZxActorExt::Score, mthing->score);
 	if (mthing->fillcolor)
-		mobj->fillcolor = mthing->fillcolor;
+		mobj->SetExt(&ZxActorExt::fillcolor, mthing->fillcolor);
 
 	mobj->BeginPlay ();
 	zx::cells::Refresh (mobj);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
@@ -6843,21 +6969,21 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	if (mthing->health == 0)
 		mobj->Die(NULL, NULL);
 	else if (mthing->health != 1)
-		mobj->StartHealth = mobj->health;
+		mobj->SetExt(&ZxActorExt::StartHealth, mobj->health);
 
 	// [BOF] Save UDMF variables for map resets.
-	mobj->SavedPitch = mobj->pitch;
-	mobj->SavedRoll = fixed_t::FromUnsignedBits(mobj->roll);
-	mobj->SavedScaleX = mobj->scaleX;
-	mobj->SavedScaleY = mobj->scaleY;
-	mobj->SavedRenderStyle = mobj->RenderStyle;
-	mobj->SavedAlpha = mobj->alpha;
-	mobj->SavedFillColor = mobj->fillcolor;
-	mobj->SavedGravity = mobj->gravity;
-	mobj->SavedScore = mobj->Score;
-	mobj->SavedHealth = mobj->health;
-	mobj->SavedConversation = mobj->Conversation;
-	mobj->SavedFloatBobPhase = mobj->FloatBobPhase;
+	mobj->SavedForWrite().SavedPitch = mobj->pitch;
+	mobj->SavedForWrite().SavedRoll = fixed_t::FromUnsignedBits(mobj->roll);
+	mobj->SavedForWrite().SavedScaleX = mobj->scaleX;
+	mobj->SavedForWrite().SavedScaleY = mobj->scaleY;
+	mobj->SavedForWrite().SavedRenderStyle = mobj->RenderStyle;
+	mobj->SavedForWrite().SavedAlpha = mobj->alpha;
+	mobj->SavedForWrite().SavedFillColor = mobj->Ext().fillcolor;
+	mobj->SavedForWrite().SavedGravity = mobj->gravity;
+	mobj->SavedForWrite().SavedScore = mobj->Ext().Score;
+	mobj->SavedForWrite().SavedHealth = mobj->health;
+	mobj->SavedForWrite().SavedConversation = mobj->Ext().Conversation;
+	mobj->SavedForWrite().SavedFloatBobPhase = mobj->FloatBobPhase;
 
 	// [BB] Potentially adjust the default flags of this actor.
 	GAMEMODE_AdjustActorSpawnFlags ( mobj );
@@ -8157,8 +8283,8 @@ bool AActor::IsTeammate (AActor *other)
 		// belongs to that player's team. Upstream factored this into AActor::GetTeam() reading
 		// userinfo.GetTeam(); ours reads Zandronum's player->Team and honours bOnTeam, so the
 		// fallback is written here rather than importing a helper that would read the wrong fields.
-		int myTeam = DesignatedTeam;
-		int otherTeam = other->DesignatedTeam;
+		int myTeam = Ext().DesignatedTeam;
+		int otherTeam = other->Ext().DesignatedTeam;
 		if (myTeam == TEAM_None && FriendPlayer != 0 && players[FriendPlayer - 1].bOnTeam)
 			myTeam = players[FriendPlayer - 1].Team;
 		if (otherTeam == TEAM_None && other->FriendPlayer != 0 && players[other->FriendPlayer - 1].bOnTeam)
@@ -8291,9 +8417,9 @@ int AActor::DoSpecialDamage (AActor *target, int damage, FName damagetype)
 		if (target->player)
 		{
 			// Only do this for old style poison damage.
-			if (PoisonDamage > 0 && PoisonDuration == INT_MIN)
+			if (Ext().PoisonDamage > 0 && Ext().PoisonDuration == INT_MIN)
 			{
-				P_PoisonPlayer (target->player, this, this->target, PoisonDamage);
+				P_PoisonPlayer (target->player, this, this->target, Ext().PoisonDamage);
 				damage >>= 1;
 			}
 		}
@@ -8397,7 +8523,7 @@ void AActor::SetIdle(bool nofunction)
 
 int AActor::SpawnHealth()
 {
-	int defhealth = StartHealth ? StartHealth : GetDefault()->health;
+	int defhealth = Ext().StartHealth ? Ext().StartHealth : GetDefault()->health;
 	if (!(flags3 & MF3_ISMONSTER) || defhealth == 0)
 	{
 		return defhealth;
@@ -8506,9 +8632,9 @@ FSharedStringArena AActor::mStringPropertyData;
 
 const char *AActor::GetTag(const char *def) const
 {
-	if (Tag != NULL)
+	if (Ext().Tag != NULL)
 	{
-		const char *tag = Tag->GetChars();
+		const char *tag = Ext().Tag->GetChars();
 		if (tag[0] == '$')
 		{
 			return GStrings(tag + 1);
@@ -8532,11 +8658,11 @@ void AActor::SetTag(const char *def)
 {
 	if (def == NULL || *def == 0) 
 	{
-		Tag = NULL;
+		SetExt(&ZxActorExt::Tag, (FString *)NULL);
 	}
 	else 
 	{
-		Tag = mStringPropertyData.Alloc(def);
+		ExtW().Tag = mStringPropertyData.Alloc(def);
 	}
 }
 
@@ -8776,7 +8902,7 @@ CCMD( respawnactors )
 				pNewActor->reactiontime = 18;
 
 				pNewActor->TIDtoHate = pActor->TIDtoHate;
-				pNewActor->LastLookActor = pActor->LastLookActor;
+				pNewActor->SetExt(&ZxActorExt::LastLookActor, pActor->Ext().LastLookActor);
 				pNewActor->LastLookPlayerNumber = pActor->LastLookPlayerNumber;
 				pNewActor->flags3 |= pActor->flags3 & MF3_HUNTPLAYERS;
 				pNewActor->flags4 |= pActor->flags4 & MF4_NOHATEPLAYERS;

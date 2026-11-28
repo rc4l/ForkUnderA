@@ -1554,22 +1554,22 @@ bool P_LookForTID (AActor *actor, INTBOOL allaround, FLookExParams *params)
 			actor->reactiontime = 0;
 
 		actor->target = other;
-		actor->LastLookActor = other;
+		actor->SetExt(&ZxActorExt::LastLookActor, other);
 		return true;
 	}
 
 	// The actor's TID could change because of death or because of
 	// Thing_ChangeTID. If it's not what we expect, then don't use
 	// it as a base for the iterator.
-	if (actor->LastLookActor != NULL &&
-		actor->LastLookActor->tid != actor->TIDtoHate)
+	if (actor->Ext().LastLookActor != NULL &&
+		actor->Ext().LastLookActor->tid != actor->TIDtoHate)
 	{
-		actor->LastLookActor = NULL;
+		actor->SetExt(&ZxActorExt::LastLookActor, nullptr);
 	}
 
-	FActorIterator iterator (actor->TIDtoHate, actor->LastLookActor);
+	FActorIterator iterator (actor->TIDtoHate, actor->Ext().LastLookActor);
 	int c = (pr_look3() & 31) + 7;	// Look for between 7 and 38 hatees at a time
-	while ((other = iterator.Next()) != actor->LastLookActor)
+	while ((other = iterator.Next()) != actor->Ext().LastLookActor)
 	{
 		if (other == NULL)
 		{
@@ -1611,10 +1611,10 @@ bool P_LookForTID (AActor *actor, INTBOOL allaround, FLookExParams *params)
 			actor->reactiontime = 0;
 
 		actor->target = other;
-		actor->LastLookActor = other;
+		actor->SetExt(&ZxActorExt::LastLookActor, other);
 		return true;
 	}
-	actor->LastLookActor = other;
+	actor->SetExt(&ZxActorExt::LastLookActor, other);
 	if (actor->target == NULL)
 	{
 		// [RH] use goal as target
@@ -1876,7 +1876,7 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 #endif
 		// [SP] If you don't see any enemies in deathmatch, look for players (but only when friend to a specific player.)
 		// [BB] TEAM_NONE -> TEAM_None
-		if (actor->FriendPlayer == 0 && (!teamplay || actor->DesignatedTeam == TEAM_None)) return result;
+		if (actor->FriendPlayer == 0 && (!teamplay || actor->Ext().DesignatedTeam == TEAM_None)) return result;
 		// [BB] Adapted to take into account teamgame.
 		if (result || (!deathmatch && !teamgame)) return true;
 

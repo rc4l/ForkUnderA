@@ -669,7 +669,7 @@ void DObject::ResetUserVars()
 				if (var->bUserVar)
 				{
 					count = zx::decorateuzdoom::UserVarCount(var);
-					int *savedValue = static_cast<AActor *>(this)->savedUserVars.CheckKey(var);
+					const int *savedValue = static_cast<AActor *>(this)->Saved().savedUserVars.CheckKey(var);
 					for (DWORD j = 0; j < count; j++)
 					{
 						// [BOF] Restore original value if it exists; set to 0 otherwise.

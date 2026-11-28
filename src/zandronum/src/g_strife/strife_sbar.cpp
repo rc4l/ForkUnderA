@@ -684,8 +684,8 @@ private:
 			// Show miscellaneous status items.
 			
 			// Print stats
-			DrINumber2 (CPlayer->mo->accuracy, left+268*xscale, top+28*yscale, 7*xscale, imgFONY0);
-			DrINumber2 (CPlayer->mo->stamina, left+268*xscale, top+52*yscale, 7*xscale, imgFONY0);
+			DrINumber2 (CPlayer->mo->Ext().accuracy, left+268*xscale, top+28*yscale, 7*xscale, imgFONY0);
+			DrINumber2 (CPlayer->mo->Ext().stamina, left+268*xscale, top+52*yscale, 7*xscale, imgFONY0);
 
 			// How many keys does the player have?
 			for (i = 0, item = CPlayer->mo->Inventory;

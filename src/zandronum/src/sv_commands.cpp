@@ -129,19 +129,20 @@ bool EnsureActorHasNetID( const AActor *pActor )
 // [BB] Check if the actor already was updated during this tic, and alters ulBits accorindly.
 void RemoveUnnecessaryPositionUpdateFlags( AActor *pActor, ULONG &ulBits )
 {
-	if ( (pActor->lastNetXUpdateTic == gametic) && (pActor->lastX == pActor->x) )
+	const ZxNetDelta &sent = pActor->NetDelta( );
+	if ( (sent.lastNetXUpdateTic == gametic) && (pActor->lastX == pActor->x) )
 		ulBits  &= ~CM_X;
-	if ( (pActor->lastNetYUpdateTic == gametic) && (pActor->lastY == pActor->y) )
+	if ( (sent.lastNetYUpdateTic == gametic) && (pActor->lastY == pActor->y) )
 		ulBits  &= ~CM_Y;
-	if ( (pActor->lastNetZUpdateTic == gametic) && (pActor->lastZ == pActor->z) )
+	if ( (sent.lastNetZUpdateTic == gametic) && (pActor->lastZ == pActor->z) )
 		ulBits  &= ~CM_Z;
-	if ( (pActor->lastNetVelXUpdateTic == gametic) && (pActor->lastVelx == pActor->velx) )
+	if ( (sent.lastNetVelXUpdateTic == gametic) && (sent.lastVelx == pActor->velx) )
 		ulBits  &= ~CM_VELX;
-	if ( (pActor->lastNetVelYUpdateTic == gametic) && (pActor->lastVely == pActor->vely) )
+	if ( (sent.lastNetVelYUpdateTic == gametic) && (sent.lastVely == pActor->vely) )
 		ulBits  &= ~CM_VELY;
-	if ( (pActor->lastNetVelZUpdateTic == gametic) && (pActor->lastVelz == pActor->velz) )
+	if ( (sent.lastNetVelZUpdateTic == gametic) && (sent.lastVelz == pActor->velz) )
 		ulBits  &= ~CM_VELZ;
-	if ( (pActor->lastNetMovedirUpdateTic == gametic) && (pActor->lastMovedir == pActor->movedir) )
+	if ( (sent.lastNetMovedirUpdateTic == gametic) && (sent.lastMovedir == pActor->movedir) )
 		ulBits  &= ~CM_MOVEDIR;
 }
 
@@ -150,40 +151,44 @@ void RemoveUnnecessaryPositionUpdateFlags( AActor *pActor, ULONG &ulBits )
 // [BB] Mark the actor as updated according to ulBits.
 void ActorNetPositionUpdated( AActor *pActor, ULONG &ulBits )
 {
+	// [Doruk-Aksoy] features/actor-layout: the sent motion's block is made only for an actor a MoveThing goes out for.
+	if (( ulBits & ( CM_X|CM_Y|CM_Z|CM_VELX|CM_VELY|CM_VELZ|CM_MOVEDIR )) == 0 )
+		return;
+	ZxNetDelta &sent = pActor->NetDeltaW( );
 	if ( ulBits & CM_X )
 	{
-		pActor->lastNetXUpdateTic = gametic;
+		sent.lastNetXUpdateTic = gametic;
 		pActor->lastX = pActor->x;
 	}
 	if ( ulBits & CM_Y )
 	{
-		pActor->lastNetYUpdateTic = gametic;
+		sent.lastNetYUpdateTic = gametic;
 		pActor->lastY = pActor->y;
 	}
 	if ( ulBits & CM_Z )
 	{
-		pActor->lastNetZUpdateTic = gametic;
+		sent.lastNetZUpdateTic = gametic;
 		pActor->lastZ = pActor->z;
 	}
 	if ( ulBits & CM_VELX )
 	{
-		pActor->lastNetVelXUpdateTic = gametic;
-		pActor->lastVelx = pActor->velx;
+		sent.lastNetVelXUpdateTic = gametic;
+		sent.lastVelx = pActor->velx;
 	}
 	if ( ulBits & CM_VELY )
 	{
-		pActor->lastNetVelYUpdateTic = gametic;
-		pActor->lastVely = pActor->vely;
+		sent.lastNetVelYUpdateTic = gametic;
+		sent.lastVely = pActor->vely;
 	}
 	if ( ulBits & CM_VELZ )
 	{
-		pActor->lastNetVelZUpdateTic = gametic;
-		pActor->lastVelz = pActor->velz;
+		sent.lastNetVelZUpdateTic = gametic;
+		sent.lastVelz = pActor->velz;
 	}
 	if ( ulBits & CM_MOVEDIR )
 	{
-		pActor->lastNetMovedirUpdateTic = gametic;
-		pActor->lastMovedir = pActor->movedir;
+		sent.lastNetMovedirUpdateTic = gametic;
+		sent.lastMovedir = pActor->movedir;
 	}
 }
 //*****************************************************************************
@@ -647,7 +652,7 @@ void SERVERCOMMANDS_SetPlayerHealthAndMaxHealthBonus( ULONG ulPlayer, ULONG ulPl
 		if ( pInventory )
 		{
 			pInventory->Amount = players[ulPlayer].MaxHealthBonus;
-			pInventory->MaxAmount = pInventory->Amount + players[ulPlayer].mo->StartHealth; // [RK] Set the current max health.
+			pInventory->MaxAmount = pInventory->Amount + players[ulPlayer].mo->Ext().StartHealth; // [RK] Set the current max health.
 			SERVERCOMMANDS_GiveInventory( ulPlayer, pInventory, ulPlayerExtra, flags, true ); // [RK] Send extra value
 			pInventory->Destroy ();
 			pInventory = NULL;
@@ -2199,7 +2204,7 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 		break;
 
 	case APROP_StencilColor:
-		value = pActor->fillcolor;
+		value = pActor->Ext().fillcolor;
 		break;
 
 	case APROP_Friction:

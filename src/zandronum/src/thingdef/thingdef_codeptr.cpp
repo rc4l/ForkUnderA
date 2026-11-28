@@ -2867,7 +2867,7 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	}
 	if (flags & SIXF_TRANSFERSTENCILCOL)
 	{
-		mo->fillcolor = self->fillcolor;
+		mo->SetExt(&ZxActorExt::fillcolor, self->Ext().fillcolor);
 	}
 	if (flags & SIXF_TRANSFERALPHA)
 	{
@@ -3092,7 +3092,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnItemEx)
 
 			// [rc4l] Ported from zandronum@0b7f9c3c54f6e7e5cf4effecd5326b002a113c6b: SXF_TRANSFERSTENCILCOL reaches clients.
 			// [AK] Set the stencil color if necessary.
-			if ( mo->fillcolor != mo->GetDefault( )->fillcolor )
+			if ( mo->Ext().fillcolor != mo->GetDefault( )->Ext().fillcolor )
 				SERVERCOMMANDS_SetThingProperty( mo, APROP_StencilColor );
 		}
 
@@ -3930,7 +3930,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipperLevel)
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_INT(level, 0);
 
-	self->RipperLevel = level;
+	self->SetExt(&ZxActorExt::RipperLevel, level);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMin)
@@ -3938,7 +3938,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMin)
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_INT(minimum, 0);
 
-	self->RipLevelMin = minimum;
+	self->SetExt(&ZxActorExt::RipLevelMin, minimum);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMax)
@@ -3946,7 +3946,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMax)
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_INT(maximum, 0);
 
-	self->RipLevelMax = maximum;
+	self->SetExt(&ZxActorExt::RipLevelMax, maximum);
 }
 
 //===========================================================================

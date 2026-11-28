@@ -301,7 +301,7 @@ class CommandDrawImage : public SBarInfoCommandFlowControl
 			// [BB]
 			else if(type == RUNEICON)
 			{
-				AInventory *item = statusBar->CPlayer->mo->Rune;
+				AInventory *item = statusBar->CPlayer->mo->Ext().Rune;
 				if( ( item != NULL ) && item->Icon.isValid() )
 					texture = TexMan[item->Icon];
 			}
@@ -1417,7 +1417,7 @@ class CommandDrawNumber : public CommandDrawString
 					num = level.found_secrets;
 					break;
 				case SCORE:
-					num = statusBar->CPlayer->mo->Score;
+					num = statusBar->CPlayer->mo->Ext().Score;
 					break;
 				case TOTALSECRETS:
 					num = level.total_secrets;
@@ -1483,10 +1483,10 @@ class CommandDrawNumber : public CommandDrawString
 						num = statusBar->CPlayer->mo->InvSel->Amount;
 					break;
 				case ACCURACY:
-					num = statusBar->CPlayer->mo->accuracy;
+					num = statusBar->CPlayer->mo->Ext().accuracy;
 					break;
 				case STAMINA:
-					num = statusBar->CPlayer->mo->stamina;
+					num = statusBar->CPlayer->mo->Ext().stamina;
 					break;
 				case KEYS:
 					num = 0;
@@ -2841,7 +2841,7 @@ class CommandDrawBar : public SBarInfoCommand
 							max = 0;
 					}
 					else //default to the class's health
-						max = statusBar->CPlayer->mo->GetMaxHealth() + statusBar->CPlayer->mo->stamina;
+						max = statusBar->CPlayer->mo->GetMaxHealth() + statusBar->CPlayer->mo->Ext().stamina;
 					break;
 				case ARMOR:
 					value = statusBar->armor != NULL ? statusBar->armor->Amount : 0;
@@ -3382,7 +3382,7 @@ class CommandDrawGem : public SBarInfoCommand
 				return;
 
 			goalValue = armor ? (statusBar->armor ? statusBar->armor->Amount : 0) : statusBar->CPlayer->mo->health;
-			int max = armor ? 100 : statusBar->CPlayer->mo->GetMaxHealth() + statusBar->CPlayer->mo->stamina;
+			int max = armor ? 100 : statusBar->CPlayer->mo->GetMaxHealth() + statusBar->CPlayer->mo->Ext().stamina;
 			if(max != 0 && goalValue > 0)
 			{
 				goalValue = (goalValue*100)/max;

@@ -242,15 +242,15 @@ static void DrawStatus(player_t * CPlayer, int x, int y)
 	
 	if (hud_showscore)
 	{
-		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->Score);
+		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->Ext().Score);
 		DrawStatLine(x, y, "Sc:", tempstr);
 	}
 	
 	if (hud_showstats)
 	{
-		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->accuracy);
+		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->Ext().accuracy);
 		DrawStatLine(x, y, "Ac:", tempstr);
-		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->stamina);
+		mysnprintf(tempstr, countof(tempstr), "%i ", CPlayer->mo->Ext().stamina);
 		DrawStatLine(x, y, "St:", tempstr);
 	}
 	

@@ -1810,7 +1810,7 @@ static void SetMapThingUserData(AActor *actor, unsigned udi)
 			*(int *)(reinterpret_cast<BYTE *>(actor) + var->offset) = value;
 
 			// [BOF] Store this value in another variable for map resets.
-			actor->savedUserVars.Insert(var, value);
+			actor->SavedForWrite().savedUserVars.Insert(var, value);
 		}
 	}
 }
