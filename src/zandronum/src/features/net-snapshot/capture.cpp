@@ -2845,13 +2845,13 @@ static void snap_RecordStop(const char* pszReason)
 		pszReason, g_recordRecords, (double)g_recordBytes / (1024.0 * 1024.0));
 }
 
-// Taken during static initialization: TIC_GetRawCounter needs nothing initialized first, and
-// a file-scope const costs a load where a function-local static costs MSVC's guard.
-static const tictime_raw_t g_msEpoch = TIC_GetRawCounter();
-
+// [Kaori-Chani] The engine's clock, not one of the module's own: GhostFrame samples at the tic's
+// end from I_GetTimeFrac, which is on I_MSTime, and I_MSTime pauses while the engine freezes
+// time (a wipe, a save). An epoch of its own ran ahead by the startup and every freeze since,
+// so mirrors were sampled that far in the past and a short-lived missile was never drawn.
 unsigned int zx::netsnapshot::NowMS()
 {
-	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - g_msEpoch, 1000);
+	return I_MSTime();
 }
 
 static void snap_RecordCapture(unsigned int spanTics, const TArray<BYTE>& raw, unsigned int zstdSize)
