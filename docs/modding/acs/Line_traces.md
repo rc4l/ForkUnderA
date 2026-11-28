@@ -53,6 +53,7 @@ if( fua_LineTrace( t, 0, GetActorAngle( 0 ), 2048.0, GetActorPitch( 0 ), 0, 41.0
 | `TRF_BLOCKUSE` | 512 | stop at lines that block use |
 | `TRF_BLOCKSELF` | 1024 | stop at lines that would block the tracing actor's own movement |
 | `TRF_FUA_PHYSICALSIZE` | 1048576 | measure actors by their size, not their hit size |
+| `TRF_FUA_NOUNLAGGED` | 4194304 | trace the server's world as it is now, even for a player (see Online) |
 
 | Property | Value |
 |---|---|
@@ -145,7 +146,8 @@ of these for lines, floors and ceilings; `b` 0 turns a `TQ_` filter round:
 - **With `TRF_NOSKY`, the sky ends the trace and is never kept.**
 - **`flags` takes the `TRF_` flags that choose what is hit:** `TRF_ALLACTORS`, `TRF_SOLIDACTORS`,
   `TRF_BLOCKUSE`, `TRF_THRUBLOCK`, `TRF_THRUHITSCAN`, `TRF_NOSKY`, `TRF_FUA_PHYSICALSIZE`, and
-  `TRF_FUA_ALLLINES` (2097152), which reports every line crossed so `TQ_` filters can pick them out.
+  `TRF_FUA_ALLLINES` (2097152), which reports every line crossed so `TQ_` filters can pick them out, and
+  `TRF_FUA_NOUNLAGGED`.
   `TRF_BLOCKSELF` counts only with an `ignore` actor to be blocked as; the rules do what
   `TRF_THRUACTORS` and `TRF_THRUSPECIES` do.
 - **`ignore` is a handle the trace passes through,** such as the shooter, which a trace started inside it
@@ -300,6 +302,18 @@ pukename PierceShot 200 => /pierced 4/
 Each machine traces its own copy of the map and its actors, so a clientside trace (a laser dot, a
 footstep's surface) sees what that client draws, and nothing is sent. Damage a trace decides on belongs
 in a server script, which holds every actor's health.
+
+A server's trace from a player is **unlagged**, as that player's hitscans are: the other players are put back
+where that player's screen showed them when the shot was fired, and the trace runs on that world. A weapon
+built in ACS then hits what its player aimed at, even at a high ping. `fua_LineTrace` takes the player it
+traces from; `fua_Trace` takes its `ignore` actor when that is a player, else the script's activator.
+
+- Monsters, map spots and clientside scripts trace the world as it is; so does a server with
+  `sv_nounlagged`, or a player whose `cl_unlagged` is off.
+- `TRF_FUA_NOUNLAGGED` traces the world as it is now, for a check that isn't a shot, such as whether a
+  player can see something at this moment.
+- A `fua_TraceCallback` callback runs inside the trace, so it sees the players where the shooter saw them.
+  An attack it makes (a `LineAttack`) isn't rewound a second time.
 
 ## Implementation notes
 

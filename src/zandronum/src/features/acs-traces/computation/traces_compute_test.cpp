@@ -143,6 +143,24 @@ TEST(AcsTraces, ASnapshotMirrorIsAlwaysPassedThrough)
 	EXPECT_EQ(ComputeLineTraceDecision(kHitActor, true, true, true, true), kTraceSkip);
 }
 
+TEST(AcsTraces, APlayersTraceRewindsUnlessOptedOutOrAlreadyRewound)
+{
+	EXPECT_TRUE(ComputeTraceRewinds(true, 0, false));
+	EXPECT_TRUE(ComputeTraceRewinds(true, kTrfThruActors | kTrfFuaAllLines, false));
+	EXPECT_FALSE(ComputeTraceRewinds(false, 0, false));
+	EXPECT_FALSE(ComputeTraceRewinds(true, kTrfFuaNoUnlagged, false));
+	EXPECT_FALSE(ComputeTraceRewinds(true, kTrfFuaNoUnlagged | kTrfThruActors, false));
+	EXPECT_FALSE(ComputeTraceRewinds(true, 0, true));
+}
+
+TEST(AcsTraces, ARuleTraceSeesThroughItsIgnoredPlayerElseItsActivator)
+{
+	EXPECT_EQ(ComputeRewindViewer(true, true), kViewerIgnored);
+	EXPECT_EQ(ComputeRewindViewer(true, false), kViewerIgnored);
+	EXPECT_EQ(ComputeRewindViewer(false, true), kViewerActivator);
+	EXPECT_EQ(ComputeRewindViewer(false, false), kViewerNone);
+}
+
 TEST(AcsTraces, WallPartsAndTexturesFollowUZDoom)
 {
 	EXPECT_EQ(ComputeLinePart(kTierUpper), 0);
