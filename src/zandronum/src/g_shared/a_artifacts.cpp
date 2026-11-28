@@ -195,14 +195,14 @@ void APowerup::DoEffect ()
 			{
 				Owner->player->fixedcolormap = Colormap;
 				// [BC] Apply the colormap to the player's body, also.
-				Owner->FixedColormap = Colormap;
+				Owner->SetExt(&ZxActorExt::FixedColormap, Colormap);
 			}
 			else if (Owner->player->fixedcolormap == Colormap)	
 			{
 				// only unset if the fixed colormap comes from this item
 				Owner->player->fixedcolormap = NOFIXEDCOLORMAP;
 				// [BB] Also unset the colormap of the player's body.
-				Owner->FixedColormap = NOFIXEDCOLORMAP;
+				Owner->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 			}
 		}
 	}
@@ -222,7 +222,7 @@ void APowerup::EndEffect ()
 	{ // only unset if the fixed colormap comes from this item
 		Owner->player->fixedcolormap = NOFIXEDCOLORMAP;
 		// [BB] Also unset the colormap of the player's body.
-		Owner->FixedColormap = NOFIXEDCOLORMAP;
+		Owner->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 	}
 }
 
@@ -380,7 +380,7 @@ void APowerup::OwnerDied ()
 
 bool APowerup::IsActiveRune()
 {
-	return ( Owner != NULL ) && ( Owner->Rune == this );
+	return ( Owner != NULL ) && ( Owner->Ext().Rune == this );
 }
 
 // Invulnerability Powerup ---------------------------------------------------
@@ -502,7 +502,7 @@ void APowerInvulnerable::EndEffect ()
 	{
 		Owner->player->fixedcolormap = NOFIXEDCOLORMAP;
 		// [BB] Additionally clear FixedColormap.
-		Owner->FixedColormap = NOFIXEDCOLORMAP;
+		Owner->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 	}
 }
 
@@ -1421,8 +1421,8 @@ void APowerTargeter::PositionAccuracy ()
 
 	if (player != NULL)
 	{
-		player->psprites[ps_targetleft].sx = (160-3)*FRACUNIT - ((100 - player->mo->accuracy) << FRACBITS);
-		player->psprites[ps_targetright].sx = (160-3)*FRACUNIT + ((100 - player->mo->accuracy) << FRACBITS);
+		player->psprites[ps_targetleft].sx = (160-3)*FRACUNIT - ((100 - player->mo->Ext().accuracy) << FRACBITS);
+		player->psprites[ps_targetright].sx = (160-3)*FRACUNIT + ((100 - player->mo->Ext().accuracy) << FRACBITS);
 	}
 }
 
@@ -2354,10 +2354,10 @@ void APowerTranslucency::InitEffect( )
 void ARuneGiver::PowerupGranted ( APowerup* power )
 {
 	// If the owner already has a rune, remove that now.
-	if ( Owner->Rune != NULL )
-		Owner->Rune->Destroy();
+	if ( Owner->Ext().Rune != NULL )
+		Owner->Ext().Rune->Destroy();
 
-	Owner->Rune = power;
+	Owner->SetExt(&ZxActorExt::Rune, power);
 }
 
 //===========================================================================

@@ -78,7 +78,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_CMaceAttack)
 		}
 	}
 	// didn't find any creatures, so try to strike any walls
-	player->mo->weaponspecial = 0;
+	player->mo->SetExt(&ZxActorExt::weaponspecial, 0);
 
 	angle = player->mo->angle;
 	slope = (int)(P_AimLineAttack (player->mo, angle, MELEERANGE, &linetarget));

@@ -177,8 +177,8 @@ MarkSurface SurfaceOf (const Hit &h)
 // [rc4l] The generator a shooter's marks use: its weapon's, else its own, as SpawnShootDecal chose.
 const FDecalBase *GeneratorOf (AActor *shooter)
 {
-	if (shooter->player != NULL && shooter->player->ReadyWeapon != NULL) return shooter->player->ReadyWeapon->GetDefault ()->DecalGenerator;
-	return shooter->DecalGenerator;
+	if (shooter->player != NULL && shooter->player->ReadyWeapon != NULL) return shooter->player->ReadyWeapon->GetDefault ()->Ext().DecalGenerator;
+	return shooter->Ext().DecalGenerator;
 }
 
 } // namespace
@@ -323,7 +323,7 @@ void MarkMissile (AActor *mo, line_t *line, AActor *target, fixed_t velx, fixed_
 		const bool ceiling = kind == kSurfaceCeiling;
 		Hit h = NewHit (kind, mo->x, mo->y, ceiling ? mo->ceilingz : mo->floorz, FIXED2FLOAT (velx), FIXED2FLOAT (vely), FIXED2FLOAT (velz));
 		FindPlane (h, mo->Sector, ceiling ? mo->ceilingpic : mo->floorpic);
-		Maker::Mark (h, mo->DecalGenerator, request, 0);
+		Maker::Mark (h, mo->Ext().DecalGenerator, request, 0);
 		return;
 	}
 
@@ -360,7 +360,7 @@ void MarkMissile (AActor *mo, line_t *line, AActor *target, fixed_t velx, fixed_
 		}
 	}
 #endif
-	Maker::Mark (h, mo->DecalGenerator, request, 0);
+	Maker::Mark (h, mo->Ext().DecalGenerator, request, 0);
 }
 
 void MarkBlood (const char *bloodType, const FTraceResults &trace, fixed_t vx, fixed_t vy, fixed_t vz, PalEntry color)

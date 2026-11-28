@@ -27,7 +27,7 @@ inline void PrefetchLines(const void *p, size_t bytes)
 	}
 }
 
-// [Doruk-Aksoy] The bytes of an actor its tick reads: the hot groups, and on a server the position-update block after them.
+// [Doruk-Aksoy] The bytes of an actor its tick reads: the hot groups.
 size_t TickBytes();
 
 // [Doruk-Aksoy] The bytes of an actor the render copy reads.

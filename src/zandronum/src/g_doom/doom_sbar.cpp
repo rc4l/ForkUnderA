@@ -677,7 +677,7 @@ void DrawFullHUD_Ammo(AAmmo *pAmmo)
 void DrawFullHUD_Rune()
 {
 	if ( CPlayer->mo )
-		pInventory = CPlayer->mo->Rune;
+		pInventory = CPlayer->mo->Ext().Rune;
 	else
 		pInventory = NULL;
 
@@ -1089,7 +1089,7 @@ void DrawFullHUD_GameInformation()
 
 		// [BC] Draw rune.
 		{
-			pRune = CPlayer->mo->Rune;
+			pRune = CPlayer->mo->Ext().Rune;
 			if ( pRune && pRune->Icon.isValid() )
 			{
 				screen->DrawTexture( TexMan( pRune->Icon ), -76, -2,

@@ -176,7 +176,7 @@ void ReadDeclarations(const char *gameDefsLump)
 
 void InitActor(AActor *actor)
 {
-	actor->fua_material = MaterialIndex(actor->fua_MaterialName.GetChars()) + 1;
+	actor->fua_material = MaterialIndex(actor->Ext().fua_MaterialName.GetChars()) + 1;
 	actor->fua_materialSlot = 0;
 }
 
@@ -246,7 +246,7 @@ bool ActorUniforms(const AActor *actor, unsigned &set, float values[kActorUnifor
 void SendActorMaterialTo(AActor *actor, int player)
 {
 	const AActor *defaults = actor->GetDefault();
-	if (MaterialOf(actor) != MaterialIndex(defaults->fua_MaterialName.GetChars())) SERVERCOMMANDS_FuaSetActorMaterial(actor, NameOf(MaterialOf(actor)), player, SVCF_ONLYTHISCLIENT);
+	if (MaterialOf(actor) != MaterialIndex(defaults->Ext().fua_MaterialName.GetChars())) SERVERCOMMANDS_FuaSetActorMaterial(actor, NameOf(MaterialOf(actor)), player, SVCF_ONLYTHISCLIENT);
 	const int slot = SlotOf(actor);
 	if (slot < 0 || slot >= (int)level.fua_actorMaterials.instances.size()) return;
 	const ActorInstance &own = level.fua_actorMaterials.instances[slot];

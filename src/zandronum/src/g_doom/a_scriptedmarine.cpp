@@ -715,9 +715,9 @@ void AScriptedMarine::SetWeapon (EMarineWeapon type)
 
 		const PClass *cls = PClass::FindClass(classes[type]);
 		if (cls != NULL)
-			DecalGenerator = GetDefaultByType(cls)->DecalGenerator;
+			SetExt(&ZxActorExt::DecalGenerator, GetDefaultByType(cls)->Ext().DecalGenerator);
 		else 
-			DecalGenerator = NULL;
+			SetExt(&ZxActorExt::DecalGenerator, (FDecalBase *)NULL);
 	}
 }
 

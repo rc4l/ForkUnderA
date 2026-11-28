@@ -52,6 +52,7 @@
 #include "farchive.h"
 // [BC] New #includes.
 #include "g_game.h"
+#include <cstdint>
 
 FDecalLib DecalLibrary;
 
@@ -372,10 +373,10 @@ void FDecalLib::ReadAllDecals ()
 	{
 		AActor *def = (AActor*)GetDefaultByType (PClass::m_RuntimeActors[i]);
 
-		FName v = ENamedName(intptr_t(def->DecalGenerator));
+		FName v = ENamedName(intptr_t(def->Ext().DecalGenerator));
 		if (v.IsValidName())
 		{
-			def->DecalGenerator = ScanTreeForName (v, Root);
+			def->ExtW().DecalGenerator = ScanTreeForName (v, Root);
 		}
 	}
 }
@@ -634,7 +635,7 @@ void FDecalLib::ParseGenerator (FScanner &sc)
 		}
 	}
 
-	actor->DecalGenerator = decal;
+	actor->ExtW().DecalGenerator = decal;
 	if (decal != NULL)
 	{
 		decal->Users.Push (type);
@@ -925,7 +926,7 @@ void FDecalLib::AddDecal (FDecalBase *decal)
 		// Fix references to the old decal so that they use the new one instead.
 		for (unsigned int i = 0; i < node->Users.Size(); ++i)
 		{
-			((AActor *)node->Users[i]->Defaults)->DecalGenerator = decal;
+			((AActor *)node->Users[i]->Defaults)->ExtW().DecalGenerator = decal;
 		}
 		decal->Users = node->Users;
 		delete node;

@@ -1413,7 +1413,7 @@ static int PatchThing (int thingy)
 				const FDecalTemplate *decal = DecalLibrary.GetDecalByName (Line2);
 				if (decal != NULL)
 				{
-					info->DecalGenerator = const_cast <FDecalTemplate *>(decal);
+					info->ExtW().DecalGenerator = const_cast <FDecalTemplate *>(decal);
 				}
 				else
 				{
@@ -2226,7 +2226,7 @@ static int PatchWeapon (int weapNum)
 			const FDecalTemplate *decal = DecalLibrary.GetDecalByName (Line2);
 			if (decal != NULL)
 			{
-				info->DecalGenerator = const_cast <FDecalTemplate *>(decal);
+				info->ExtW().DecalGenerator = const_cast <FDecalTemplate *>(decal);
 			}
 			else
 			{

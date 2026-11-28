@@ -876,9 +876,9 @@ void gl_AttachLight(AActor *actor, unsigned int count, const FLightDefaults *lig
 	ADynamicLight *light;
 
 		// I'm skipping the single rotations because that really doesn't make sense!
-	if (count < actor->dynamiclights.Size()) 
+	if (count < actor->Ext().dynamiclights.Size()) 
 	{
-		light = barrier_cast<ADynamicLight*>(actor->dynamiclights[count]);
+		light = barrier_cast<ADynamicLight*>(actor->Ext().dynamiclights[count]);
 		assert(light != NULL);
 	}
 	else
@@ -886,7 +886,7 @@ void gl_AttachLight(AActor *actor, unsigned int count, const FLightDefaults *lig
 		light = Spawn<ADynamicLight>(actor->x, actor->y, actor->z, NO_REPLACE);
 		light->target = actor;
 		light->owned = true;
-		actor->dynamiclights.Push(light);
+		actor->ExtW().dynamiclights.Push(light);
 		actor->GetClass()->ActorInfo->FuaLightsAttached = true;	// [Doruk-Aksoy] so gl_SetActorLights reads this class's actors' lights from now on
 	}
 	light->flags2&=~MF2_DORMANT;
@@ -948,10 +948,10 @@ void gl_SetActorLights(AActor *actor)
 		}
 	}
 
-	for(;count<actor->dynamiclights.Size();count++)
+	for(;count<actor->Ext().dynamiclights.Size();count++)
 	{
-		actor->dynamiclights[count]->flags2|=MF2_DORMANT;
-		memset(actor->dynamiclights[count]->args, 0, sizeof(actor->args));
+		actor->Ext().dynamiclights[count]->flags2|=MF2_DORMANT;
+		memset(actor->Ext().dynamiclights[count]->args, 0, sizeof(actor->args));
 	}
 }
 
@@ -969,7 +969,7 @@ void gl_DeleteAllAttachedLights()
 
 	while ((a=it.Next())) 
 	{
-		a->dynamiclights.Clear();
+		if (a->Ext().dynamiclights.Size() > 0) a->ExtW().dynamiclights.Clear();
 	}
 
 	TThinkerIterator<ADynamicLight> it2;

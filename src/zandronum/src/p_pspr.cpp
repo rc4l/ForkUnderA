@@ -472,7 +472,7 @@ void P_BringUpWeapon (player_t *player)
 	P_SetPsprite(player, ps_flash, NULL);
 	P_SetPsprite (player, ps_weapon, newstate);
 	// [rc4l] uzdoom@ee6e87d94: clear the weapon scratch counter when bringing a weapon up.
-	player->mo->weaponspecial = 0;
+	player->mo->SetExt(&ZxActorExt::weaponspecial, 0);
 }
 
 

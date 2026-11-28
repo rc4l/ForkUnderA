@@ -247,7 +247,7 @@ bool P_GiveBody (AActor *actor, int num, int max)
 				max = deh.MaxSoulsphere + 50;
 			// [BC] Add the player's max. health bonus to his max.
 			else
-				max = static_cast<APlayerPawn*>(actor)->GetMaxHealth() + player->mo->stamina + player->MaxHealthBonus;
+				max = static_cast<APlayerPawn*>(actor)->GetMaxHealth() + player->mo->Ext().stamina + player->MaxHealthBonus;
 			// [MH] First step in predictable generic morph effects
  			if (player->morphTics)
  			{
@@ -255,7 +255,7 @@ bool P_GiveBody (AActor *actor, int num, int max)
 				{
 					if (!(player->MorphStyle & MORPH_ADDSTAMINA))
 					{
-						max -= player->mo->stamina;
+						max -= player->mo->Ext().stamina;
 					}
 				}
 				else // old health behaviour
@@ -263,7 +263,7 @@ bool P_GiveBody (AActor *actor, int num, int max)
 					max = MAXMORPHHEALTH;
 					if (player->MorphStyle & MORPH_ADDSTAMINA)
 					{
-						max += player->mo->stamina;
+						max += player->mo->Ext().stamina;
 					}
 				}
  			}
@@ -1239,8 +1239,8 @@ void AInventory::Touch (AActor *toucher)
 
 	// [BC] If this item was spawned from an invasion spot, tell the spot that the item
 	// it spawned has been picked up.
-	if ( pPickupSpot )
-		pPickupSpot->PickedUp( );
+	if ( Ext().pPickupSpot )
+		Ext().pPickupSpot->PickedUp( );
 
 	if (flags & MF_COUNTITEM)
 	{
@@ -2048,7 +2048,7 @@ bool AMaxHealth::TryPickup( AActor *&pOther )
 		else if ( lMax == 0 )
 		{
 			// [BC] Add the player's max. health bonus to his max.
-			lMax = static_cast<APlayerPawn *>( pOther )->GetMaxHealth( ) + pPlayer->mo->stamina + pPlayer->MaxHealthBonus;
+			lMax = static_cast<APlayerPawn *>( pOther )->GetMaxHealth( ) + pPlayer->mo->Ext().stamina + pPlayer->MaxHealthBonus;
 			if ( pPlayer->morphTics )
 				lMax = MAXMORPHHEALTH;
 		}
@@ -2323,7 +2323,7 @@ IMPLEMENT_CLASS(AScoreItem)
 
 bool AScoreItem::TryPickup (AActor *&toucher)
 {
-	toucher->Score += Amount;
+	toucher->ExtW().Score += Amount;
 	GoAwayAndDie();
 	return true;
 }

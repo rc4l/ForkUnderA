@@ -72,10 +72,13 @@ walk would, so the check comes round at a walker's pace. Its rolls come from a r
 - `p_map.cpp`: `P_CheckPosition` sets `tm.hardblocker`; `P_ChangeSector` calls `WorldChanged`.
 - `p_lnspec.cpp`, `p_acs.cpp`, `po_man.cpp`: `WorldChanged` where a line's blocking changes or a polyobject moves.
 - `p_local.h`: `FCheckPosition::hardblocker`.
-- `actor.h`: `FuaChasePhase`, `FuaJamWait`, `FuaJamCount` (padding after `visdir`, the chase counters' line),
-  `FuaBlockMemo`, `FuaBlockers` (the cold block).
+- `actor.h`: `FuaChasePhase`, `FuaJamWait`, `FuaJamCount` and `FuaMemoIndex` (padding after `visdir`, the chase
+  counters' line). The memo itself, its directions and up to six blockers, lives in a pool here: an entry is made at a
+  walker's first commit and given back when it moves or is destroyed, so actors that never jam carry 4 bytes, not 92.
 - `CMakeLists.txt`: `chasetrim.cpp` in the `zdoom` sources.
-- `p_mobj.cpp`: `FuaBlockers` in the pointer list, so the GC clears a destroyed blocker.
+- `p_mobj.cpp`: `AActor::Destroy` gives the walker's entry back (`ForgetMemo`); `AActor::MarkPooled` marks its
+  blockers (`MarkMemo`), called from `AActor::PropagateMark`, so the GC clears a destroyed blocker as it did when they
+  were the actor's own pointers.
 
 ## Tests
 

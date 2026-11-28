@@ -240,8 +240,8 @@ void ABaseMonsterInvasionSpot::Tick( void )
 				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
-		pActor->pMonsterSpot = this;
-		pActor->InvasionWave = g_CurrentWave;
+		pActor->SetExt(&ZxActorExt::pMonsterSpot, this);
+		pActor->SetExt(&ZxActorExt::InvasionWave, g_CurrentWave);
 	}
 }
 
@@ -342,8 +342,8 @@ void ABasePickupInvasionSpot::Destroy( )
 	// destroyed spot.
 	while (( pActor = Iterator.Next( )))
 	{
-	if ( pActor->pPickupSpot == this)
-		pActor->pPickupSpot = NULL;
+	if ( pActor->Ext().pPickupSpot == this)
+		pActor->SetExt(&ZxActorExt::pPickupSpot, nullptr);
 	}
 
 	Super::Destroy ();
@@ -411,7 +411,7 @@ void ABasePickupInvasionSpot::Tick( void )
 				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
-		pActor->pPickupSpot = this;
+		pActor->SetExt(&ZxActorExt::pPickupSpot, this);
 	}
 }
 
@@ -878,7 +878,7 @@ void INVASION_StartCountdown( ULONG ulTicks )
 
 			// Get rid of any bodies that didn't come from a spawner.
 			// [BB] Clients don't know by which monster spot something was spawned.
-			if (( pActor->pMonsterSpot == NULL ) &&
+			if (( pActor->Ext().pMonsterSpot == NULL ) &&
 				( NETWORK_InClientMode() == false ))
 			{
 				pActor->Destroy( );
@@ -889,14 +889,14 @@ void INVASION_StartCountdown( ULONG ulTicks )
 			// [BB] Clients just slap the InvasionWave value to everything spawned in CLIENT_SpawnThing,
 			// therefore they know what to do here.
 			if (( g_CurrentWave > 1 ) &&
-				( pActor->InvasionWave == ( g_CurrentWave - 1 )))
+				( pActor->Ext().InvasionWave == ( g_CurrentWave - 1 )))
 			{
 				pActor->Destroy( );
 				continue;
 			}
 
 			// [BB] Build a vector containing all pointers to corpses from the wave one round ago.
-			if (( pActor->InvasionWave == g_CurrentWave ) &&
+			if (( pActor->Ext().InvasionWave == g_CurrentWave ) &&
 				( NETWORK_InClientMode() == false ))
 			{
 				g_MonsterCorpsesFromPreviousWave.push_back( pActor );
@@ -1072,8 +1072,8 @@ void INVASION_BeginWave( ULONG ulWave )
 				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
-		pActor->pMonsterSpot = pMonsterSpot;
-		pActor->InvasionWave = g_CurrentWave;
+		pActor->SetExt(&ZxActorExt::pMonsterSpot, pMonsterSpot);
+		pActor->SetExt(&ZxActorExt::InvasionWave, g_CurrentWave);
 	}
 
 	while (( pPickupSpot = PickupIterator.Next( )))
@@ -1120,7 +1120,7 @@ void INVASION_BeginWave( ULONG ulWave )
 		while (( pActor = ActorIterator.Next( )))
 		{
 			if (( pActor->flags & MF_SPECIAL ) &&
-				( pActor->pPickupSpot == pPickupSpot ))
+				( pActor->Ext().pPickupSpot == pPickupSpot ))
 			{
 				bContinue = true;
 				pPickupSpot->NextSpawnTick = -1;
@@ -1154,7 +1154,7 @@ void INVASION_BeginWave( ULONG ulWave )
 				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
-		pActor->pPickupSpot = pPickupSpot;
+		pActor->SetExt(&ZxActorExt::pPickupSpot, pPickupSpot);
 	}
 
 	while (( pWeaponSpot = WeaponIterator.Next( )))

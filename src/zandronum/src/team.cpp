@@ -1578,7 +1578,7 @@ bool TEAM_IsActorAllowedForTeam( AActor *pActor, ULONG ulTeam )
 	if ( pActor == NULL )
 		return false;
 
-	return TEAM_CheckTeamRestriction( ulTeam, pActor->LimitedToTeam );
+	return TEAM_CheckTeamRestriction( ulTeam, pActor->Ext().LimitedToTeam );
 }
 
 //****************************************************************************
@@ -1685,7 +1685,7 @@ bool TEAM_IsActorVisibleToPlayer( const AActor *pActor, player_t *pPlayer )
 		return true;
 
 	// [BB] Finally check the team restricion.
-	return TEAM_CheckTeamRestriction( pPlayer->Team, pActor->VisibleToTeam );
+	return TEAM_CheckTeamRestriction( pPlayer->Team, pActor->Ext().VisibleToTeam );
 }
 
 //*****************************************************************************

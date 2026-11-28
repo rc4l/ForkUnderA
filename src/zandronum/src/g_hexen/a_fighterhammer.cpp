@@ -76,7 +76,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FHammerAttack)
 					}
 				}
 
-				pmo->weaponspecial = false; // Don't throw a hammer
+				pmo->SetExt(&ZxActorExt::weaponspecial, false); // Don't throw a hammer
 				goto hammerdone;
 			}
 		}
@@ -111,7 +111,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FHammerAttack)
 					}
 				}
 
-				pmo->weaponspecial = false; // Don't throw a hammer
+				pmo->SetExt(&ZxActorExt::weaponspecial, false); // Don't throw a hammer
 				goto hammerdone;
 			}
 		}
@@ -121,25 +121,25 @@ DEFINE_ACTION_FUNCTION(AActor, A_FHammerAttack)
 	slope = (int)(P_AimLineAttack (pmo, angle, HAMMER_RANGE, &linetarget, 0, ALF_CHECK3D));
 	if (P_LineAttack (pmo, angle, HAMMER_RANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"), true) != NULL)
 	{
-		pmo->weaponspecial = false;
+		pmo->SetExt(&ZxActorExt::weaponspecial, false);
 	}
 	else
 	{
-		pmo->weaponspecial = true;
+		pmo->SetExt(&ZxActorExt::weaponspecial, true);
 	}
 
 	// [BC] Apply spread.
 	if ( player->cheats2 & CF2_SPREAD )
 	{
 		if (P_LineAttack (pmo, angle + ( ANGLE_45 / 3 ), HAMMER_RANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"), true) != NULL)
-			pmo->weaponspecial = false;
+			pmo->SetExt(&ZxActorExt::weaponspecial, false);
 		else
-			pmo->weaponspecial = true;
+			pmo->SetExt(&ZxActorExt::weaponspecial, true);
 
 		if (P_LineAttack (pmo, angle - ( ANGLE_45 / 3 ), HAMMER_RANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"), true) != NULL)
-			pmo->weaponspecial = false;
+			pmo->SetExt(&ZxActorExt::weaponspecial, false);
 		else
-			pmo->weaponspecial = true;
+			pmo->SetExt(&ZxActorExt::weaponspecial, true);
 	}
 
 hammerdone:
@@ -148,7 +148,7 @@ hammerdone:
 		!player->ReadyWeapon->CheckAmmo (player->ReadyWeapon->bAltFire ?
 			AWeapon::AltFire : AWeapon::PrimaryFire, false, true))
 	{ 
-		pmo->weaponspecial = false;
+		pmo->SetExt(&ZxActorExt::weaponspecial, false);
 	}
 	return;		
 }
@@ -169,7 +169,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FHammerThrow)
 		return;
 	}
 
-	if (!player->mo->weaponspecial)
+	if (!player->mo->Ext().weaponspecial)
 	{
 		return;
 	}

@@ -154,6 +154,9 @@ void PClass::StaticFreeData (PClass *type)
 {
 	if (type->Defaults != NULL)
 	{
+		// [Doruk-Aksoy] Actor defaults free the rare-field block they own, so a restart leaves none behind; ActorInfo marks them without walking parents already freed.
+		if (type->ActorInfo != NULL)
+			((AActor *)type->Defaults)->FreeOwnedExt ();
 		M_Free(type->Defaults);
 		type->Defaults = NULL;
 	}
@@ -345,6 +348,9 @@ PClass *PClass::CreateDerivedClass (FName name, unsigned int size)
 	{
 		memset (type->Defaults + Size, 0, size - Size);
 	}
+	// [Doruk-Aksoy] A copied actor default owns its rare-field block, so a later write to the parent's (a decal, DeHackEd) stays the parent's.
+	if (type->IsDescendantOf (RUNTIME_CLASS(AActor)))
+		((AActor *)type->Defaults)->OwnExt ();
 
 	type->FlatPointers = NULL;
 	type->bRuntimeClass = true;
@@ -384,7 +390,11 @@ unsigned int PClass::Extend(unsigned int extension)
 
 	unsigned int oldsize = Size;
 	Size += extension;
+	// [Doruk-Aksoy] Actor defaults that own their rare-field block keep it if the realloc moves them, or a child class made at the old address would write the parent's.
+	const bool ownsExt = IsDescendantOf (RUNTIME_CLASS(AActor)) && ((AActor *)Defaults)->OwnsExt ();
 	Defaults = (BYTE *)M_Realloc(Defaults, Size);
+	if (ownsExt)
+		((AActor *)Defaults)->ReclaimExt ();
 	memset(Defaults + oldsize, 0, extension);
 	return oldsize;
 }
@@ -446,6 +456,9 @@ void PClass::InitializeActorInfo ()
 		{
 			memset (Defaults + ParentClass->Size, 0, Size - ParentClass->Size);
 		}
+		// [Doruk-Aksoy] A copied actor default owns its rare-field block, so a later write to the parent's (a decal, DeHackEd) stays the parent's.
+		if (IsDescendantOf (RUNTIME_CLASS(AActor)))
+			((AActor *)Defaults)->OwnExt ();
 	}
 	else
 	{

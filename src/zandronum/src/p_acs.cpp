@@ -5063,7 +5063,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		break;
 
 	case APROP_Score:
-		actor->Score = value;
+		actor->SetExt(&ZxActorExt::Score, value);
 		break;
 
 	case APROP_NameTag:
@@ -5117,11 +5117,11 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		break;
 
 	case APROP_Accuracy:
-		actor->accuracy = value;
+		actor->SetExt(&ZxActorExt::accuracy, value);
 		break;
 
 	case APROP_Stamina:
-		actor->stamina = value;
+		actor->SetExt(&ZxActorExt::stamina, value);
 		break;
 
 	// [ZandroX] Radius/height can now be changed at runtime. Route through
@@ -5194,13 +5194,13 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_StencilColor:
 		// [AK] Save the original value.
-		oldValue = actor->fillcolor;
+		oldValue = actor->Ext().fillcolor;
 
 		actor->SetShade(value);
 	
 		// [AK] If we're the server, tell clients to update this actor property.
 		// Only bother the clients if the stencil color has actually changed.
-		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( static_cast<DWORD>( oldValue ) != actor->fillcolor ) )
+		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( static_cast<DWORD>( oldValue ) != actor->Ext().fillcolor ) )
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
 		break;
 
@@ -5309,7 +5309,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 							{
 								return 0;
 							}
-	case APROP_Score:		return actor->Score;
+	case APROP_Score:		return actor->Ext().Score;
 	case APROP_MasterTID:	return DoGetMasterTID (actor);
 	case APROP_TargetTID:	return (actor->target != NULL)? actor->target->tid : 0;
 	case APROP_TracerTID:	return (actor->tracer != NULL)? actor->tracer->tid : 0;
@@ -5317,8 +5317,8 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_ScaleX: 		return (int)(actor->scaleX);
 	case APROP_ScaleY: 		return (int)(actor->scaleY);
 	case APROP_Mass: 		return actor->Mass;
-	case APROP_Accuracy:    return actor->accuracy;
-	case APROP_Stamina:     return actor->stamina;
+	case APROP_Accuracy:    return actor->Ext().accuracy;
+	case APROP_Stamina:     return actor->Ext().stamina;
 	case APROP_Height:		return (int)(actor->height);
 	case APROP_Radius:		return (int)(actor->radius);
 	// [ZandroX] Raw attack-extent fields (0 = unset, falls back to the physical extent).
@@ -5367,7 +5367,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_Species:		return GlobalACSStrings.AddString(actor->GetSpecies());
 	case APROP_NameTag:		return GlobalACSStrings.AddString(actor->GetTag());
 	case APROP_DamageMultiplier: return actor->DamageMultiply.Raw();	// [rc4l] uzdoom@99b2cfa14
-	case APROP_StencilColor:return actor->fillcolor;
+	case APROP_StencilColor:return actor->Ext().fillcolor;
 	case APROP_Friction:	return (int)(actor->Friction);
 	case APROP_MaxStepHeight:	return (int)(actor->MaxStepHeight);
 	case APROP_MaxDropOffHeight:	return (int)(actor->MaxDropOffHeight);

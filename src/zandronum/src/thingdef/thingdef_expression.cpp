@@ -52,6 +52,7 @@
 #include "m_fixed.h"
 // [BB] New #includes
 #include "network.h"
+#include <cstdint>
 
 int testglobalvar = 1337;	// just for having one global variable to test with
 DEFINE_GLOBAL_VARIABLE(testglobalvar)
@@ -85,9 +86,9 @@ DEFINE_MEMBER_VARIABLE_ALIAS(momz, velz, AActor)
 DEFINE_MEMBER_VARIABLE(scaleX, AActor)
 DEFINE_MEMBER_VARIABLE(scaleY, AActor)
 DEFINE_MEMBER_VARIABLE(Damage, AActor)
-DEFINE_MEMBER_VARIABLE(Score, AActor)
-DEFINE_MEMBER_VARIABLE(accuracy, AActor)
-DEFINE_MEMBER_VARIABLE(stamina, AActor)
+DEFINE_EXT_MEMBER_VARIABLE(Score)
+DEFINE_EXT_MEMBER_VARIABLE(accuracy)
+DEFINE_EXT_MEMBER_VARIABLE(stamina)
 DEFINE_MEMBER_VARIABLE(height, AActor)
 DEFINE_MEMBER_VARIABLE(radius, AActor)
 DEFINE_MEMBER_VARIABLE(reactiontime, AActor)
@@ -110,22 +111,22 @@ DEFINE_MEMBER_VARIABLE(PainThreshold, AActor)
 DEFINE_MEMBER_VARIABLE(Friction, AActor)
 DEFINE_MEMBER_VARIABLE(meleethreshold, AActor)
 DEFINE_MEMBER_VARIABLE(maxtargetrange, AActor)
-DEFINE_MEMBER_VARIABLE(DesignatedTeam, AActor)
+DEFINE_EXT_MEMBER_VARIABLE(DesignatedTeam)
 DEFINE_MEMBER_VARIABLE(lastpush, AActor)
 DEFINE_MEMBER_VARIABLE(lastbump, AActor)
-DEFINE_MEMBER_VARIABLE(weaponspecial, AActor)
-DEFINE_MEMBER_VARIABLE(StartHealth, AActor)
-DEFINE_MEMBER_VARIABLE(PoisonDamage, AActor)
-DEFINE_MEMBER_VARIABLE(PoisonDuration, AActor)
-DEFINE_MEMBER_VARIABLE(PoisonPeriod, AActor)
-DEFINE_MEMBER_VARIABLE(skillrespawncount, AActor)
+DEFINE_EXT_MEMBER_VARIABLE(weaponspecial)
+DEFINE_EXT_MEMBER_VARIABLE(StartHealth)
+DEFINE_EXT_MEMBER_VARIABLE(PoisonDamage)
+DEFINE_EXT_MEMBER_VARIABLE(PoisonDuration)
+DEFINE_EXT_MEMBER_VARIABLE(PoisonPeriod)
+DEFINE_EXT_MEMBER_VARIABLE(skillrespawncount)
 // [MGOOOOOO] Ripper state, so DECORATE can branch on how much a ripper has spent
 // (features/ripper). RipperDamageDone only advances on the server; see the feature README.
-DEFINE_MEMBER_VARIABLE(RipperLevel, AActor)
-DEFINE_MEMBER_VARIABLE(RipLevelMin, AActor)
-DEFINE_MEMBER_VARIABLE(RipLevelMax, AActor)
-DEFINE_MEMBER_VARIABLE(RipperDamageDone, AActor)
-DEFINE_MEMBER_VARIABLE(RipperHitsDone, AActor)
+DEFINE_EXT_MEMBER_VARIABLE(RipperLevel)
+DEFINE_EXT_MEMBER_VARIABLE(RipLevelMin)
+DEFINE_EXT_MEMBER_VARIABLE(RipLevelMax)
+DEFINE_EXT_MEMBER_VARIABLE(RipperDamageDone)
+DEFINE_EXT_MEMBER_VARIABLE(RipperHitsDone)
 
 
 //==========================================================================
@@ -2337,14 +2338,22 @@ ExpVal FxClassMember::EvalExpression (AActor *self)
 	}
 
 	ExpVal ret;
-	
+	intptr_t offset = membervar->offset;
+	// [Doruk-Aksoy] features/actor-layout: a member of the rare-field block is read in the block the actor reads, and written in its own.
+	if (zx::actorlayout::ComputeIsExtMember(offset))
+	{
+		AActor *actor = reinterpret_cast<AActor *>(object);
+		object = AddressRequested ? reinterpret_cast<char *>(&actor->ExtW()) : const_cast<char *>(reinterpret_cast<const char *>(&actor->Ext()));
+		offset = (intptr_t)zx::actorlayout::ComputeExtMemberOffset(offset);
+	}
+
 	if (!AddressRequested)
 	{
-		ret = GetVariableValue(object + membervar->offset, membervar->ValueType);
+		ret = GetVariableValue(object + offset, membervar->ValueType);
 	}
 	else
 	{
-		ret.pointer = object + membervar->offset;
+		ret.pointer = object + offset;
 		ret.Type = VAL_Pointer;
 	}
 	return ret;
