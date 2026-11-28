@@ -191,6 +191,7 @@ int ComputeInventoryAmount(const InventoryState& state, bool max);
 // [Doruk-Aksoy] UZDoom's actor property numbers for the values of its own these answer.
 enum ActorProperty
 {
+	kAPropSoundClass = 47,
 	kAPropFriendlySeeBlocks = 48,
 	kAPropWaterDepth = 49,
 };

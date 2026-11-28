@@ -18,6 +18,9 @@ void SendUserCVar(int playernum, FName name);
 // [rc4l] A player's selected inventory item that a script changed: on a server, sent to every client.
 void SendSelectedInventory(int playernum, const AInventory *item, bool showInventoryBar);
 
+// [Doruk-Aksoy] A player's sound class a script changed (APROP_SoundClass): on a server, sent to every client, which pick a player's sounds themselves.
+void SendPlayerSoundClass(int playernum);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_PLAYERSTATE_H

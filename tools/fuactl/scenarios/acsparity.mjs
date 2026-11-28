@@ -26,13 +26,13 @@ export const BARREL_AT = { near: [256, 128], mud: [160, 330], far: [420, 64], we
 export const POOL = { x0: 400, y0: 400, x1: 500, y1: 500, top: 48 };
 // [Doruk-Aksoy] Ice, TRANSLATION(TRANSLATION_Standard, 7), which SetTranslation leaves the far and mud barrels on.
 export const ICE = (3 << 16) | 7;
-export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46, FriendlySeeBlocks: 48, WaterDepth: 49 };
+export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46, SoundClass: 47, FriendlySeeBlocks: 48, WaterDepth: 49 };
 const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
 // [Doruk-Aksoy] GetLevelInfo's total monsters and GetPlayerInfo's fviewbob, at zcommon.bcs' numbers.
 const LEVELINFO_TOTAL_MONSTERS = 7, PLAYERINFO_FVIEWBOB = 10;
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", "", "SHOOTABLE", "ZxNoFlag", "COUNTKILL"];
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh", "Ice", "ZxNoTranslation", "", "SHOOTABLE", "ZxNoFlag", "COUNTKILL", "zxmarine", "sc"];
 export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
@@ -99,6 +99,11 @@ export const CHECKS = [
   { what: "GetNetID(barrel) is above 0", words: positive(call("GetNetID", BARREL.near, 0)), want: 1 },
   { what: "GetNetID(barrel, second)", words: call("GetNetID", BARREL.near, 1), want: 0 },
   { what: "GetNetID(no actor)", words: call("GetNetID", 999, 0), want: 0 },
+  // [Doruk-Aksoy] The player's sound class, while the player is still the activator.
+  { what: "APROP_SoundClass, the player's class's", words: getProp(0, APROP.SoundClass), want: "player", str: true },
+  { what: "APROP_SoundClass set to zxmarine", words: [...setProp(0, APROP.SoundClass, S.zxmarine), ...getProp(0, APROP.SoundClass)], want: "zxmarine", str: true },
+  { what: "CheckActorProperty(SoundClass, zxmarine)", words: call("CheckActorProperty", 0, APROP.SoundClass, S.zxmarine), want: 1 },
+  { what: "APROP_SoundClass set to \"\"", words: [...setProp(0, APROP.SoundClass, S[""]), ...getProp(0, APROP.SoundClass)], want: "player", str: true },
   { what: "SetActivatorByNetID(0)", words: call("SetActivatorByNetID", 0), want: 0 },
   { what: "SetActivatorByNetID(barrel)", words: call("SetActivatorByNetID", call("GetNetID", BARREL.near, 0)), want: 1 },
   { what: "the new activator's health", words: getProp(0, APROP.Health), want: 10 },

@@ -21,6 +21,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | 300, 301 | `GetLineX`, `GetLineY` | uzdoom@3a569f176d |
 | APROP 44, 45 | `MaxStepHeight`, `MaxDropOffHeight` | uzdoom@1d286d5bd5 |
 | APROP 46 | `DamageType` | uzdoom@d09ec5a930 |
+| APROP 47 | `SoundClass` | UZDoom's `player_t::SoundClass` |
 | APROP 48 | `FriendlySeeBlocks` | UZDoom's `friendlyseeblocks` |
 | APROP 49 | `WaterDepth` | UZDoom's `UpdateWaterDepth` |
 | 19621 | `SetTeamScore` (ZDaemon) | ours, on `ChangeTeamScore` |
@@ -54,6 +55,11 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `fviewbob` is a synced userinfo cvar (`NAME_FViewBob` appended to `namedef.h`, whose indices go over the wire):
   off, `P_ZMovement` adds no fly bob and `P_CalcHeight` no flying view bob, as UZDoom's do. The server and the
   player's prediction both read the player's own userinfo.
+- `APROP_SoundClass` keeps a script's sound class in `player_t::SoundClass` (None for none), which
+  `APlayerPawn::GetSoundClass` answers first, a corpse with its player's, before the skin's and class's; it survives
+  respawn and is saved from SAVEVER 4545. A server sends it (`SVC2_SETPLAYERSOUNDCLASS`, through
+  `netreplication::SendPlayerSoundClass`) and resends it to a joiner; a clientside script changes its own copy.
+  Reading it of an actor no player holds gives `"player"`.
 - `SetTeamScore` sets the score `GetTeamScore` reads (`ComputeTeamScoreKind`: frags, wins or points by the game
   mode) through `ChangeTeamScore`'s code, `SetTeamScoreOf`, announced.
 
@@ -70,6 +76,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `d_netinfo.cpp`, `d_player.h`, `namedef.h`: the `fviewbob` cvar, `userinfo_t::GetFViewBob` and its name;
   `p_mobj.cpp` `P_ZMovement` and `p_user.cpp` `P_CalcHeight`: its two gates; `p_acs.h`: `PLAYERINFO_FVIEWBOB`.
 - `features/actor-flags`: `ChangeActorFlag`, for `SetActorFlag`.
+- `d_player.h`, `p_user.cpp`, `g_game.cpp`: `player_t::SoundClass`, its copy, save and respawn, and `GetSoundClass`;
+  `protocolspec/spec.misc.txt`, `network_enums.h`, `sv_commands.cpp`, `cl_main.cpp`, `sv_main.cpp`: its command and
+  the joiner's copy; `features/net-replication/playerstate`: `SendPlayerSoundClass`; `version.h`: SAVEVER 4545.
 - `features/decorate-uzdoom/classprops.h`: `FriendlySeeBlocks` reads the actor's own value.
 - `features/trnslate`: `SetActorTranslation`, shared with `A_SetTranslation`.
 - `sv_commands.cpp`, `cl_main.cpp`, `sv_main.cpp`: the two heights in `SetThingProperty` and in
@@ -90,8 +99,10 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   fails on a build whose client `DamageActor` hurts a synced barrel. `SetSectorDamage` runs the same way:
   a client's own call hurts no one, the server's hurts the player, and every client then holds the health
   the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them). Every machine's
-  barrels end on the translations the server set, a server-only script's barrel included
+  barrels end on the translations the server set, a server-only script's barrel included, and every client
+  reads the sound class a server-only script gave the player
   (`fua_debug_netdrop=64`, `SVC_SETTHINGTRANSLATION` unsent, fails the clients and the late joiner).
+- `soundclass_wire_nettest.cpp`: `SVC2_SETPLAYERSOUNDCLASS`'s bytes, both name forms and a cut packet.
 - `fuactl scenarios acsviewbob`: a hovering player's height and view bob with `fviewbob 1` and stay still with
   0; `netacsviewbob`: the server moves the pawn by the client's own setting and the client predicts the same. Both
   fail on a build without the gates.
@@ -101,5 +112,5 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.
-- Against UZDoom itself, the scenario's pk3 logged the same 63 values but for `Ceil(2.0)` and the
+- Against UZDoom itself, the scenario's pk3 logged the same 67 values but for `Ceil(2.0)` and the
   default terrain's spelling (`SOLID`).

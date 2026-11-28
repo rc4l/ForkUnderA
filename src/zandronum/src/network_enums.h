@@ -428,6 +428,7 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SNAPMAPRESET ),		// which reset the destroy beside it carried out
 	ENUM_ELEMENT ( SVC2_FLOORSOUND ),		// a floor's sound sequence, keyed on the sector
 	ENUM_ELEMENT ( SVC2_MOVERSOUND ),		// a ceiling's or plat's, keyed on the sector
+	ENUM_ELEMENT ( SVC2_SETPLAYERSOUNDCLASS ),	// [Doruk-Aksoy] a script's APROP_SoundClass for a player
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

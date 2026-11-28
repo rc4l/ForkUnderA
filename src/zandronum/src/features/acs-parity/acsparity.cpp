@@ -15,6 +15,7 @@
 #include "p_terrain.h"
 #include "r_state.h"
 #include "features/actor-flags/actorflags.h"
+#include "features/net-replication/playerstate.h"
 #include "features/trnslate/trnslate.h"
 
 namespace zx { namespace acsparity {
@@ -202,6 +203,21 @@ int FriendlySeeBlocks(AActor* actor)
 void SetFriendlySeeBlocks(AActor* actor, int32_t blocks)
 {
 	actor->fua_seeBlocks = ComputeSeeBlocksStore(blocks);
+}
+
+const char* SoundClassOf(AActor* actor)
+{
+	if (actor == nullptr || !actor->IsKindOf(RUNTIME_CLASS(APlayerPawn)))
+		return "player";
+	return static_cast<APlayerPawn*>(actor)->GetSoundClass();
+}
+
+void SetSoundClass(AActor* actor, const char* name)
+{
+	if (actor == nullptr || actor->player == nullptr || !actor->IsKindOf(RUNTIME_CLASS(APlayerPawn)))
+		return;
+	actor->player->SoundClass = (name == nullptr || *name == 0) ? FName(NAME_None) : FName(name);
+	netreplication::SendPlayerSoundClass(int(actor->player - players));
 }
 
 int WaterDepth(AActor* actor)

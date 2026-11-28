@@ -23,4 +23,10 @@ void SendSelectedInventory(int playernum, const AInventory *item, bool showInven
 		SERVERCOMMANDS_PlayerSetSelectedInventory(playernum, item, showInventoryBar);
 }
 
+void SendPlayerSoundClass(int playernum)
+{
+	if (zx::net::IsServer())
+		SERVERCOMMANDS_SetPlayerSoundClass(playernum);
+}
+
 }} // namespace zx::netreplication

@@ -2793,6 +2793,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 		// [geNia] Clients need to know player's current skin in ACS.
 		SERVERCOMMANDS_SetPlayerACSSkin( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 
+		// [Doruk-Aksoy] features/acs-parity: and any sound class a script gave the player.
+		if ( players[ulIdx].SoundClass != NAME_None )
+			SERVERCOMMANDS_SetPlayerSoundClass( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+
 		// [BB] It's possible that the MaxHealth property was changed dynamically with ACS, so send it.
 		SERVERCOMMANDS_SetPlayerMaxHealth( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 

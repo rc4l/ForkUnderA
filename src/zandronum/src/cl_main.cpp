@@ -5062,6 +5062,13 @@ void ServerCommands::SetPlayerACSSkin::Execute()
 }
 
 //*****************************************************************************
+// [Doruk-Aksoy] features/acs-parity: the sound class a server script gave a player.
+void ServerCommands::SetPlayerSoundClass::Execute()
+{
+	player->SoundClass = soundClass;
+}
+
+//*****************************************************************************
 //
 void ServerCommands::UpdatePlayerPing::Execute()
 {
