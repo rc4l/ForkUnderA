@@ -10,7 +10,7 @@
 
 namespace zx { namespace netreplication {
 
-// [rc4l] A sector's server-written look: flats, colour, fade, gravity, friction, reflection, scale, rotation and special.
+// [rc4l] A sector's server-written look: flats, colour, fade, gravity, friction, reflection, scale, rotation, special and terrain.
 struct SectorLook
 {
 	int floorPic = 0, ceilingPic = 0;
@@ -22,6 +22,7 @@ struct SectorLook
 	int64_t xScaleFloor = 0, yScaleFloor = 0, xScaleCeiling = 0, yScaleCeiling = 0;
 	uint32_t angleFloor = 0, angleCeiling = 0;
 	int special = 0;
+	int terrainFloor = 0, terrainCeiling = 0;   // [Doruk-Aksoy] each plane's own terrain, -1 for its flat's
 };
 
 // [rc4l] One bit per family a server sends of a sector, each with its own command.
@@ -36,6 +37,7 @@ enum SectorFamily : unsigned
 	kSectorScale = 1 << 6,
 	kSectorRotation = 1 << 7,
 	kSectorSpecial = 1 << 8,
+	kSectorTerrain = 1 << 9,
 };
 
 // [rc4l] The families of a sector that differ between what was sent and what it is now.

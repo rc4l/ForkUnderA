@@ -445,6 +445,8 @@ static void LoadSectors (sectortype *bsec)
 		sec->nextsec = -1;
 		sec->prevsec = -1;
 		sec->gravity = 1.f;
+		// [Doruk-Aksoy] Both planes walk their flat's terrain until a script or the map gives one.
+		sec->terrainnum[sector_t::floor] = sec->terrainnum[sector_t::ceiling] = -1;
 		sec->friction = ORIG_FRICTION;
 		sec->movefactor = ORIG_FRICTION_FACTOR;
 		sec->ColorMap = map;

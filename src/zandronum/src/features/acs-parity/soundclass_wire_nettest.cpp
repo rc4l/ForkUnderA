@@ -43,7 +43,7 @@ TEST(SoundClassWire, IsAppendedAfterTheLastExistingCommand) {
 	// [Doruk-Aksoy] The ids shipped before it keep their values, and it fits the SVC2 byte.
 	EXPECT_EQ(92, SVC2_MOVERSOUND);
 	EXPECT_EQ(93, SVC2_SETPLAYERSOUNDCLASS);
-	EXPECT_EQ(SVC2_SETPLAYERSOUNDCLASS + 1, NUM_SVC2_COMMANDS);
+	EXPECT_LT(SVC2_SETPLAYERSOUNDCLASS, NUM_SVC2_COMMANDS);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);
 }
 

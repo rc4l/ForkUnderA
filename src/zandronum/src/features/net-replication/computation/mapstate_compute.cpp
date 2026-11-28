@@ -19,6 +19,7 @@ unsigned ComputeSectorChanges(const SectorLook &was, const SectorLook &now)
 		bits |= kSectorScale;
 	if (was.angleFloor != now.angleFloor || was.angleCeiling != now.angleCeiling) bits |= kSectorRotation;
 	if (was.special != now.special) bits |= kSectorSpecial;
+	if (was.terrainFloor != now.terrainFloor || was.terrainCeiling != now.terrainCeiling) bits |= kSectorTerrain;
 	return bits;
 }
 
@@ -38,6 +39,7 @@ SectorLook ComputeTakeFamilies(const SectorLook &sent, const SectorLook &now, un
 	}
 	if (families & kSectorRotation) { out.angleFloor = now.angleFloor; out.angleCeiling = now.angleCeiling; }
 	if (families & kSectorSpecial) out.special = now.special;
+	if (families & kSectorTerrain) { out.terrainFloor = now.terrainFloor; out.terrainCeiling = now.terrainCeiling; }
 	return out;
 }
 

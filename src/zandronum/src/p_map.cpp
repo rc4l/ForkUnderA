@@ -667,13 +667,13 @@ void P_PlayerStartStomp(AActor *actor)
 
 inline fixed_t secfriction(const sector_t *sec)
 {
-	fixed_t friction = Terrains[TerrainTypes[sec->GetTexture(sector_t::floor)]].Friction;
+	fixed_t friction = Terrains[sec->GetTerrain(sector_t::floor)].Friction;
 	return friction != 0 ? friction : sec->friction;
 }
 
 inline fixed_t secmovefac(const sector_t *sec)
 {
-	fixed_t movefactor = Terrains[TerrainTypes[sec->GetTexture(sector_t::floor)]].MoveFactor;
+	fixed_t movefactor = Terrains[sec->GetTerrain(sector_t::floor)].MoveFactor;
 	return movefactor != 0 ? movefactor : sec->movefactor;
 }
 
@@ -738,7 +738,7 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 #endif
 
 			if (!(sec->special & FRICTION_MASK) &&
-				Terrains[TerrainTypes[sec->GetTexture(sector_t::floor)]].Friction == 0)
+				Terrains[sec->GetTerrain(sector_t::floor)].Friction == 0)
 			{
 				continue;
 			}

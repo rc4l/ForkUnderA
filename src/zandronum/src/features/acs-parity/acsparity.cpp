@@ -15,6 +15,7 @@
 #include "p_terrain.h"
 #include "r_state.h"
 #include "features/actor-flags/actorflags.h"
+#include "features/net-replication/mapstate.h"
 #include "features/net-replication/playerstate.h"
 #include "features/trnslate/trnslate.h"
 
@@ -156,6 +157,22 @@ void SetSectorDamage(int tag, int32_t amount, const char* type)
 	{
 		sectors[s].damage = damage;
 		sectors[s].mod = short(mod);
+	}
+}
+
+void SetSectorTerrain(int tag, int plane, const char* name)
+{
+	if (!ComputeTerrainPlane(plane))
+		return;
+	const int terrain = name != nullptr ? P_FindTerrain(name) : -1;
+	FSectorTagIterator it(tag);
+	int s;
+	while ((s = it.Next()) >= 0)
+	{
+		sectors[s].terrainnum[plane] = terrain;
+		// [Doruk-Aksoy] A client's own clientside script changes only its own map.
+		if (zx::net::IsServer())
+			netreplication::TouchSector(s);
 	}
 }
 

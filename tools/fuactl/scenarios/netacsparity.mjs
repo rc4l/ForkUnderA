@@ -7,16 +7,17 @@ import { PCD, SCRIPT } from "../src/acs.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
 import { withNetCopies, addPlayerStarts, netJudge, answerFor, who, result, NET_CONFIGS } from "../src/netacs.mjs";
-import { CHECKS, S, APROP, PLAYERHEALTH, BARREL, ICE, buildAcsParityPk3, parseParity, judgeNullDamage, judgeSectorDamage, sectorHealths, judgeTranslations } from "./acsparity.mjs";
+import { CHECKS, S, APROP, PLAYERHEALTH, BARREL, ICE, MUD_TAG, buildAcsParityPk3, parseParity, judgeNullDamage, judgeSectorDamage, sectorHealths, judgeTranslations } from "./acsparity.mjs";
 import { ACSF, callFunc } from "../src/acs.mjs";
 
 // [Doruk-Aksoy] The checks, then SetSectorDamage's two scripts on every machine (a client's own call hurting no one), then each client reading the player's
 // health the server left (script 5); the late joiner runs the checks and that read.
 export const STEPS = [{ script: 1, tags: ["parity"] }, { script: 2, tags: ["damagenull"] }, { script: 3, tags: ["sd3"], tics: 200 },
   { script: 4, tags: ["sd4"], tics: 230 }, { script: 5, tags: ["sdh"], server: false }, { script: 6, tags: ["st"], clients: false },
-  { script: 7, tags: ["scset"], clients: false }, { script: 8, tags: ["sc"], server: false }];
-// [Doruk-Aksoy] The joiner reads the server's sound class first, since its own checks then set and clear one locally.
-export const LATE = [STEPS[7], STEPS[0], STEPS[1], STEPS[4]];
+  { script: 7, tags: ["scset"], clients: false }, { script: 8, tags: ["sc"], server: false }, { script: 9, tags: ["terrset"], clients: false },
+  { script: 10, tags: ["terr"], server: false }];
+// [Doruk-Aksoy] The joiner reads the server's sound class and terrain first, since its own checks then set and clear them locally.
+export const LATE = [STEPS[7], STEPS[9], STEPS[0], STEPS[1], STEPS[4]];
 export const HEALTH_SCRIPT = [PCD.BEGINPRINT, PCD.PUSHNUMBER, S.sdh, PCD.PRINTSTRING, PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, PLAYERHEALTH, PCD.PRINTNUMBER, PCD.ENDLOG, PCD.TERMINATE];
 // [Doruk-Aksoy] Script 6, the server's alone: the net barrel on Ice, which a client can only hold through the server's send.
 export const SERVER_TRANSLATION_SCRIPT = [...callFunc(ACSF.SetTranslation, [BARREL.net, S.Ice]), PCD.DROP, PCD.TERMINATE];
@@ -24,6 +25,10 @@ export const SERVER_TRANSLATION_SCRIPT = [...callFunc(ACSF.SetTranslation, [BARR
 export const SERVER_SOUNDCLASS_SCRIPT = [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, APROP.SoundClass, PCD.PUSHNUMBER, S.zxmarine, PCD.SETACTORPROPERTY, PCD.TERMINATE];
 export const READ_SOUNDCLASS_SCRIPT = [PCD.BEGINPRINT, PCD.PUSHNUMBER, S.sc, PCD.PRINTSTRING, PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING,
   PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, APROP.SoundClass, PCD.GETACTORPROPERTY, PCD.PRINTSTRING, PCD.ENDLOG, PCD.TERMINATE];
+// [Doruk-Aksoy] Script 9, the server's alone: the mud floor's terrain, which script 10 reads back through the mud barrel on each client, the late joiner's too.
+export const SERVER_TERRAIN_SCRIPT = [...callFunc(ACSF.SetSectorTerrain, [MUD_TAG, 0, S.ZxIce]), PCD.DROP, PCD.TERMINATE];
+export const READ_TERRAIN_SCRIPT = [PCD.BEGINPRINT, PCD.PUSHNUMBER, S.terr, PCD.PRINTSTRING, PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING,
+  ...callFunc(ACSF.GetActorFloorTerrain, [BARREL.mud]), PCD.PRINTSTRING, PCD.ENDLOG, PCD.TERMINATE];
 
 // [Doruk-Aksoy] Where players 2 to 4 start, clear of the first player's and the barrels.
 export const STARTS = [[48, 48], [48, 160], [464, 464]];
@@ -31,7 +36,8 @@ export const STARTS = [[48, 48], [48, 160], [464, 464]];
 export function buildNetParityPk3() {
   return buildAcsParityPk3({
     withScripts: (s) => withNetCopies([...s, { code: HEALTH_SCRIPT, type: SCRIPT.CLOSED, number: 5 }, { code: SERVER_TRANSLATION_SCRIPT, type: SCRIPT.CLOSED, number: 6 },
-      { code: SERVER_SOUNDCLASS_SCRIPT, type: SCRIPT.CLOSED, number: 7 }, { code: READ_SOUNDCLASS_SCRIPT, type: SCRIPT.CLOSED, number: 8 }],
+      { code: SERVER_SOUNDCLASS_SCRIPT, type: SCRIPT.CLOSED, number: 7 }, { code: READ_SOUNDCLASS_SCRIPT, type: SCRIPT.CLOSED, number: 8 },
+      { code: SERVER_TERRAIN_SCRIPT, type: SCRIPT.CLOSED, number: 9 }, { code: READ_TERRAIN_SCRIPT, type: SCRIPT.CLOSED, number: 10 }],
       STEPS.map((x) => x.script)),
     withMap: (m) => addPlayerStarts(m, STARTS),
   });
@@ -44,8 +50,8 @@ export const ANSWERS = {
     // [Doruk-Aksoy] A clientside SetActorFlag changes its own barrel but not the map's totals, which stay the server's until its run sends them.
     "SetActorFlag(far, COUNTKILL), then the map's total monsters": 0 },
   latejoin: { "APROP_MaxStepHeight": 40 * 65536, "the barrel's health after": 10, "the new activator's health": 10,
-    // [Doruk-Aksoy] It joins after the server's script 7 gave the player zxmarine, which the join sends it.
-    "APROP_SoundClass, the player's class's": "zxmarine" },
+    // [Doruk-Aksoy] It joins after the server's script 7 gave the player zxmarine and script 9 the mud floor ZxIce, which the join sends it.
+    "APROP_SoundClass, the player's class's": "zxmarine", "GetActorFloorTerrain(barrel on mud)": "ZxIce" },
 };
 // [Doruk-Aksoy] A client's SetSectorDamage copies log the health the server holds then: untouched through script 3, the server's 90 through script 4; and after
 // both, the server's 70.
@@ -71,6 +77,9 @@ export function judgeMachine(logs, member) {
   // [Doruk-Aksoy] Every client reads the sound class the server's script gave the player.
   const sc = /sc (\S+)/.exec(String(logs.sc));
   if (!sc || sc[1] !== "zxmarine") faults.push(`it reads the player's sound class as ${sc ? sc[1] : "nothing"}, not zxmarine`);
+  // [Doruk-Aksoy] And the terrain the server's script gave the mud floor.
+  const terr = /terr (\S+)/.exec(String(logs.terr));
+  if (!terr || terr[1] !== "ZxIce") faults.push(`it reads the mud floor's terrain as ${terr ? terr[1] : "nothing"}, not ZxIce`);
   const after = /sdh (-?\d+)/.exec(String(logs.sdh));
   if (!after || Number(after[1]) !== CLIENT_HEALTHS.after) faults.push(`it holds the player's health at ${after ? after[1] : "nothing"}, not the server's ${CLIENT_HEALTHS.after}`);
   return faults;
@@ -82,7 +91,7 @@ export async function godOff(set, deps = {}) {
   for (let i = 0; i < 2 && !/(God|Degreelessness) mode off/i.test(await exec(set.clients[0].c, "god", { quietMs: 200 })); i++);
 }
 
-const PASSED = `${CHECKS.length} checks give each machine its answer, a client's copy changing nothing on the server, SetTranslation's barrels end the same on every machine, and SetSectorDamage hurts the player on the server alone, every client holding its health`;
+const PASSED = `${CHECKS.length} checks give each machine its answer, a client's copy changing nothing on the server, SetTranslation's barrels end the same on every machine, every client reads the server's SetSectorTerrain, and SetSectorDamage hurts the player on the server alone, every client holding its health`;
 const judgeLogs = netJudge({ steps: STEPS, late: LATE, judge: judgeMachine, before: godOff, passed: PASSED });
 
 // [Doruk-Aksoy] The logs' faults, then each machine's barrels from its own world.actors, the late joiner's too, which SetTranslation left on Ice but the one given back.

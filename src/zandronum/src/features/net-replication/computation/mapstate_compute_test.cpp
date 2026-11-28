@@ -34,6 +34,8 @@ TEST(ComputeSectorChanges, EachFieldNamesItsFamily)
 		{ [](SectorLook &s) { s.angleFloor = 0x40000000; }, kSectorRotation },
 		{ [](SectorLook &s) { s.angleCeiling = 0x40000000; }, kSectorRotation },
 		{ [](SectorLook &s) { s.special = 1024; }, kSectorSpecial },
+		{ [](SectorLook &s) { s.terrainFloor = 2; }, kSectorTerrain },
+		{ [](SectorLook &s) { s.terrainCeiling = -1; }, kSectorTerrain },
 	};
 	for (const Case &c : cases)
 	{
@@ -91,8 +93,8 @@ TEST(ComputeTakeFamilies, OnlyTheNamedFamiliesBecomeSent)
 	every.floorPic = 1; every.ceilingPic = 2; every.color = 3; every.desaturate = 4; every.fade = 5; every.gravity = 6;
 	every.friction = 7; every.moveFactor = 8; every.reflectFloor = 9; every.reflectCeiling = 10;
 	every.xScaleFloor = 11; every.yScaleFloor = 12; every.xScaleCeiling = 13; every.yScaleCeiling = 14;
-	every.angleFloor = 15; every.angleCeiling = 16; every.special = 17;
-	for (unsigned family = kSectorFlat; family <= kSectorSpecial; family <<= 1)
+	every.angleFloor = 15; every.angleCeiling = 16; every.special = 17; every.terrainFloor = 18; every.terrainCeiling = 19;
+	for (unsigned family = kSectorFlat; family <= kSectorTerrain; family <<= 1)
 		EXPECT_EQ(family, ComputeSectorChanges(SectorLook(), every) & ~ComputeSectorChanges(ComputeTakeFamilies(SectorLook(), every, family), every));
 }
 
