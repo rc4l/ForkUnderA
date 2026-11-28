@@ -5843,6 +5843,38 @@ EXTERN_CVAR (Bool, chasedemo)
 
 extern bool demonew;
 
+// [Doruk-Aksoy] A server's handover of a player's reserved id to the player's new body, which P_SpawnPlayer, P_MorphPlayer and P_UndoPlayerMorph each make.
+void P_TakeReservedNetID (AActor *body, int playernum)
+{
+	if (( body == NULL ) || ( NETWORK_GetState( ) != NETSTATE_SERVER ))
+		return;
+
+	const unsigned short reserved = IDList<AActor>::reservedIDForPlayer ( playernum );
+	if (( reserved == 0 ) || ( body->NetID == reserved ))
+		return;
+
+	// [Kaori-Chani] The incumbent is this player's own corpse, whose NetID field
+	// still holds the id Destroy frees by, so both halves are vacated first.
+	// [Doruk-Aksoy] Or the body a morph left behind, or the morph's own body on the way back.
+	AActor *pIncumbent = g_ActorNetIDList.findPointerByID ( reserved );
+	if (( pIncumbent != NULL ) && ( pIncumbent != body ))
+	{
+		g_ActorNetIDList.freeID ( reserved );
+		pIncumbent->NetID = g_ActorNetIDList.getNewID( );
+		if ( pIncumbent->NetID != 0 )
+			g_ActorNetIDList.useID ( pIncumbent->NetID, pIncumbent );
+		// [Kaori-Chani] Moved rather than deleted, and the clients are told which id it
+		// went to before anything else refers to it.
+		if ( pIncumbent->NetID != 0 )
+			SERVERCOMMANDS_SetThingNetID( reserved, pIncumbent->NetID );
+	}
+
+	if ( body->NetID != 0 )
+		g_ActorNetIDList.freeID ( body->NetID );
+	body->NetID = reserved;
+	g_ActorNetIDList.useID ( reserved, body );
+}
+
 APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 {
 	player_t *p;
@@ -5990,33 +6022,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	//
 	// [Kaori-Chani] A server alone, a client being told its ids and single player sending none,
 	// and never for a doll or a temporary player, which share their player's number.
-	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
-		&& (( flags & ( SPF_TEMPPLAYER | SPF_VOODOODOLL )) == 0 ))
-	{
-		const unsigned short reserved = IDList<AActor>::reservedIDForPlayer ( playernum );
-		if (( reserved != 0 ) && ( mobj->NetID != reserved ))
-		{
-			// [Kaori-Chani] The incumbent is this player's own corpse, whose NetID field
-			// still holds the id Destroy frees by, so both halves are vacated first.
-			AActor *pIncumbent = g_ActorNetIDList.findPointerByID ( reserved );
-			if (( pIncumbent != NULL ) && ( pIncumbent != mobj ))
-			{
-				g_ActorNetIDList.freeID ( reserved );
-				pIncumbent->NetID = g_ActorNetIDList.getNewID( );
-				if ( pIncumbent->NetID != 0 )
-					g_ActorNetIDList.useID ( pIncumbent->NetID, pIncumbent );
-				// [Kaori-Chani] Moved rather than deleted, and the clients are told which id it
-				// went to before anything else refers to it.
-				if ( pIncumbent->NetID != 0 )
-					SERVERCOMMANDS_SetThingNetID( reserved, pIncumbent->NetID );
-			}
-
-			if ( mobj->NetID != 0 )
-				g_ActorNetIDList.freeID ( mobj->NetID );
-			mobj->NetID = reserved;
-			g_ActorNetIDList.useID ( reserved, mobj );
-		}
-	}
+	if (( flags & ( SPF_TEMPPLAYER | SPF_VOODOODOLL )) == 0 )
+		P_TakeReservedNetID( mobj, playernum );
 
 	// [BB] The code below assumes that state won't be altered.
 	const BYTE state = p->playerstate;

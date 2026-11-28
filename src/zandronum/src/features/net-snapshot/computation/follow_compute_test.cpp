@@ -18,6 +18,14 @@ TEST(SnapshotFollow, AMirrorWithNoLegacyCopyMayCollide)
 	EXPECT_TRUE(ComputeMirrorMayCollide(false));
 }
 
+// [Doruk-Aksoy] Seen 2026-11-28 by morphskin: an observer's mirror of a morphed player kept the class it was made with, so a new class on the wire makes it again.
+TEST(SnapshotFollow, AMirrorIsMadeAgainOnlyWhenTheWiresKnownClassDiffers)
+{
+	EXPECT_TRUE(ComputeRemakesMirror(true, 3, 7));
+	EXPECT_FALSE(ComputeRemakesMirror(true, 7, 7));
+	EXPECT_FALSE(ComputeRemakesMirror(false, 3, 7));
+}
+
 // [Doruk-Aksoy] Seen 2026-11-26 at legacy suppression 2: KillThing is suppressed, so a client's legacy copy of a killed monster stayed alive for its scripts.
 TEST(SnapshotFollow, ACorpseOnTheWireKillsALiveCopyAndALiveOneRaisesADeadCopy)
 {
