@@ -50,6 +50,11 @@ void SetTranslation(AActor* activator, int tid, const char* name);
 int FriendlySeeBlocks(AActor* actor);
 void SetFriendlySeeBlocks(AActor* actor, int32_t blocks);
 
+// [Doruk-Aksoy] APROP_SoundClass: the sound class a player's sounds come from, a script's over its skin's and class's, "player" for an actor no player holds.
+const char* SoundClassOf(AActor* actor);
+// [Doruk-Aksoy] A script's sound class for the player whose pawn `actor` is, "" giving it back; a server tells every client, a clientside script changes its own copy.
+void SetSoundClass(AActor* actor, const char* name);
+
 // [Doruk-Aksoy] APROP_WaterDepth: how deep in water the actor stands, as GetActorProperty gives fixed values, worked out when asked.
 int WaterDepth(AActor* actor);
 

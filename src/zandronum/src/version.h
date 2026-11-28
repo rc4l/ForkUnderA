@@ -190,7 +190,8 @@ int GetRevisionNumber();
 // [Doruk-Aksoy] 4542: ACS tracers save their rules (features/acs-traces, guarded in SerializeScript).
 // [Doruk-Aksoy] 4543: ACS tracers save their callback function (features/acs-traces, guarded in SerializeScript).
 // [Doruk-Aksoy] 4544: AActor serializes its own APROP_FriendlySeeBlocks (features/acs-parity, guarded in AActor::Serialize).
-#define SAVEVER 4544
+// [Doruk-Aksoy] 4545: player_t serializes a script's APROP_SoundClass (features/acs-parity, guarded in player_t::Serialize).
+#define SAVEVER 4545
 
 
 #define SAVEVERSTRINGIFY2(x) #x

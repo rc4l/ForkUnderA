@@ -963,6 +963,9 @@ public:
 	// [geNia] Should the skin set from ACS also override a weapon's preferred skin?
 	bool		ACSSkinOverridesWeaponSkin;
 
+	// [Doruk-Aksoy] features/acs-parity: UZDoom's APROP_SoundClass, a sound class a script gave the player over its skin's and class's, None for none.
+	FName		SoundClass;
+
 	// [Spleen] Store old information about the player for unlagged support
 	// [AK] Converted the position members into TVector3 objects.
 	TVector3<fixed_t>	unlaggedPos[UNLAGGEDTICS];

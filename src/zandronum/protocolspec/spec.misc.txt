@@ -275,3 +275,11 @@ Command SnapMapReset
 	ExtendedCommand
 	Byte resetCount
 EndCommand
+
+# [Doruk-Aksoy] features/acs-parity: UZDoom's APROP_SoundClass, a sound class a script gave the player (None for none), since a client picks
+# its players' sounds itself; its id is appended last so no existing one moves.
+Command SetPlayerSoundClass
+	ExtendedCommand
+	Player player
+	Name soundClass
+EndCommand

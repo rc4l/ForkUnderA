@@ -28,6 +28,7 @@
 | `APROP_MaxStepHeight` | 44 | fixed; how high the actor steps up |
 | `APROP_MaxDropOffHeight` | 45 | fixed; how far a monster walks down |
 | `APROP_DamageType` | 46 | string; the damage type the actor deals |
+| `APROP_SoundClass` | 47 | string; the sound class a player's sounds come from, a script's own over its skin's and class's, `""` giving them back |
 | `APROP_FriendlySeeBlocks` | 48 | how many blockmap blocks a friendly monster looks for enemies across; its class's (10) until set |
 | `APROP_WaterDepth` | 49 | fixed, read only; how deep in water the actor stands |
 
@@ -64,6 +65,9 @@ In a netgame:
 - A translation a server script sets reaches every client and players who join later; a clientside
   script's `SetTranslation` changes that client's copy alone.
 - Team scores a server script sets reach every client.
+- A sound class a server script gives a player reaches every client, which pick that player's sounds
+  themselves, and players who join later; it stays through death and respawn, as UZDoom's does, and beats a
+  player's `cl_skins` choice, since the mod asked for it.
 - A flag a server script sets reaches every client, as `A_ChangeFlag`'s do, with the map's kill, item and secret
   totals; a clientside script's `SetActorFlag` changes that client's copy alone and leaves the totals.
 - A player's `fviewbob` reaches the server with its other userinfo, so the server moves a flying player's pawn

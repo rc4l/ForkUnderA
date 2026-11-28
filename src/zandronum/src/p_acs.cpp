@@ -5246,6 +5246,11 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		zx::acsparity::SetFriendlySeeBlocks( actor, value );
 		break;
 
+	// [Doruk-Aksoy] features/acs-parity: a player's sound class over its skin's and class's, which every client is told of.
+	case APROP_SoundClass:
+		zx::acsparity::SetSoundClass( actor, FBehavior::StaticLookupString(value) );
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5367,6 +5372,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_MaxStepHeight:	return (int)(actor->MaxStepHeight);
 	case APROP_MaxDropOffHeight:	return (int)(actor->MaxDropOffHeight);
 	case APROP_DamageType:	return GlobalACSStrings.AddString(actor->DamageType.GetChars());
+	case APROP_SoundClass:	return GlobalACSStrings.AddString(zx::acsparity::SoundClassOf(actor));
 	case APROP_FriendlySeeBlocks:	return zx::acsparity::FriendlySeeBlocks(actor);
 	case APROP_WaterDepth:	return zx::acsparity::WaterDepth(actor);
 
@@ -5451,6 +5457,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_Species:		string = actor->GetSpecies(); break;
 		case APROP_NameTag:		string = actor->GetTag(); break;
 		case APROP_DamageType:	string = actor->DamageType.GetChars(); break;
+		case APROP_SoundClass:	string = zx::acsparity::SoundClassOf(actor); break;
 	}
 	if (string == NULL) string = "";
 	return (!stricmp(string, FBehavior::StaticLookupString(value)));
@@ -6051,7 +6058,7 @@ static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == z
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
 	&& ACSF_GetLineY == zx::acsparity::kGetLineY && ACSF_SetActorFlag == zx::acsparity::kSetActorFlag && ACSF_SetTranslation == zx::acsparity::kSetTranslation && ACSF_SetTeamScore == zx::acsparity::kSetTeamScore
-	&& APROP_FriendlySeeBlocks == zx::acsparity::kAPropFriendlySeeBlocks && APROP_WaterDepth == zx::acsparity::kAPropWaterDepth, "UZDoom's functions keep UZDoom's numbers");
+	&& APROP_SoundClass == zx::acsparity::kAPropSoundClass && APROP_FriendlySeeBlocks == zx::acsparity::kAPropFriendlySeeBlocks && APROP_WaterDepth == zx::acsparity::kAPropWaterDepth, "UZDoom's functions keep UZDoom's numbers");
 // [Doruk-Aksoy] features/acs-parity: UZDoom's PLAYERINFO_FVIEWBOB, which compiled mods hold.
 static_assert(DLevelScript::PLAYERINFO_FVIEWBOB == 10, "GetPlayerInfo keeps UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");

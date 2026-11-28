@@ -792,6 +792,19 @@ void SERVERCOMMANDS_SetPlayerACSSkin( const unsigned int player, const unsigned 
 }
 
 //*****************************************************************************
+// [Doruk-Aksoy] features/acs-parity: the sound class a script gave the player.
+void SERVERCOMMANDS_SetPlayerSoundClass( const unsigned int player, const unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if ( PLAYER_IsValidPlayer( player ) == false )
+		return;
+
+	ServerCommands::SetPlayerSoundClass command;
+	command.SetPlayer( &players[player] );
+	command.SetSoundClass( players[player].SoundClass );
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
 //
 void SERVERCOMMANDS_SetPlayerFrags( ULONG ulPlayer, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {

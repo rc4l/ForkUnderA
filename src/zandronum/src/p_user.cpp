@@ -577,6 +577,7 @@ player_t &player_t::operator=(const player_t &p)
 	bUnarmed = p.bUnarmed;
 	ACSSkin = p.ACSSkin;
 	ACSSkinOverridesWeaponSkin = p.ACSSkinOverridesWeaponSkin;
+	SoundClass = p.SoundClass;
 
 	// [AK] Copy the old positions for the unlagged.
 	for ( unsigned int i = 0; i < UNLAGGEDTICS; i++ )
@@ -1525,6 +1526,11 @@ const char *APlayerPawn::GetSoundClass() const
 			break;
 		}
 	}
+
+	// [Doruk-Aksoy] features/acs-parity: a sound class a script gave the player stands over its skin's and its class's, as UZDoom's does.
+	const player_t *owner = corpsePlayer != nullptr ? corpsePlayer : (( player != NULL && player->mo == this ) ? player : nullptr );
+	if (( owner != nullptr ) && ( owner->SoundClass != NAME_None ))
+		return owner->SoundClass.GetChars();
 
 	// [BC] If this player's skin is disabled, just use the base sound class.
 	// [BB] Voodoo dolls don't have valid userinfo.
@@ -4692,6 +4698,9 @@ void player_t::Serialize (FArchive &arc)
 		<< ACSSkinOverridesWeaponSkin
 		// [BB] Skulltag additions - end
 		;
+	// [Doruk-Aksoy] features/acs-parity: a script's sound class, from 4545 on.
+	if (SaveVersion >= 4545)
+		arc << SoundClass;
 	arc << WeaponState;
 	arc << LogText
 		<< ConversationNPC

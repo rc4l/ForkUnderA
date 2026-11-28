@@ -82,6 +82,7 @@ TEST(AcsParity, FunctionNumbersAreUZDooms)
 	EXPECT_EQ(kSetActorFlag, 202);
 	EXPECT_EQ(kSetTranslation, 203);
 	EXPECT_EQ(kSetTeamScore, 19621);
+	EXPECT_EQ(kAPropSoundClass, 47);
 	EXPECT_EQ(kAPropFriendlySeeBlocks, 48);
 	EXPECT_EQ(kAPropWaterDepth, 49);
 	EXPECT_EQ(kCpxSetOnPtr, 0x800);
