@@ -1,0 +1,29 @@
+// fuactl scenarios netacsunlagged: one moment's three traces at where the second player stands now, from the first player's eye height.
+// Build: zt-bcc -i <zt-bcc>/lib unlagged.bcs unlagged.o
+#library "unlagged"
+#import "zcommon.bcs"
+
+// TRF_FUA_NOUNLAGGED, until zt-bcc declares it.
+enum { NOUNLAGGED = 4194304 };
+
+// The MapSpot beside the first player, a shooter that is no player.
+enum { SPOT_TID = 21 };
+
+// Whether a trace from `from` (0 the activator) at `target`'s present place, with `flags`, hits `target`.
+bool Hits( int t, int from, int target, fixed x, fixed y, int flags ) {
+   fixed angle = VectorAngle( fua_GetField( target, "x" ) - x, fua_GetField( target, "y" ) - y );
+   fua_LineTrace( t, from, angle, 2048.0, 0.0, flags, 32.0 );
+   return fua_TraceResult( t, TR_HitActor ) == target;
+}
+
+// Run by the first player's client, so the server runs it with that player as the activator: rewound, opted out, and from the spot.
+script 1 ( void ) net {
+   int t = fua_TracerCreate();
+   int target = fua_GetActorHandle( 0, AAPTR_PLAYER2 );
+   int spot = fua_GetActorHandle( SPOT_TID );
+   bool rewound = Hits( t, 0, target, GetActorX( 0 ), GetActorY( 0 ), 0 );
+   bool now = Hits( t, 0, target, GetActorX( 0 ), GetActorY( 0 ), NOUNLAGGED );
+   bool monster = Hits( t, spot, target, GetActorX( SPOT_TID ), GetActorY( SPOT_TID ), 0 );
+   Log( s:"unl ", d:rewound, s:" ", d:now, s:" ", d:monster );
+   fua_TracerFree( t );
+}
