@@ -79,6 +79,7 @@ TEST(AcsParity, FunctionNumbersAreUZDooms)
 	EXPECT_EQ(kSetActivatorByNetID, 216);
 	EXPECT_EQ(kGetLineX, 300);
 	EXPECT_EQ(kGetLineY, 301);
+	EXPECT_EQ(kSetActorFlag, 202);
 	EXPECT_EQ(kSetTranslation, 203);
 	EXPECT_EQ(kSetTeamScore, 19621);
 	EXPECT_EQ(kAPropFriendlySeeBlocks, 48);

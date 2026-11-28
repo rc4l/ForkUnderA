@@ -83,6 +83,7 @@ TEST(AcsArgCount, UZDoomParityFunctionsNeedUZDoomsMinimum)
 	EXPECT_EQ(Needed(94), 2);    // [Doruk-Aksoy] SetSectorDamage
 	EXPECT_EQ(Needed(98), 3);    // [Doruk-Aksoy] CheckProximity
 	EXPECT_EQ(Needed(201), 6);   // [Doruk-Aksoy] DamageActor
+	EXPECT_EQ(Needed(202), 3);   // [Doruk-Aksoy] SetActorFlag
 	EXPECT_EQ(Needed(203), 2);   // [Doruk-Aksoy] SetTranslation
 	EXPECT_EQ(Needed(215), 2);   // [Doruk-Aksoy] GetNetID
 	EXPECT_EQ(Needed(300), 3);   // [Doruk-Aksoy] GetLineX

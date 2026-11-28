@@ -536,6 +536,11 @@ struct userinfo_t : TMap<FName,FBaseCVar *>
 	{
 		return FLOAT2FIXED(*static_cast<FFloatCVar *>(*CheckKey(NAME_StillBob)));
 	}
+	// [Doruk-Aksoy] features/acs-parity: whether a flying player bobs, UZDoom's fviewbob.
+	bool GetFViewBob() const
+	{
+		return *static_cast<FBoolCVar *>(*CheckKey(NAME_FViewBob));
+	}
 	int GetPlayerClassNum() const
 	{
 		return *static_cast<FIntCVar *>(*CheckKey(NAME_PlayerClass));

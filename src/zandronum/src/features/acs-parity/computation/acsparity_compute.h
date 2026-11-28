@@ -18,6 +18,7 @@ enum Function
 	kCheckActorState = 99,
 	kCheckClass = 200,
 	kDamageActor = 201,
+	kSetActorFlag = 202,
 	kSetTranslation = 203,
 	kGetActorFloorTerrain = 205,
 	kStrArg = 206,

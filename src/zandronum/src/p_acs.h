@@ -1057,6 +1057,7 @@ public:
 		PLAYERINFO_PLAYERCLASS,
 		PLAYERINFO_FOV,
 		PLAYERINFO_DESIREDFOV,
+		PLAYERINFO_FVIEWBOB,	// [Doruk-Aksoy] features/acs-parity: UZDoom's 10.
 	};
 
 	enum EScriptState

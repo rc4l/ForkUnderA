@@ -5858,6 +5858,8 @@ enum EACSFunctions
 	// [Doruk-Aksoy] features/acs-parity: uzdoom@3299a29c44 (CheckClass), d7b5bdc0f7 (DamageActor).
 	ACSF_CheckClass = 200,
 	ACSF_DamageActor = 201,
+	// [Doruk-Aksoy] features/acs-parity: SetActorFlag, through A_ChangeFlag's code (features/actor-flags).
+	ACSF_SetActorFlag = 202,
 	// [Doruk-Aksoy] features/acs-parity: SetTranslation, by the names TRNSLATE and the built-in ones give.
 	ACSF_SetTranslation = 203,
 	// [BB] Out of order ZDoom backport.
@@ -6048,8 +6050,10 @@ static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_SetSectorDamage == zx::acsparity::kSetSectorDamage && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
-	&& ACSF_GetLineY == zx::acsparity::kGetLineY && ACSF_SetTranslation == zx::acsparity::kSetTranslation && ACSF_SetTeamScore == zx::acsparity::kSetTeamScore
+	&& ACSF_GetLineY == zx::acsparity::kGetLineY && ACSF_SetActorFlag == zx::acsparity::kSetActorFlag && ACSF_SetTranslation == zx::acsparity::kSetTranslation && ACSF_SetTeamScore == zx::acsparity::kSetTeamScore
 	&& APROP_FriendlySeeBlocks == zx::acsparity::kAPropFriendlySeeBlocks && APROP_WaterDepth == zx::acsparity::kAPropWaterDepth, "UZDoom's functions keep UZDoom's numbers");
+// [Doruk-Aksoy] features/acs-parity: UZDoom's PLAYERINFO_FVIEWBOB, which compiled mods hold.
+static_assert(DLevelScript::PLAYERINFO_FVIEWBOB == 10, "GetPlayerInfo keeps UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -9722,6 +9726,9 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				return -1;
 			return P_DamageMobj(target, inflictor, inflictor, args[4], FName(FBehavior::StaticLookupString(args[5])));
 		}
+
+		case ACSF_SetActorFlag:
+			return zx::acsparity::SetActorFlag(activator, args[0], FBehavior::StaticLookupString(args[1]), !!args[2]);
 
 		case ACSF_SetTranslation:
 			zx::acsparity::SetTranslation(activator, args[0], FBehavior::StaticLookupString(args[1]));
@@ -13443,6 +13450,7 @@ scriptwait:
 				case PLAYERINFO_PLAYERCLASS:	STACK(2) = userinfo->GetPlayerClassNum(); break;
 				case PLAYERINFO_DESIREDFOV:		STACK(2) = (int)pl->DesiredFOV; break;
 				case PLAYERINFO_FOV:			STACK(2) = (int)pl->FOV; break;
+				case PLAYERINFO_FVIEWBOB:		STACK(2) = userinfo->GetFViewBob(); break;
 				default:						STACK(2) = 0; break;
 				}
 			}

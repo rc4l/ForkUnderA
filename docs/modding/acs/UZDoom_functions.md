@@ -14,6 +14,7 @@
 | `CheckActorState(tid, state [, exact])` | 99 | whether the actor's class has the state |
 | `CheckClass(class)` | 200 | whether an actor class of that name exists |
 | `DamageActor(tid, ptr, inflictor, ptr, amount, damagetype)` | 201 | the damage dealt, or -1 when none was |
+| `SetActorFlag(tid, flag, on)` | 202 | how many actors have the flag (`"SHOOTABLE"`, `"Inventory.UNDROPPABLE"`), set or cleared as `A_ChangeFlag` does |
 | `SetTranslation(tid, name)` | 203 | 1; the actors take the named translation (TRNSLATE, `Ice`, `Player1`..), `""` their class's own |
 | `GetActorFloorTerrain(tid)` | 205 | the name of the TERRAIN under the actor |
 | `StrArg(string)` | 206 | a name an action special takes, such as a named script for `ACS_Execute` |
@@ -29,6 +30,9 @@
 | `APROP_DamageType` | 46 | string; the damage type the actor deals |
 | `APROP_FriendlySeeBlocks` | 48 | how many blockmap blocks a friendly monster looks for enemies across; its class's (10) until set |
 | `APROP_WaterDepth` | 49 | fixed, read only; how deep in water the actor stands |
+
+`GetPlayerInfo(player, PLAYERINFO_FVIEWBOB)` (10) reads the player's `fviewbob`, UZDoom's userinfo setting: with it
+off a flying player neither bobs up and down nor sways its view, as in UZDoom.
 
 ZDaemon's `SetTeamScore(team, score)` (19621), which earlier builds declared without code, sets the score
 `GetTeamScore` reads: frags in team deathmatch, wins in team LMS, points otherwise, announced as
@@ -60,6 +64,10 @@ In a netgame:
 - A translation a server script sets reaches every client and players who join later; a clientside
   script's `SetTranslation` changes that client's copy alone.
 - Team scores a server script sets reach every client.
+- A flag a server script sets reaches every client, as `A_ChangeFlag`'s do, with the map's kill, item and secret
+  totals; a clientside script's `SetActorFlag` changes that client's copy alone and leaves the totals.
+- A player's `fviewbob` reaches the server with its other userinfo, so the server moves a flying player's pawn
+  as that player's own setting says, and the player's client predicts it the same.
 - Every machine works out `APROP_WaterDepth` from its own world.
 - A net id names the same actor on the server and on each client, so a script can pass one to a
   clientside script.

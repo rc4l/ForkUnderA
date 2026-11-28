@@ -29,6 +29,12 @@ void SendThingProperty(AActor *actor, int property);
 // [Doruk-Aksoy] An actor whose translation a state changed (A_SetTranslation), on a server: the new one to every client (SVC_SETTHINGTRANSLATION).
 void SendThingTranslation(AActor *actor);
 
+// [Doruk-Aksoy] One of an actor's flag words a script or A_ChangeFlag changed (a FlagSet), on a server: the word to every client (SVC_SETTHINGFLAGS).
+void SendThingFlags(AActor *actor, int flagset);
+
+// [Doruk-Aksoy] The map's kill, item and secret totals a flag change moved, on a server: each one that moved to every client.
+void SendMapTotals(bool monsters, bool items, bool secrets);
+
 // [Doruk-Aksoy] An actor a server put in a state of its class's own (a Slam state), on a server: the state to every client (SVC_SETTHINGFRAME).
 void SendThingFrame(AActor *actor, FState *state);
 

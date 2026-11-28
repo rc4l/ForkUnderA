@@ -3297,7 +3297,8 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 	// [AK] Friction must always be applied while using the unrestricted spectator mode.
 	if (mo->player && (mo->flags & MF_NOGRAVITY) && (mo->z > mo->floorz || P_IsSpectatorUnrestricted(mo)))
 	{
-		if (!mo->IsNoClip2())
+		// [Doruk-Aksoy] features/acs-parity: UZDoom's fviewbob turns the fly bob off.
+		if (!mo->IsNoClip2() && mo->player->userinfo.GetFViewBob())
 		{
 			mo->z += finesine[(FINEANGLES/80*level.maptime)&FINEMASK]/8;
 		}

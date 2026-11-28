@@ -12,6 +12,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | 99 | `CheckActorState` | uzdoom@df4a8e38c5 |
 | 200 | `CheckClass` | uzdoom@3299a29c44 |
 | 201 | `DamageActor` | uzdoom@d7b5bdc0f7 |
+| 202 | `SetActorFlag` | UZDoom's `ACSF_SetActorFlag` and `ModActorFlag` |
 | 203 | `SetTranslation` | UZDoom's `ACSF_SetTranslation` and `AActor::SetTranslation` |
 | 205 | `GetActorFloorTerrain` | uzdoom@85488f2f30 |
 | 206 | `StrArg` | uzdoom@f82ab889b2 |
@@ -23,6 +24,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | APROP 48 | `FriendlySeeBlocks` | UZDoom's `friendlyseeblocks` |
 | APROP 49 | `WaterDepth` | UZDoom's `UpdateWaterDepth` |
 | 19621 | `SetTeamScore` (ZDaemon) | ours, on `ChangeTeamScore` |
+| PLAYERINFO 10 | `FVIEWBOB`, the `fviewbob` userinfo | UZDoom's `fviewbob` |
 
 - None of the numbers clash: Zandronum's own functions run 100 to 191, and 204 is already UZDoom's
   `GetActorFloorTexture`.
@@ -46,6 +48,12 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   look's search takes at most `kMaxFriendlySeeBlocks` (128) blocks (`ComputeSeeBlocksSearch`).
 - `APROP_WaterDepth` is worked out when a script asks (`ComputeWaterDepth`), from UpdateWaterLevel's own tests
   without the splash ones, so no actor stores a depth each move.
+- `SetActorFlag` changes a flag through `features/actor-flags`, which `A_ChangeFlag` shares: a tid acts on every
+  actor with it and reports no miss, 0 on the activator and reports one; it answers how many have the flag. A
+  clientside script changes its client's copy and not the map's totals.
+- `fviewbob` is a synced userinfo cvar (`NAME_FViewBob` appended to `namedef.h`, whose indices go over the wire):
+  off, `P_ZMovement` adds no fly bob and `P_CalcHeight` no flying view bob, as UZDoom's do. The server and the
+  player's prediction both read the player's own userinfo.
 - `SetTeamScore` sets the score `GetTeamScore` reads (`ComputeTeamScoreKind`: frags, wins or points by the game
   mode) through `ChangeTeamScore`'s code, `SetTeamScoreOf`, announced.
 
@@ -59,6 +67,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 - `p_acs.cpp`: `GetTeamScore`, `TeamScoreNow` and `SetTeamScoreOf`, which `ChangeTeamScore` and `SetTeamScore` share.
 - `actor.h`, `p_mobj.cpp`: `AActor::fua_seeBlocks` and its save; `version.h`: SAVEVER 4544.
 - `p_enemy.cpp`: `P_LookForEnemies`' search capped by `ComputeSeeBlocksSearch`.
+- `d_netinfo.cpp`, `d_player.h`, `namedef.h`: the `fviewbob` cvar, `userinfo_t::GetFViewBob` and its name;
+  `p_mobj.cpp` `P_ZMovement` and `p_user.cpp` `P_CalcHeight`: its two gates; `p_acs.h`: `PLAYERINFO_FVIEWBOB`.
+- `features/actor-flags`: `ChangeActorFlag`, for `SetActorFlag`.
 - `features/decorate-uzdoom/classprops.h`: `FriendlySeeBlocks` reads the actor's own value.
 - `features/trnslate`: `SetActorTranslation`, shared with `A_SetTranslation`.
 - `sv_commands.cpp`, `cl_main.cpp`, `sv_main.cpp`: the two heights in `SetThingProperty` and in
@@ -81,11 +92,14 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them). Every machine's
   barrels end on the translations the server set, a server-only script's barrel included
   (`fua_debug_netdrop=64`, `SVC_SETTHINGTRANSLATION` unsent, fails the clients and the late joiner).
+- `fuactl scenarios acsviewbob`: a hovering player's height and view bob with `fviewbob 1` and stay still with
+  0; `netacsviewbob`: the server moves the pawn by the client's own setting and the client predicts the same. Both
+  fail on a build without the gates.
 - `fuactl scenarios acsteamscore`: `SetTeamScore` in team deathmatch, CTF and team LMS, read back by
   `GetTeamScore`; `netacsteamscore`: the server's scores read back on every client and a late joiner
   (`fua_debug_netdrop=108`, `SVC_SETTEAMSCORE` unsent, fails them).
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.
-- Against UZDoom itself, the scenario's pk3 logged the same 58 values but for `Ceil(2.0)` and the
+- Against UZDoom itself, the scenario's pk3 logged the same 63 values but for `Ceil(2.0)` and the
   default terrain's spelling (`SOLID`).
