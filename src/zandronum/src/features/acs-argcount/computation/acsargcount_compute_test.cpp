@@ -72,7 +72,7 @@ TEST(AcsArgCount, FunctionsThatCheckEveryArgumentAreNeverShort)
 
 TEST(AcsArgCount, IndicesNoFunctionHoldsAreNeverShort)
 {
-	const int indices[] = { -1, 0, 255, 256, 302, 19619, 19621, 30000 };
+	const int indices[] = { -1, 0, 255, 256, 302, 19619, 19622, 30000 };
 	for (int index : indices) EXPECT_EQ(ComputeShortCall(index, 0), nullptr) << index;
 }
 
