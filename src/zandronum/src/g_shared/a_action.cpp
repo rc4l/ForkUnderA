@@ -98,14 +98,14 @@ void A_Unblock(AActor *self, bool drop, bool okforclients) // [EP] Added 'okforc
 	}
 
 	// If the actor has a conversation that sets an item to drop, drop that.
-	if (self->Conversation != NULL && self->Conversation->DropType != NULL)
+	if (self->Ext().Conversation != NULL && self->Ext().Conversation->DropType != NULL)
 	{
-		P_DropItem (self, self->Conversation->DropType, -1, 256);
-		self->Conversation = NULL;
+		P_DropItem (self, self->Ext().Conversation->DropType, -1, 256);
+		self->SetExt(&ZxActorExt::Conversation, (FStrifeDialogueNode *)NULL);
 		return;
 	}
 
-	self->Conversation = NULL;
+	self->SetExt(&ZxActorExt::Conversation, (FStrifeDialogueNode *)NULL);
 
 	// If the actor has attached metadata for items to drop, drop those.
 	if (drop && !self->IsKindOf (RUNTIME_CLASS (APlayerPawn)))	// [GRB]

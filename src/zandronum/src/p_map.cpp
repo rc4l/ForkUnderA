@@ -30,6 +30,7 @@
 #include "features/chase-trim/chasetrim.h"	// [Doruk-Aksoy] WorldChanged
 #include <stdlib.h>
 #include <math.h>
+#include <climits>
 
 #include "templates.h"
 
@@ -1448,7 +1449,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		// [MGOOOOOO] Tiered ripping: a victim outside the projectile's RipperLevel window is not
 		// rippable, and falls through to the normal missile impact below exactly like +DONTRIP.
 		if (tm.DoRipping && !(thing->flags5 & MF5_DONTRIP) &&
-			zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax))
+			zx::ripper::ComputeRipLevelAllows(tm.thing->Ext().RipperLevel, thing->Ext().RipLevelMin, thing->Ext().RipLevelMax))
 		{
 			if (!(tm.thing->flags6 & MF6_NOBOSSRIP) || !(thing->flags2 & MF2_BOSS))
 			{
@@ -1458,8 +1459,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				// here, because entering a Death state can Destroy tm.thing mid-blockmap-walk.
 				const zx::ripper::FRipLimits ripLimits = P_RipLimitsOf(tm.thing);
 				zx::ripper::FRipProgress ripProgress;
-				ripProgress.damageDone = tm.thing->RipperDamageDone;
-				ripProgress.hitsDone = tm.thing->RipperHitsDone;
+				ripProgress.damageDone = tm.thing->Ext().RipperDamageDone;
+				ripProgress.hitsDone = tm.thing->Ext().RipperHitsDone;
 				ripProgress.hitsOnVictim = tm.thing->RipHitsOn(thing);
 
 				const zx::ripper::ERipOutcome ripOutcome = zx::ripper::ComputeRipOutcome(ripLimits, ripProgress);
@@ -1504,9 +1505,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					}
 
 					// Do poisoning (if using new style poison)
-					if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)
+					if (tm.thing->Ext().PoisonDamage > 0 && tm.thing->Ext().PoisonDuration != INT_MIN)
 					{
-						P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->PoisonDamage, tm.thing->PoisonDuration, tm.thing->PoisonPeriod, tm.thing->PoisonDamageType);
+						P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->Ext().PoisonDamage, tm.thing->Ext().PoisonDuration, tm.thing->Ext().PoisonPeriod, tm.thing->Ext().PoisonDamageType);
 					}
 
 					// [MGOOOOOO] RipperDamageFactor compounds over the hits this projectile has
@@ -1543,7 +1544,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					// RipperMaxDamage detonation from SERVERCOMMANDS_MissileExplode instead.
 					tm.thing->RecordRipHit(thing);
 					if (newdam > 0)
-						tm.thing->RipperDamageDone += newdam;
+						tm.thing->ExtW().RipperDamageDone += newdam;
 
 					// [MGOOOOOO] +USERIPSTATE: hand the state change to the mover rather than
 					// doing it here -- see FCheckPosition::RipStatePending for why.
@@ -1551,8 +1552,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						tm.RipStatePending = true;
 
 					// Detonate on the very bite that spends a budget, not on the next contact.
-					ripProgress.damageDone = tm.thing->RipperDamageDone;
-					ripProgress.hitsDone = tm.thing->RipperHitsDone;
+					ripProgress.damageDone = tm.thing->Ext().RipperDamageDone;
+					ripProgress.hitsDone = tm.thing->Ext().RipperHitsDone;
 					ripProgress.hitsOnVictim++;
 					if (zx::ripper::ComputeRipSpendsProjectile(ripLimits, ripProgress))
 					{
@@ -1565,9 +1566,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		}
 
 		// Do poisoning (if using new style poison)
-		if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)
+		if (tm.thing->Ext().PoisonDamage > 0 && tm.thing->Ext().PoisonDuration != INT_MIN)
 		{
-			P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->PoisonDamage, tm.thing->PoisonDuration, tm.thing->PoisonPeriod, tm.thing->PoisonDamageType);
+			P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->Ext().PoisonDamage, tm.thing->Ext().PoisonDuration, tm.thing->Ext().PoisonPeriod, tm.thing->Ext().PoisonDamageType);
 		}
 
 		// Do damage
@@ -4011,7 +4012,7 @@ bool P_BounceWall(AActor *mo)
 bool P_RipsThrough(const AActor *missile, const AActor *victim)
 {
 	return zx::ripper::ComputeRipsThrough(!!(missile->flags2 & MF2_RIP), !!(victim->flags5 & MF5_DONTRIP),
-		missile->RipperLevel, victim->RipLevelMin, victim->RipLevelMax,
+		missile->Ext().RipperLevel, victim->Ext().RipLevelMin, victim->Ext().RipLevelMax,
 		!!(missile->flags6 & MF6_NOBOSSRIP), !!(victim->flags2 & MF2_BOSS));
 }
 
@@ -4353,7 +4354,7 @@ void aim_t::AimTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t en
 
 		// If we want to start a conversation anything that has one should be
 		// found, regardless of other settings.
-		if (!(flags & ALF_CHECKCONVERSATION) || th->Conversation == NULL)
+		if (!(flags & ALF_CHECKCONVERSATION) || th->Ext().Conversation == NULL)
 		{
 			if (!(flags & ALF_CHECKNONSHOOTABLE))			// For info CCMD, ignore stuff about GHOST and SHOOTABLE flags
 			{
@@ -4862,23 +4863,23 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 			{
 				AActor *decalSource;
 				// [TN] If the actor or weapon has a decal defined, use that one.
-				if (t1->DecalGenerator != NULL ||
-					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->DecalGenerator != NULL))
+				if (t1->Ext().DecalGenerator != NULL ||
+					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->Ext().DecalGenerator != NULL))
 				{
 					// [ZK] If puff has FORCEDECAL set, do not use the weapon's decal
-					if (zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, puff != NULL, puff != NULL && puff->DecalGenerator != NULL))
+					if (zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, puff != NULL, puff != NULL && puff->Ext().DecalGenerator != NULL))
 						decalSource = puff;
 					else
 						decalSource = t1;
 				}
 				// Else, look if the bulletpuff has a decal defined.
-				else if (puff != NULL && puff->DecalGenerator)
+				else if (puff != NULL && puff->Ext().DecalGenerator)
 				{
 					decalSource = puff;
 				}
 				// [BB] Clients dont' spawn the puff, so we have to look if the default puff has a decal defined.
 				else if( NETWORK_InClientMode()
-							&& pufftype && (GetDefaultByType (pufftype) != NULL) && GetDefaultByType (pufftype)->DecalGenerator)
+							&& pufftype && (GetDefaultByType (pufftype) != NULL) && GetDefaultByType (pufftype)->Ext().DecalGenerator)
 				{
 					decalSource = GetDefaultByType (pufftype);
 				}
@@ -4966,9 +4967,9 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 
 			// Allow puffs to inflict poison damage, so that hitscans can poison, too.
 			// [EP] Skip this for clients.
-			if ( ( NETWORK_InClientMode( ) == false ) && puffDefaults != NULL && puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
+			if ( ( NETWORK_InClientMode( ) == false ) && puffDefaults != NULL && puffDefaults->Ext().PoisonDamage > 0 && puffDefaults->Ext().PoisonDuration != INT_MIN)
 			{
-				P_PoisonMobj(trace.Actor, puff ? puff : t1, t1, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
+				P_PoisonMobj(trace.Actor, puff ? puff : t1, t1, puffDefaults->Ext().PoisonDamage, puffDefaults->Ext().PoisonDuration, puffDefaults->Ext().PoisonPeriod, puffDefaults->Ext().PoisonDamageType);
 			}
 
 			// [GZ] If MF6_FORCEPAIN is set, we need to call P_DamageMobj even if damage is 0!
@@ -5488,9 +5489,9 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
 				if (puffDefaults != NULL)	// is this even possible?
 				{
-					if (puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
+					if (puffDefaults->Ext().PoisonDamage > 0 && puffDefaults->Ext().PoisonDuration != INT_MIN)
 					{
-						P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
+						P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->Ext().PoisonDamage, puffDefaults->Ext().PoisonDuration, puffDefaults->Ext().PoisonPeriod, puffDefaults->Ext().PoisonDamageType);
 					}
 					if (puffDefaults->flags3 & MF3_FOILINVUL) dmgFlagPass |= DMG_FOILINVUL;
 					if (puffDefaults->flags7 & MF7_FOILBUDDHA) dmgFlagPass |= DMG_FOILBUDDHA;
@@ -5541,7 +5542,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		AActor *decalPuff = endPuff;
 		if (decalPuff == NULL && zx::net::InClientMode() && railEnd.puff && (puffDefaults->flags3 & MF3_ALWAYSPUFF)) decalPuff = puffDefaults;
 		// [rc4l] Ported from zandronum@deffd2fbd79203c4237bd511a2a97ff3626e699c: a FORCEDECAL puff with a decal of its own marks the surface in place of the shooter's weapon.
-		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, decalPuff != NULL, decalPuff != NULL && decalPuff->DecalGenerator != NULL);
+		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, decalPuff != NULL, decalPuff != NULL && decalPuff->Ext().DecalGenerator != NULL);
 		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail, puffMarks ? decalPuff : NULL);
 		// [rc4l] The spawned puff's class, never the stand-in's, since a class's default actor has no class of its own to ask (netrailpuff crashed a client so).
 		if (puffMarks && decalPuff == endPuff) decalPuffClass = endPuff->GetClass();
@@ -5835,7 +5836,7 @@ bool P_TalkFacing(AActor *player)
 		return false;
 	}
 	// [SB] In multiplayer, the server initiates conversations.
-	if (linetarget->Conversation != NULL && !NETWORK_InClientMode())
+	if (linetarget->Ext().Conversation != NULL && !NETWORK_InClientMode())
 	{
 		// Give the NPC a chance to play a brief animation
 		linetarget->ConversationAnimation(0);

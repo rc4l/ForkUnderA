@@ -2739,7 +2739,7 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 				SERVERCOMMANDS_GivePowerup( ulIdx, static_cast<APowerup *>( pInventory ), ulClient, SVCF_ONLYTHISCLIENT );
 
 				// [BB] If it's a rune, we need to explicitly set its icon since it was set by the RuneGiver.
-				if ( pInventory == pInventory->Owner->Rune )
+				if ( pInventory == pInventory->Owner->Ext().Rune )
 				{
 					SERVERCOMMANDS_SetInventoryIcon( ulIdx, pInventory, ulClient, SVCF_ONLYTHISCLIENT );
 				}
@@ -3909,7 +3909,7 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 
 	// [rc4l] Ported from zandronum@8f38a7d08abf6811238ba864526668a31de1559f: a joining client gets each actor's stencil colour.
 	// [AK] Update the actor's stencil color if it's changed.
-	if ( pActor->fillcolor != pActor->GetDefault( )->fillcolor )
+	if ( pActor->Ext().fillcolor != pActor->GetDefault( )->Ext().fillcolor )
 		SERVERCOMMANDS_SetThingProperty( pActor, APROP_StencilColor, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [Doruk-Aksoy] features/acs-parity: a joining client steps and drops off as the server's actor does.
@@ -3923,7 +3923,7 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 		SERVERCOMMANDS_SetThingStringProperty( pActor, APROP_Species, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [AK] Update the actor's name tag if it's changed.
-	if (( pActor->Tag != NULL ) && (( pActor->GetDefault()->Tag == NULL ) || ( pActor->Tag->Compare( *pActor->GetDefault()->Tag ) != 0 )))
+	if (( pActor->Ext().Tag != NULL ) && (( pActor->GetDefault()->Ext().Tag == NULL ) || ( pActor->Ext().Tag->Compare( *pActor->GetDefault()->Ext().Tag ) != 0 )))
 		SERVERCOMMANDS_SetThingStringProperty( pActor, APROP_NameTag, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [BB] Update the actor's gravity if it's changed.
@@ -4435,7 +4435,7 @@ void SERVER_ResetInventory( ULONG ulClient, const bool bChangeClientWeapon, bool
 				SERVERCOMMANDS_GivePowerup( ulClient, static_cast<APowerup *>( pInventory ), ulClient, SVCF_ONLYTHISCLIENT );
 
 			// [BB] If it's a rune, we need to explicitly set its icon since it was set by the RuneGiver.
-			if ( pInventory == pInventory->Owner->Rune )
+			if ( pInventory == pInventory->Owner->Ext().Rune )
 				SERVERCOMMANDS_SetInventoryIcon( ulClient, pInventory, ulClient, SVCF_ONLYTHISCLIENT );
 		}
 		else
@@ -5509,9 +5509,9 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			const int selection = pByteStream->ReadLong( );
 
 			auto npc = players[g_lCurrentClient].ConversationNPC;
-			if ( npc != nullptr && npc->Conversation != nullptr )
+			if ( npc != nullptr && npc->Ext().Conversation != nullptr )
 			{
-				P_ConversationReply( g_lCurrentClient, npc->Conversation->ThisNodeNum, selection );
+				P_ConversationReply( g_lCurrentClient, npc->Ext().Conversation->ThisNodeNum, selection );
 			}
 
 			break;

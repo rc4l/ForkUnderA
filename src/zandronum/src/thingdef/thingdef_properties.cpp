@@ -71,6 +71,8 @@
 #include "teaminfo.h"
 #include "v_video.h"
 #include "r_data/colormaps.h"
+#include <cstdint>
+#include <climits>
 
 
 //==========================================================================
@@ -464,7 +466,7 @@ DEFINE_PROPERTY(skip_super, 0, Actor)
 		return;
 	}
 
-	memcpy ((void *)defaults, (void *)GetDefault<AActor>(), sizeof(AActor));
+	defaults->CopyClassDefaults(GetDefault<AActor>());
 	if (bag.DropItemList != NULL)
 	{
 		FreeDropItemChain (bag.DropItemList);
@@ -755,7 +757,7 @@ DEFINE_PROPERTY(renderradius, F, Actor)
 DEFINE_PROPERTY(fua_material, S, Actor)
 {
 	PROP_STRING_PARM(str, 0);
-	defaults->fua_MaterialName = stricmp(str, "none") == 0 ? "" : str;
+	defaults->ExtW().fua_MaterialName = stricmp(str, "none") == 0 ? "" : str;
 }
 
 //==========================================================================
@@ -1169,7 +1171,7 @@ DEFINE_PROPERTY(stencilcolor, C, Actor)
 {
 	PROP_COLOR_PARM(color, 0);
 
-	defaults->fillcolor = color | (ColorMatcher.Pick (RPART(color), GPART(color), BPART(color)) << 24);
+	defaults->ExtW().fillcolor = color | (ColorMatcher.Pick (RPART(color), GPART(color), BPART(color)) << 24);
 }
 
 //==========================================================================
@@ -1334,19 +1336,19 @@ DEFINE_PROPERTY(damagemultiply, F, Actor)
 DEFINE_PROPERTY(ripperlevel, I, Actor)
 {
 	PROP_INT_PARM(id, 0);
-	defaults->RipperLevel = id;
+	defaults->ExtW().RipperLevel = id;
 }
 
 DEFINE_PROPERTY(riplevelmin, I, Actor)
 {
 	PROP_INT_PARM(id, 0);
-	defaults->RipLevelMin = id;
+	defaults->ExtW().RipLevelMin = id;
 }
 
 DEFINE_PROPERTY(riplevelmax, I, Actor)
 {
 	PROP_INT_PARM(id, 0);
-	defaults->RipLevelMax = id;
+	defaults->ExtW().RipLevelMax = id;
 }
 
 // [MGOOOOOO] The field already existed for MBF21's DeHackEd "Rip sound"; this just makes it
@@ -1442,7 +1444,7 @@ DEFINE_PROPERTY(damagefactor, ZF, Actor)
 DEFINE_PROPERTY(decal, S, Actor)
 {
 	PROP_STRING_PARM(str, 0);
-	defaults->DecalGenerator = (FDecalBase *)intptr_t(int(FName(str)));
+	defaults->ExtW().DecalGenerator = (FDecalBase *)intptr_t(int(FName(str)));
 }
 
 //==========================================================================
@@ -1472,19 +1474,19 @@ DEFINE_PROPERTY(poisondamage, Iii, Actor)
 	PROP_INT_PARM(poisonduration, 1);
 	PROP_INT_PARM(poisonperiod, 2);
 
-	defaults->PoisonDamage = poisondamage;
+	defaults->ExtW().PoisonDamage = poisondamage;
 	if (PROP_PARM_COUNT == 1)
 	{
-		defaults->PoisonDuration = INT_MIN;
+		defaults->ExtW().PoisonDuration = INT_MIN;
 	}
 	else
 	{
-		defaults->PoisonDuration = poisonduration;
+		defaults->ExtW().PoisonDuration = poisonduration;
 
 		if (PROP_PARM_COUNT > 2)
-			defaults->PoisonPeriod = poisonperiod;
+			defaults->ExtW().PoisonPeriod = poisonperiod;
 		else
-			defaults->PoisonPeriod = 0;
+			defaults->ExtW().PoisonPeriod = 0;
 	}
 }
 
@@ -1495,7 +1497,7 @@ DEFINE_PROPERTY(poisondamagetype, S, Actor)
 {
 	PROP_STRING_PARM(poisondamagetype, 0);
 
-	defaults->PoisonDamageType = poisondamagetype;
+	defaults->ExtW().PoisonDamageType = poisondamagetype;
 }
 
 //==========================================================================
@@ -1629,7 +1631,7 @@ DEFINE_PROPERTY(designatedteam, I, Actor)
 	// [BB] Zandronum handles teams differently.
 	if(val < 0 || (val >= (signed) teams.Size() && val != TEAM_None))
 		I_Error("Invalid team designation.\n");
-	defaults->DesignatedTeam = val;
+	defaults->ExtW().DesignatedTeam = val;
 }
 
 //==========================================================================
@@ -1638,7 +1640,7 @@ DEFINE_PROPERTY(designatedteam, I, Actor)
 DEFINE_PROPERTY(limitedtoteam, I, Actor)
 {
 	PROP_INT_PARM(i, 0);
-	defaults->LimitedToTeam=i+1;
+	defaults->ExtW().LimitedToTeam=i+1;
 }
 
 //==========================================================================
@@ -1647,7 +1649,7 @@ DEFINE_PROPERTY(limitedtoteam, I, Actor)
 DEFINE_PROPERTY(visibletoteam, I, Actor)
 {
 	PROP_INT_PARM(i, 0);
-	defaults->VisibleToTeam=i+1;
+	defaults->ExtW().VisibleToTeam=i+1;
 }
 
 //==========================================================================
@@ -1670,7 +1672,7 @@ DEFINE_PROPERTY(visibletoplayerclass, Ssssssssssssssssssss, Actor)
 DEFINE_PROPERTY(accuracy, I, Actor)
 {
 	PROP_INT_PARM(i, 0);
-	defaults->accuracy = i;
+	defaults->ExtW().accuracy = i;
 }
 
 //==========================================================================
@@ -1679,7 +1681,7 @@ DEFINE_PROPERTY(accuracy, I, Actor)
 DEFINE_PROPERTY(stamina, I, Actor)
 {
 	PROP_INT_PARM(i, 0);
-	defaults->stamina = i;
+	defaults->ExtW().stamina = i;
 }
 
 //==========================================================================

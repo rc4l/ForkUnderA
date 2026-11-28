@@ -1143,7 +1143,7 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	pc->player->ConversationNPC = npc;
 	npc->flags5 |= MF5_INCONVERSATION;
 
-	FStrifeDialogueNode *CurNode = npc->Conversation;
+	FStrifeDialogueNode *CurNode = npc->Ext().Conversation;
 
 	if (pc->player == &players[consoleplayer])
 	{
@@ -1184,7 +1184,7 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 		}
 		if (jump && CurNode->ItemCheckNode > 0)
 		{
-			int root = pc->player->ConversationNPC->ConversationRoot;
+			int root = pc->player->ConversationNPC->Ext().ConversationRoot;
 			CurNode = StrifeDialogues[root + CurNode->ItemCheckNode - 1];
 		}
 		else
@@ -1197,7 +1197,7 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	// response number, but Zandronum only sends the response number. As such, we need to update
 	// the NPC's current node so the server properly knows what node is being responded to in case
 	// we did a jump above.
-	npc->Conversation = CurNode;
+	npc->SetExt(&ZxActorExt::Conversation, CurNode);
 
 	// [SB] Tell clients we're entering a conversation.
 	if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -1422,10 +1422,10 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 	// will show the new node right away without terminating the dialogue.
 	if (reply->NextNode != 0)
 	{
-		int rootnode = npc->ConversationRoot;
+		int rootnode = npc->Ext().ConversationRoot;
 		if (reply->NextNode < 0)
 		{
-			npc->Conversation = StrifeDialogues[rootnode - reply->NextNode - 1];
+			npc->SetExt(&ZxActorExt::Conversation, StrifeDialogues[rootnode - reply->NextNode - 1]);
 			// [SB] In multiplayer, the server initiates conversations.
 			if (gameaction != ga_slideshow && !NETWORK_InClientMode())
 			{
@@ -1439,7 +1439,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 		}
 		else
 		{
-			npc->Conversation = StrifeDialogues[rootnode + reply->NextNode - 1];
+			npc->SetExt(&ZxActorExt::Conversation, StrifeDialogues[rootnode + reply->NextNode - 1]);
 		}
 	}
 

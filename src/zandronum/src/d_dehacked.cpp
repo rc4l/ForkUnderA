@@ -1413,7 +1413,7 @@ static int PatchThing (int thingy)
 				const FDecalTemplate *decal = DecalLibrary.GetDecalByName (Line2);
 				if (decal != NULL)
 				{
-					info->DecalGenerator = const_cast <FDecalTemplate *>(decal);
+					info->ExtW().DecalGenerator = const_cast <FDecalTemplate *>(decal);
 				}
 				else
 				{
@@ -2226,7 +2226,7 @@ static int PatchWeapon (int weapNum)
 			const FDecalTemplate *decal = DecalLibrary.GetDecalByName (Line2);
 			if (decal != NULL)
 			{
-				info->DecalGenerator = const_cast <FDecalTemplate *>(decal);
+				info->ExtW().DecalGenerator = const_cast <FDecalTemplate *>(decal);
 			}
 			else
 			{
@@ -3744,7 +3744,7 @@ void FinishDehPatch ()
 		PClass *subclass = RUNTIME_CLASS(ADehackedPickup)->CreateDerivedClass
 			(typeNameBuilder, sizeof(ADehackedPickup));
 		AActor *defaults2 = GetDefaultByType (subclass);
-		memcpy ((void *)defaults2, (void *)defaults1, sizeof(AActor));
+		defaults2->CopyClassDefaults (defaults1);
 
 		// Make a copy of the replaced class's state labels 
 		FStateDefinitions statedef;

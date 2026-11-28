@@ -32,6 +32,9 @@
 // Basics.
 #include "features/relink-in-place/computation/relink_compute.h"
 #include "features/chase-trim/computation/chasetrim_compute.h"   // [Doruk-Aksoy] BlockMemo
+#include "features/actor-layout/mapresetstate.h"   // [Doruk-Aksoy] ZxMapResetState
+#include "features/actor-layout/netdelta.h"   // [Doruk-Aksoy] ZxNetDelta
+#include "features/actor-layout/computation/ownedblock_compute.h"   // [Doruk-Aksoy] ComputeBlockRead, ComputeBlockWrite
 #include "tables.h"
 
 // We need the thinker_t stuff.
@@ -51,6 +54,9 @@
 #include "p_attackextent.h"
 
 // [AK] Needed for std::numeric_limits in the IDList class.
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
 #include <limits>
 #include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
 #include "features/tid-hash/computation/tidhash_compute.h"   // [Doruk-Aksoy] kZxTidHashSize, ComputeTidBucket
@@ -951,6 +957,66 @@ struct FRipVictim
 
 FArchive &operator<< (FArchive &arc, FRipVictim &rv);
 
+// [Doruk-Aksoy] features/actor-layout: the fields few actors ever move off their class's values (Strife dialogue and stats, game-mode spots and teams,
+// poison, ripper runtime, rare state, lights and materials), kept off the actor. An actor without a block of its own reads its class defaults' block,
+// so a class whose DECORATE sets any of them shares that one; the first write gives the actor its own copy (AActor::ExtW).
+struct ZxActorExt
+{
+	const AActor *owner = nullptr;	// [Doruk-Aksoy] The actor or class defaults this block belongs to; anyone else reading it shares it, and its object pointers are mutable for TObjPtr's read barrier.
+
+	int ConversationRoot = -1;				// THe root of the current dialogue; -1, as every spawn sets for a class with none.
+	FStrifeDialogueNode *Conversation = nullptr;	// [RH] The dialogue to show when this actor is "used."
+	int accuracy = 0, stamina = 0;		// [RH] Strife stats -- [XA] moved here for DECORATE/ACS access.
+	FString *Tag = nullptr;			// Strife's tag name.
+
+	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
+	DWORD VisibleToTeam = 0;
+	// [BB] If 0, not limited to any team, if > 0, limited to the team with number (LimitedToTeam-1).
+	unsigned int LimitedToTeam = 0;
+	int DesignatedTeam = 0;	// Allow for friendly fire cacluations to be done on non-players.
+	int Score = 0;			// manipulated by score items, ACS or DECORATE. The engine doesn't use this itself for anything.
+	// Pointer to the pickup spot this item was spawned from.
+	ABaseMonsterInvasionSpot *pMonsterSpot = nullptr;
+	ABasePickupInvasionSpot *pPickupSpot = nullptr;
+	// What wave does this monster belong to in invasion mode?
+	unsigned int InvasionWave = 0;
+	// [TP] Rune that is currently in effect
+	mutable TObjPtr<class APowerup> Rune = nullptr;
+
+	int PoisonDamage = 0; // Damage received per tic from poison.
+	FNameNoInit PoisonDamageType; // Damage type dealt by poison.
+	int PoisonDuration = 0; // Duration left for receiving poison damage.
+	int PoisonPeriod = 0; // How often poison damage is applied. (Every X tics.)
+	int PoisonDamageReceived = 0; // Damage received per tic from poison.
+	FNameNoInit PoisonDamageTypeReceived; // Damage type received by poison.
+	int PoisonPeriodReceived = 0; // How often poison damage is applied. (Every X tics.)
+	mutable TObjPtr<AActor> Poisoner = nullptr; // Last source of received poison damage.
+
+	// [MGOOOOOO] RipperLevel is the projectile's rip tier; RipLevelMin/Max are the victim's resistance window (0 disables a bound).
+	int RipperLevel = 0;
+	int RipLevelMin = 0;
+	int RipLevelMax = 0;
+	int RipperDamageDone = 0;	// runtime: rip damage actually dealt so far (server-authoritative)
+	int RipperHitsDone = 0;		// runtime: rip damage events so far
+	TArray<FRipVictim> RipVictims;		// runtime: per-victim ledger; empty unless a budget needs it
+
+	mutable TObjPtr<AActor> LastLookActor = nullptr;	// Actor last looked for (if TIDtoHate != 0)
+	FDecalBase *DecalGenerator = nullptr;	// [RH] Decal(s) this weapon/projectile generates on impact.
+	int StartHealth = 0;
+	int skillrespawncount = 0;
+	DWORD fillcolor = 0;			// Color to draw when STYLE_Shaded
+	int weaponspecial = 0;	// [rc4l] uzdoom@ee6e87d94: weapon state, split out of special1.
+	int FixedColormap = -1;		// [BC] Should this actor be drawn with a different colormap? NOFIXEDCOLORMAP, as every spawn sets.
+
+	mutable TArray<TObjPtr<AActor> > dynamiclights;	// begin of GZDoom specific additions
+	FNameNoInit fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
+
+	ZxActorExt() { PoisonDamageType = NAME_None; PoisonDamageTypeReceived = NAME_None; fua_MaterialName = NAME_None; }
+
+	// [Doruk-Aksoy] The block an actor without one reads when its class has none either.
+	static const ZxActorExt &None() { static const ZxActorExt none; return none; }
+};
+
 // Map Object definition.
 class AActor : public DThinker
 {
@@ -1328,28 +1394,17 @@ public:
 	BYTE			FuaChasePhase;		// [Doruk-Aksoy] features/chase-trim: which call of a far monster's pair this is
 	BYTE			FuaJamWait;			// [Doruk-Aksoy] features/chase-trim: chase calls a jammed walker still waits
 	BYTE			FuaJamCount;		// [Doruk-Aksoy] features/chase-trim: re-plans in a row that failed every direction
+	uint32_t		FuaMemoIndex;		// [Doruk-Aksoy] features/chase-trim: this walker's blocked-direction memo in the pool, 0 for none
 	TObjPtr<AActor>	lastenemy;		// Last known enemy -- killough 2/15/98
 	TObjPtr<AActor> LastHeard;		// [RH] Last actor this one heard
 
-	// [Doruk-Aksoy] Lines 10-11: what a server reads and writes for the position updates it sends.
-	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
-	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;
-	// [BB] Last movedir that was sent to the client.
-	BYTE lastMovedir;
-	// [BB] Last xyz-position that was sent to the client.
-	fixed_t lastX, lastY, lastZ;
-	// [BB] Last xyz-velocity that was sent to the client.
-	fixed_t lastVelx, lastVely, lastVelz;
-
 	// [Doruk-Aksoy] The cold fields: no traced pass reads them every tic.
 
-	// [Doruk-Aksoy] features/chase-trim: directions this walker knows are blocked, and the actors blocking them.
-	zx::chasetrim::BlockMemo FuaBlockMemo;
-	TObjPtr<AActor> FuaBlockers[zx::chasetrim::kMemoSlots];
+	// [BB] Last xyz-position that was sent to the client.
+	fixed_t lastX, lastY, lastZ;
 
 	FTextureID		picnum;				// Draw this instead of sprite if valid
 
-	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
 	DWORD			fua_handleSlot;			// [Doruk-Aksoy] features/acs-handles: its slot in this machine's handle table, 0 until a script asks
 	int				fua_seeBlocks;			// [Doruk-Aksoy] features/acs-parity: APROP_FriendlySeeBlocks a script set, its top bit flipped, or 0 to use its class's
 	int				fua_spawnTic;			// [MGOOOOOO] features/hitboxviz: the gametic it was spawned in, so a box gone within that tic is still drawn
@@ -1369,32 +1424,15 @@ public:
 	ActorFlags8		flags8;			// [Doruk-Aksoy] UZDoom's flags8 (see MF8_* above).
 	ActorFlags9		flags9;			// [Doruk-Aksoy] UZDoom's flags9 (see MF9_* above).
 	DWORD			fua_flags;		// [Doruk-Aksoy] ZandroX's own flags (see FUAF_* above).
-	DWORD			fillcolor;			// Color to draw when STYLE_Shaded [Doruk-Aksoy] cold, as the render copy reads it only for a style that draws with it.
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
-	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
-	DWORD			VisibleToTeam;
-
-	// [BB] If 0, not limited to any team, if > 0, limited to the team with number (LimitedToTeam-1).
-	unsigned int	LimitedToTeam;
-
-	int				weaponspecial;	// [rc4l] uzdoom@ee6e87d94: weapon state, split out of special1.		// Special info
-	int				special2;		// Special info
-	TObjPtr<AActor>	LastLookActor;	// Actor last looked for (if TIDtoHate != 0)
 	fixed_t			SpawnPoint[3]; 	// For nightmare respawn
 	WORD			SpawnAngle;
-	int				StartHealth;
 	BYTE			WeaveIndexXY;	// Separated from special2 because it's used by globally accessible functions.
 	BYTE			WeaveIndexZ;
-	int				skillrespawncount;
 	FNameNoInit		Species;		// For monster families
 	TObjPtr<AActor>	tracer;			// Thing being chased/attacked for tracers
 	TObjPtr<AActor>	master;			// Thing which spawned this one (prevents mutual attacks)
-	BYTE			SavedSpecial;	// [BC] Saved actor special for when a map gets reset.
-	int				SavedArgs[5];	// [Dusk] More map reset stuff
-	int				SavedTID;		// [Dusk]
-
-	int		accuracy, stamina;		// [RH] Strife stats -- [XA] moved here for DECORATE/ACS access.
 
 	AActor			*inext, **iprev;// Links to other mobjs in same bucket
 	BYTE			MinMissileChance;// [RH] If a random # is > than this, then missile attack.
@@ -1418,38 +1456,21 @@ public:
 	// victim's resistance window (0 disables a bound). The three budgets are all 0 = unlimited, so
 	// a ripper that sets none of them behaves exactly as it did before this feature existed.
 	// Decision logic lives in features/ripper/computation/ripper_compute.
-	int				RipperLevel;
-	int				RipLevelMin;
-	int				RipLevelMax;
 	int				RipperMaxDamage;	// cumulative rip damage dealt before the Death state is forced
 	int				RipperCount;		// rip hits allowed against any one victim
 	int				RipperMaxCount;		// rip hits allowed over the projectile's whole life
+	// [Doruk-Aksoy] special2 sits beside the 4-byte fields above, so no padding follows either.
+	int				special2;		// Special info
 	fixed_t			RipperDamageFactor;	// compounded per repeat hit on the same victim (FRACUNIT = none)
-	int				RipperDamageDone;	// runtime: rip damage actually dealt so far (server-authoritative)
-	int				RipperHitsDone;		// runtime: rip damage events so far
-	TArray<FRipVictim> RipVictims;		// runtime: per-victim ledger; empty unless a budget needs it
 	fixed_t			bouncefactor;	// Strife's grenades use 50%, Hexen's Flechettes 70.
 	fixed_t			wallbouncefactor;	// The bounce factor for walls can be different.
 	int				bouncecount;	// Strife's grenades only bounce twice before exploding
-	fixed_t			Friction;
 	int 			FastChaseStrafeCount;
+	fixed_t			Friction;
 	fixed_t			pushfactor;
 	int				lastpush;
 	int				activationtype;	// How the thing behaves when activated with USESPECIAL or BUMPSPECIAL
 	int				lastbump;		// Last time the actor was bumped, used to control BUMPSPECIAL
-	int				Score;			// manipulated by score items, ACS or DECORATE. The engine doesn't use this itself for anything.
-	FString *		Tag;			// Strife's tag name.
-	int				DesignatedTeam;	// Allow for friendly fire cacluations to be done on non-players.
-
-	int PoisonDamage; // Damage received per tic from poison.
-	FNameNoInit PoisonDamageType; // Damage type dealt by poison.
-	int PoisonDuration; // Duration left for receiving poison damage.
-	int PoisonPeriod; // How often poison damage is applied. (Every X tics.)
-
-	int PoisonDamageReceived; // Damage received per tic from poison.
-	FNameNoInit PoisonDamageTypeReceived; // Damage type received by poison.
-	int PoisonPeriodReceived; // How often poison damage is applied. (Every X tics.)
-	TObjPtr<AActor> Poisoner; // Last source of received poison damage.
 
 	DWORD			InventoryID;	// A unique ID to keep track of inventory items
 
@@ -1469,9 +1490,9 @@ public:
 	FSoundIDNoInit BounceSound;
 	FSoundIDNoInit WallBounceSound;
 	FSoundIDNoInit CrushPainSound;
+	SDWORD Mass;					// [Doruk-Aksoy] Beside the sounds, so no padding follows them.
 
 	fixed_t FloatSpeed;
-	SDWORD Mass;
 	SWORD PainChance;
 	int PainThreshold;
 	FNameNoInit DamageType;
@@ -1494,43 +1515,51 @@ public:
 	// isn't necessarily the spawn state).
 	FState	*InitialState;
 
-	int ConversationRoot;				// THe root of the current dialogue
-	FStrifeDialogueNode *Conversation;	// [RH] The dialogue to show when this actor is "used."
-
-	// [RH] Decal(s) this weapon/projectile generates on impact.
-	FDecalBase *DecalGenerator;
-
-	// [BC] Bunch of new stuff for ST.
-	// Should this actor be drawn with a different colormap?
-	int			FixedColormap;
-
-	// Pointer to the pickup spot this item was spawned from.
-	ABaseMonsterInvasionSpot		*pMonsterSpot;
-	ABasePickupInvasionSpot			*pPickupSpot;
-
-	// What wave does this monster belong to in invasion mode?
-	unsigned int InvasionWave;
-
-	// [TP] Rune that is currently in effect
-	TObjPtr<class APowerup> Rune;
 
 	// [BC] End of ST stuff.
 
-	// [BOF] Save more MapThing values for map resets.
-	TMap<PSymbolVariable *, int> savedUserVars;
+	// [Doruk-Aksoy] features/actor-layout: a map-placed actor's starting values for the map reset, NULL for every other actor.
+	ZxMapResetState		*FuaMapReset = nullptr;
+	// [Doruk-Aksoy] The saved values to read, all zero for an actor that has none.
+	const ZxMapResetState &Saved () const { return zx::actorlayout::ComputeBlockRead (FuaMapReset); }
+	// [Doruk-Aksoy] The saved values to write, made on the first write.
+	ZxMapResetState &SavedForWrite () { return zx::actorlayout::ComputeBlockWrite (FuaMapReset); }
+	// [Doruk-Aksoy] features/actor-layout: what a server last sent of this actor in a MoveThing, NULL until one goes out.
+	ZxNetDelta			*FuaNetDelta = nullptr;
+	// [Doruk-Aksoy] The sent motion to read, all zero for an actor that has none.
+	const ZxNetDelta &NetDelta () const { return zx::actorlayout::ComputeBlockRead (FuaNetDelta); }
+	// [Doruk-Aksoy] The sent motion to write, made on the first write.
+	ZxNetDelta &NetDeltaW () { return zx::actorlayout::ComputeBlockWrite (FuaNetDelta); }
+	// [Doruk-Aksoy] Marks the GC pointers this actor keeps in pools off the actor (features/chase-trim's memo).
+	void MarkPooled ();
 
-	fixed_t				SavedPitch, SavedRoll;
-
-	fixed_t				SavedScaleX, SavedScaleY;
-	FRenderStyle		SavedRenderStyle;
-	fixed_t				SavedAlpha;
-	DWORD				SavedFillColor;
-
-	fixed_t				SavedGravity;
-	int					SavedScore;
-	int					SavedHealth;
-	FStrifeDialogueNode *SavedConversation;
-	BYTE				SavedFloatBobPhase;
+	// [Doruk-Aksoy] features/actor-layout: this actor's rare fields, its own block once written, else its class defaults' (see ZxActorExt).
+	ZxActorExt			*FuaExt;
+	// [Doruk-Aksoy] The rare fields to read.
+	const ZxActorExt &Ext () const { return FuaExt != nullptr ? *FuaExt : ZxActorExt::None(); }
+	// [Doruk-Aksoy] The rare fields to write: the actor's own block, copied from what it read on the first write.
+	ZxActorExt &ExtW ();
+	// [Doruk-Aksoy] Whether the block this actor reads is its own, which only its address in the block tells, since a copy's bytes are the same.
+	bool OwnsExt () const { return FuaExt != nullptr && FuaExt->owner == this; }
+	// [Doruk-Aksoy] Takes back the block this actor owned before its bytes moved (PClass::Extend's realloc), so whatever is made at the old address never owns it.
+	void ReclaimExt () { FuaExt->owner = this; }
+	// [Doruk-Aksoy] Frees the block this actor owns and reads none after.
+	void FreeOwnedExt () { if (OwnsExt ()) delete FuaExt; FuaExt = nullptr; }
+	// [Doruk-Aksoy] Copies another class's defaults over these class defaults (skip_super, DeHackEd's pickups), the rare-field block left their own, not the other's.
+	void CopyClassDefaults (const AActor *from) { FreeOwnedExt (); memcpy ((void *)this, (const void *)from, sizeof(AActor)); OwnExt (); }
+	// [Doruk-Aksoy] Gives a block read from elsewhere (a parent class's defaults) to this actor as its own copy.
+	void OwnExt () { if (FuaExt != nullptr) ExtW (); }
+	// [Doruk-Aksoy] Sets one rare field, leaving the block unmade when the value is what the actor already reads.
+	template<class T, class V> void SetExt (T ZxActorExt::*field, const V &value)
+	{
+		T v;
+		v = value;
+		// [Doruk-Aksoy] The const_cast lets TObjPtr's non-const comparison read the field, and a shared block's pointers are null, so its read barrier writes nothing.
+		if (!(const_cast<T &>(Ext().*field) == v))
+			ExtW().*field = v;
+	}
+	// [Doruk-Aksoy] The block's GC pointers, and chase-trim's pooled blockers, follow an actor replaced by another, as declared pointers do.
+	size_t PointerSubstitution (DObject *old, DObject *notOld);
 
 	// ThingIDs
 	static void ClearTIDHashes ();
@@ -1606,7 +1635,6 @@ public:
 	bool HasSpecialDeathStates () const;
 
 	// begin of GZDoom specific additions
-	TArray<TObjPtr<AActor> >		dynamiclights;
 	// [Doruk-Aksoy] lightassociations moved to FActorInfo::FuaLightAssociations, as it is the class's (features/gldefs).
 	bool				hasmodel;
 	// end of GZDoom specific additions

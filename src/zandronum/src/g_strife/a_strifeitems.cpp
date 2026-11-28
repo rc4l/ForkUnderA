@@ -88,7 +88,7 @@ bool AHealthTraining::TryPickup (AActor *&toucher)
 		AInventory *coin = Spawn<ACoin> (0,0,0, NO_REPLACE);
 		if (coin != NULL)
 		{
-			coin->Amount = toucher->player->mo->accuracy*5 + 300;
+			coin->Amount = toucher->player->mo->Ext().accuracy*5 + 300;
 			if (!coin->CallTryPickup (toucher))
 			{
 				coin->Destroy ();
@@ -384,9 +384,9 @@ bool AUpgradeStamina::TryPickup (AActor *&toucher)
 	if (toucher->player == NULL)
 		return false;
 		
-	toucher->player->mo->stamina += Amount;
-	if (toucher->player->mo->stamina >= MaxAmount)
-		toucher->player->mo->stamina = MaxAmount;
+	toucher->player->mo->ExtW().stamina += Amount;
+	if (toucher->player->mo->Ext().stamina >= MaxAmount)
+		toucher->player->mo->SetExt(&ZxActorExt::stamina, MaxAmount);
 		
 	P_GiveBody (toucher, -100);
 	GoAwayAndDie ();
@@ -399,9 +399,9 @@ IMPLEMENT_CLASS (AUpgradeAccuracy)
 
 bool AUpgradeAccuracy::TryPickup (AActor *&toucher)
 {
-	if (toucher->player == NULL || toucher->player->mo->accuracy >= 100)
+	if (toucher->player == NULL || toucher->player->mo->Ext().accuracy >= 100)
 		return false;
-	toucher->player->mo->accuracy += 10;
+	toucher->player->mo->ExtW().accuracy += 10;
 	GoAwayAndDie ();
 	return true;
 }

@@ -2911,7 +2911,7 @@ void AM_drawAuthorMarkers ()
 			{
 				DrawMarker (tex, marked->x >> FRACTOMAPBITS, marked->y >> FRACTOMAPBITS, 0,
 					flip, mark->scaleX, mark->scaleY, mark->Translation,
-					mark->alpha, mark->fillcolor, mark->RenderStyle);
+					mark->alpha, mark->Ext().fillcolor, mark->RenderStyle);
 			}
 			marked = mark->args[0] != 0 ? it.Next() : NULL;
 		}

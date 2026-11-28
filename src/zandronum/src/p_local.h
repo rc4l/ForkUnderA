@@ -139,6 +139,8 @@ void P_ClearStateStringCache ();
 #define SPF_VOODOODOLL		8
 
 APlayerPawn *P_SpawnPlayer (struct FPlayerStart *mthing, int playernum, int flags=0);
+// [Doruk-Aksoy] On a server, gives a player's new body the id reserved for its player (features/net-snapshot), moving whatever held it to a new id the clients are told of.
+void P_TakeReservedNetID (AActor *body, int playernum);
 
 void P_ThrustMobj (AActor *mo, angle_t angle, fixed_t move);
 int P_FaceMobj (AActor *source, AActor *target, angle_t *delta);

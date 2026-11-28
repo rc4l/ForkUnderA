@@ -743,11 +743,11 @@ void ADynamicLight::UnlinkLight ()
 	if (owned && target != NULL)
 	{
 		// Delete reference in owning actor
-		for(int c=target->dynamiclights.Size()-1; c>=0; c--)
+		for(int c=target->Ext().dynamiclights.Size()-1; c>=0; c--)
 		{
-			if (target->dynamiclights[c] == this)
+			if (target->Ext().dynamiclights[c] == this)
 			{
-				target->dynamiclights.Delete(c);
+				target->ExtW().dynamiclights.Delete(c);
 				break;
 			}
 		}
@@ -773,15 +773,8 @@ void ADynamicLight::Destroy()
 
 size_t AActor::PropagateMark()
 {
-	for (unsigned i=0; i<dynamiclights.Size(); i++)
-	{
-		GC::Mark(dynamiclights[i]);
-	}
-	// [MGOOOOOO] The ripper's per-victim ledger holds TObjPtrs too (features/ripper).
-	for (unsigned i=0; i<RipVictims.Size(); i++)
-	{
-		GC::Mark(RipVictims[i].victim);
-	}
+	// [Doruk-Aksoy] The rare-field block's pointers, its lights and rip ledger among them, and the blockers a walker's memo pools (features/actor-layout, features/chase-trim).
+	MarkPooled();
 	return Super::PropagateMark();
 }
 

@@ -4,6 +4,7 @@
 #include "features/chase-trim/chasetrim.h"
 
 #include <cstdint>
+#include <vector>
 
 #include "actor.h"
 #include "c_cvars.h"
@@ -37,12 +38,54 @@ CVAR(Int, sv_fua_jamwait, 2, CVAR_ARCHIVE | CVAR_SERVERINFO | CVAR_GAMEPLAYSETTI
 
 static FRandom pr_fuastuckwalk("FuaStuckWalk");
 
-// [Doruk-Aksoy] p_mobj.cpp lists one GC pointer per FuaBlockers slot.
-static_assert(zx::chasetrim::kMemoSlots == 6, "update the FuaBlockers pointers in p_mobj.cpp");
-
 namespace zx { namespace chasetrim {
 
 namespace {
+
+// [Doruk-Aksoy] One jammed walker's memo, held off the actor: most actors never jam, so a pool entry is made at the first commit and given back when the walker moves.
+struct MemoEntry
+{
+	BlockMemo memo;
+	TObjPtr<AActor> blockers[kMemoSlots];
+	AActor *owner;
+};
+std::vector<MemoEntry> g_memos;
+std::vector<uint32_t> g_freeMemos;
+
+// [Doruk-Aksoy] The walker's entry, or NULL; an index left over from another level's pool is never trusted.
+MemoEntry *EntryOf(const AActor *actor)
+{
+	const uint32_t index = actor->FuaMemoIndex;
+	if (index == 0 || index > g_memos.size())
+		return NULL;
+	MemoEntry &entry = g_memos[index - 1];
+	return entry.owner == actor ? &entry : NULL;
+}
+
+// [Doruk-Aksoy] The walker's entry, made empty on first use.
+MemoEntry &EntryFor(AActor *actor)
+{
+	if (MemoEntry *entry = EntryOf(actor))
+		return *entry;
+	uint32_t index;
+	if (!g_freeMemos.empty())
+	{
+		index = g_freeMemos.back();
+		g_freeMemos.pop_back();
+	}
+	else
+	{
+		g_memos.emplace_back();
+		index = (uint32_t)g_memos.size();
+	}
+	MemoEntry &entry = g_memos[index - 1];
+	entry.memo = BlockMemo();
+	for (TObjPtr<AActor> &blocker : entry.blockers)
+		blocker = NULL;
+	entry.owner = actor;
+	actor->FuaMemoIndex = index;
+	return entry;
+}
 
 int g_stepScale = 1;
 uint32_t g_worldEpoch = 0;	// [Doruk-Aksoy] Counts sector, line and polyobject changes that can open a wall.
@@ -127,11 +170,14 @@ Box BoxOf(const AActor *a)
 // [Doruk-Aksoy] The remembered actor that still refuses this step, else NULL; one gone or no longer solid is forgotten.
 AActor *StillBlocking(AActor *actor, int dir, int64_t destX, int64_t destY)
 {
-	BlockMemo &memo = actor->FuaBlockMemo;
+	MemoEntry *entry = EntryOf(actor);
+	if (entry == NULL)
+		return NULL;
+	BlockMemo &memo = entry->memo;
 	const int slot = ComputeMemoSlot(memo, dir);
 	if (slot < 0)
 		return NULL;
-	AActor *blocker = actor->FuaBlockers[slot];
+	AActor *blocker = entry->blockers[slot];
 	if (blocker == NULL || !Rememberable(blocker) || !Solid(blocker, actor))
 	{
 		ComputeMemoForgetSlot(memo, slot);
@@ -143,20 +189,19 @@ AActor *StillBlocking(AActor *actor, int dir, int64_t destX, int64_t destY)
 	return ComputeStillBlocks(BoxOf(actor), maxStep, destX, destY, BoxOf(blocker), tall) ? blocker : NULL;
 }
 
-// [Doruk-Aksoy] Reads the memo's age and wall directions once a call.
-BlockMemo &Refreshed(AActor *actor)
+// [Doruk-Aksoy] Reads the memo's age and wall directions once a call; a walker with no entry remembers nothing.
+void Refresh(AActor *actor)
 {
-	BlockMemo &memo = actor->FuaBlockMemo;
 	if (!g_call.refreshed)
 	{
 		g_call.refreshed = true;
-		if (ComputeJammed(actor->FuaJamCount, sv_fua_jamafter) && ComputeMemoRefresh(memo, level.maptime, kMemoMaxAge))
+		MemoEntry *entry = EntryOf(actor);
+		if (entry != NULL && ComputeJammed(actor->FuaJamCount, sv_fua_jamafter) && ComputeMemoRefresh(entry->memo, level.maptime, kMemoMaxAge))
 		{
 			g_call.jammed = true;
-			g_call.memoLines = ComputeMemoLines(memo, g_call.x, g_call.y, g_call.z, g_worldEpoch);
+			g_call.memoLines = ComputeMemoLines(entry->memo, g_call.x, g_call.y, g_call.z, g_worldEpoch);
 		}
 	}
-	return memo;
 }
 
 // [Doruk-Aksoy] Whether this direction is known blocked for a step of speed: refused earlier in this call, or by a remembered wall or actor.
@@ -164,7 +209,7 @@ bool KnownBlocked(AActor *actor, int dir, int speed, AActor *&blocker)
 {
 	const unsigned bit = 1u << dir;
 	blocker = NULL;
-	Refreshed(actor);
+	Refresh(actor);
 	if ((g_call.walls | g_call.memoLines) & bit)
 		return true;
 	if (g_call.things & bit)
@@ -172,7 +217,8 @@ bool KnownBlocked(AActor *actor, int dir, int speed, AActor *&blocker)
 		blocker = g_call.by[dir];
 		return true;
 	}
-	if (!g_call.jammed || actor->FuaBlockMemo.dirSlots == 0)
+	const MemoEntry *entry = g_call.jammed ? EntryOf(actor) : NULL;
+	if (entry == NULL || entry->memo.dirSlots == 0)
 		return false;
 	const int64_t dx = FixedMul(speed, xspeed[dir]).Raw(), dy = FixedMul(speed, yspeed[dir]).Raw();
 	const int steps = ComputeMoveSteps(dx, dy, actor->radius.Raw());
@@ -186,7 +232,8 @@ void Commit(AActor *actor)
 	if ((g_call.things | g_call.walls) == 0 || actor->x.Raw() != g_call.x || actor->y.Raw() != g_call.y || actor->z.Raw() != g_call.z)
 		return;
 	g_stats.commits++;
-	BlockMemo &memo = actor->FuaBlockMemo;
+	MemoEntry &entry = EntryFor(actor);
+	BlockMemo &memo = entry.memo;
 	if (g_call.walls != 0)
 		ComputeMemoRecordLines(memo, g_call.walls, g_call.x, g_call.y, g_call.z, g_worldEpoch, level.maptime);
 	for (int dir = 0; dir < kMemoDirs; dir++)
@@ -197,7 +244,7 @@ void Commit(AActor *actor)
 		int same = -1;
 		for (int s = 0; s < kMemoSlots; s++)
 		{
-			if (actor->FuaBlockers[s] == blocker)
+			if (entry.blockers[s] == blocker)
 			{
 				for (int d = 0; d < kMemoDirs; d++)
 					same = ComputeMemoSlot(memo, d) == s ? s : same;
@@ -207,7 +254,7 @@ void Commit(AActor *actor)
 		if (slot < 0)
 			g_stats.full++;
 		else
-			actor->FuaBlockers[slot] = blocker;
+			entry.blockers[slot] = blocker;
 	}
 }
 
@@ -353,8 +400,7 @@ void AfterMove(AActor *actor, int speed, bool moved, AActor *hardBlocker, bool w
 	// [Doruk-Aksoy] A split step can move the walker and still fail, which leaves every wall it knew behind.
 	if (moved || !stayed)
 	{
-		actor->FuaBlockMemo.dirSlots = 0;
-		actor->FuaBlockMemo.lines = 0;
+		ForgetMemo(actor);
 		g_call.actor = NULL;
 		return;
 	}
@@ -366,6 +412,44 @@ void AfterMove(AActor *actor, int speed, bool moved, AActor *hardBlocker, bool w
 	}
 	else if (wall)
 		g_call.walls |= (uint8_t)bit;
+}
+
+void ForgetMemo(AActor *actor)
+{
+	MemoEntry *entry = EntryOf(actor);
+	if (entry == NULL)
+		return;
+	entry->owner = NULL;
+	for (TObjPtr<AActor> &blocker : entry->blockers)
+		blocker = NULL;
+	g_freeMemos.push_back(actor->FuaMemoIndex);
+	actor->FuaMemoIndex = 0;
+}
+
+size_t SubstituteMemo(AActor *actor, DObject *old, DObject *notOld)
+{
+	MemoEntry *entry = EntryOf(actor);
+	if (entry == NULL)
+		return 0;
+	size_t changed = 0;
+	for (TObjPtr<AActor> &blocker : entry->blockers)
+	{
+		if ((DObject *)(AActor *)blocker == old)
+		{
+			blocker = static_cast<AActor *>(notOld);
+			changed++;
+		}
+	}
+	return changed;
+}
+
+void MarkMemo(AActor *actor)
+{
+	MemoEntry *entry = EntryOf(actor);
+	if (entry == NULL)
+		return;
+	for (TObjPtr<AActor> &blocker : entry->blockers)
+		GC::Mark(blocker);
 }
 
 } } // namespace zx::chasetrim

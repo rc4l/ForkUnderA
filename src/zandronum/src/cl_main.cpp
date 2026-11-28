@@ -3256,7 +3256,7 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 
 		// Allow for client-side body removal in invasion mode.
 		if ( invasion )
-			pActor->InvasionWave = INVASION_GetCurrentWave( );
+			pActor->SetExt(&ZxActorExt::InvasionWave, INVASION_GetCurrentWave( ));
 	}
 	else
 		CLIENT_PrintWarning( "CLIENT_SpawnThing: Failed to spawn actor %s with id %u\n", pType->TypeName.GetChars( ), netID );
@@ -4240,7 +4240,7 @@ void ServerCommands::SpawnPlayer::Execute()
 	pActor->angle = angle;
 	pActor->pitch = fixed_t::FromUnsignedBits(pActor->roll = 0);
 	pActor->health = pPlayer->health;
-	pActor->FixedColormap = NOFIXEDCOLORMAP;
+	pActor->SetExt(&ZxActorExt::FixedColormap, NOFIXEDCOLORMAP);
 
 	//Added by MC: Identification (number in the players[MAXPLAYERS] array)
 	pActor->id = ulPlayer;
@@ -8501,7 +8501,7 @@ static void client_GivePowerup( BYTESTREAM_s *pByteStream )
 
 		// [TP]
 		if ( isRune )
-			pInventory->Owner->Rune = static_cast<APowerup *>( pInventory );
+			pInventory->Owner->SetExt(&ZxActorExt::Rune, static_cast<APowerup *>( pInventory ));
 	}
 
 	// Since an item displayed on the HUD may have been given, refresh the HUD.
@@ -10568,7 +10568,7 @@ void ServerCommands::ResetCustomPlayerValue::Execute( )
 // [SB]
 void ServerCommands::StartConversation::Execute( )
 {
-	npc->Conversation = StrifeDialogues[node];
+	npc->SetExt(&ZxActorExt::Conversation, StrifeDialogues[node]);
 	P_StartConversation( npc, player->mo, facetalker, saveangle );
 }
 

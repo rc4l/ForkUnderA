@@ -1441,7 +1441,7 @@ FUNC(LS_Thing_Hate)
 			if (arg2 != 0)
 			{
 				hater->TIDtoHate = arg1;
-				hater->LastLookActor = NULL;
+				hater->SetExt(&ZxActorExt::LastLookActor, nullptr);
 
 				// If the TID to hate is 0, then don't forget the target and
 				// lastenemy fields.
@@ -3551,7 +3551,7 @@ FUNC(LS_StartConversation)
 		return false;
 	}
 	// [SB] In multiplayer, the server initiates conversations.
-	if (target->Conversation != NULL && !NETWORK_InClientMode())
+	if (target->Ext().Conversation != NULL && !NETWORK_InClientMode())
 	{
 		// Give the NPC a chance to play a brief animation
 		target->ConversationAnimation (0);
@@ -3579,14 +3579,14 @@ FUNC(LS_Thing_SetConversation)
 		FActorIterator iterator (arg0);
 		while ((it = iterator.Next()) != NULL)
 		{
-			it->ConversationRoot = dlg_index;
-			it->Conversation = node;
+			it->SetExt(&ZxActorExt::ConversationRoot, dlg_index);
+			it->SetExt(&ZxActorExt::Conversation, node);
 		}
 	}
 	else if (it)
 	{
-		it->ConversationRoot = dlg_index;
-		it->Conversation = node;
+		it->SetExt(&ZxActorExt::ConversationRoot, dlg_index);
+		it->SetExt(&ZxActorExt::Conversation, node);
 	}
 	return true;
 }

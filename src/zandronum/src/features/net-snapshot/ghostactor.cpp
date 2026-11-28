@@ -618,6 +618,35 @@ static void ms_Forget(unsigned int id)
 		g_msRings.Remove(id);
 }
 
+// [Doruk-Aksoy] The class id's mirror is made of: the legacy actor's holding the id, which the legacy spawns keep current below level 3 when a new body takes a player's id, else the wire's, which an entity's enter alone carries.
+static unsigned short ghost_MirrorClassId(unsigned int id)
+{
+	AActor* const pLegacy = g_ActorNetIDList.findPointerByID((unsigned short)id);
+	if (pLegacy != NULL)
+		return pLegacy->GetClass()->getActorNetworkIndex();
+	return GhostClassId(id);
+}
+
+// [Doruk-Aksoy] Destroys id's mirror and takes it off the mirror list, leaving its legacy copy and the props the server sent as they are.
+static void ghost_DropMirror(unsigned int id)
+{
+	g_mirror[id]->ObjectFlags &= ~OF_Fixed;
+	g_mirror[id]->Destroy();
+	g_mirror[id] = NULL;
+	ms_Forget(id);
+	if (g_mirrorCount > 0)
+		--g_mirrorCount;
+	for (unsigned int k = 0; k < g_mirrorIds.Size(); ++k)
+	{
+		if (g_mirrorIds[k] != id)
+			continue;
+		g_mirrorIds[k] = g_mirrorIds[g_mirrorIds.Size() - 1];
+		unsigned int popped;
+		g_mirrorIds.Pop(popped);
+		break;
+	}
+}
+
 void zx::netsnapshot::CosmeticSpawn(AActor* pActor)
 {
 	if (g_cosFlagNext && (pActor != NULL))
@@ -2440,15 +2469,19 @@ void zx::netsnapshot::GhostFrame()
 				if (g_mirror[id] != NULL)
 				{
 					ghost_ShowLegacy(id, true);
-					g_mirror[id]->ObjectFlags &= ~OF_Fixed;
-					g_mirror[id]->Destroy();
-					g_mirror[id] = NULL;
-					ms_Forget(id);
-					if (g_mirrorCount > 0)
-						--g_mirrorCount;
+					ghost_DropMirror(id);
 				}
 				continue;
 			}
+		}
+
+		// [Doruk-Aksoy] An entity whose class changed under its id (a morphed player's body takes the player's id) gets a mirror of the new class.
+		const unsigned short wantClass = ghost_MirrorClassId(id);
+		if (g_mirror[id] != NULL)
+		{
+			const bool bKnown = (NETWORK_GetClassFromIdentification(wantClass) != NULL);
+			if (ComputeRemakesMirror(bKnown, g_mirror[id]->GetClass()->getActorNetworkIndex(), wantClass))
+				ghost_DropMirror(id);
 		}
 
 		AActor* pActor = g_mirror[id];
@@ -2459,7 +2492,7 @@ void zx::netsnapshot::GhostFrame()
 			// destroy/recreate thrash) or a genuinely new ghost?
 			if (g_hadMirror != NULL && g_hadMirror[id])
 				++nRecreate;
-			pActor = ghost_CreateMirror(id, GhostClassId(id), pose.x, pose.y, pose.z);
+			pActor = ghost_CreateMirror(id, wantClass, pose.x, pose.y, pose.z);
 			++nCreate;
 			if (pActor == NULL)
 				continue;

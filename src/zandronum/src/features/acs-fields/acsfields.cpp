@@ -7,6 +7,7 @@
 #include "dobjtype.h"
 #include "name.h"
 #include "thingdef/thingdef_type.h"
+#include "features/actor-layout/computation/actorext_compute.h"   // [Doruk-Aksoy] ComputeIsExtMember
 
 static_assert(zx::acsfields::kValInt == VAL_Int && zx::acsfields::kValFloat == VAL_Float && zx::acsfields::kValArray == VAL_Array
 	&& zx::acsfields::kValFixed == VAL_Fixed && zx::acsfields::kValAngle == VAL_Angle && zx::acsfields::kValBool == VAL_Bool, "DECORATE's value types keep their numbers");
@@ -26,7 +27,11 @@ FieldShape Find(AActor *actor, const char *name, unsigned char *&address)
 	if (sym == NULL || sym->SymbolType != SYM_Variable)
 		return FieldShape{ kFieldNone, 0, false };
 	const PSymbolVariable *var = static_cast<PSymbolVariable *>(sym);
-	address = reinterpret_cast<unsigned char *>(actor) + var->offset;
+	// [Doruk-Aksoy] A native kept in the rare-field block (features/actor-layout) is read in the block the actor reads; writes reach user_ variables only.
+	if (zx::actorlayout::ComputeIsExtMember(var->offset))
+		address = const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(&actor->Ext())) + zx::actorlayout::ComputeExtMemberOffset(var->offset);
+	else
+		address = reinterpret_cast<unsigned char *>(actor) + var->offset;
 	return ComputeFieldShape(var->ValueType.Type, var->ValueType.BaseType, var->ValueType.size, var->bUserVar);
 }
 

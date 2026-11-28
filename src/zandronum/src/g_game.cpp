@@ -3482,35 +3482,39 @@ static void GAME_ResetActorUDMFValues(AActor *oldActor, AActor *newActor)
 	// [BOF] Transfer the saved values from the old actor onto the new actor and then set those values for the new actor.
 	if (newActor != oldActor)
 	{
-		newActor->savedUserVars			= oldActor->savedUserVars;
-		newActor->SavedPitch			= oldActor->SavedPitch;
-		newActor->SavedRoll				= oldActor->SavedRoll;
-		newActor->SavedScaleX			= oldActor->SavedScaleX;
-		newActor->SavedScaleY			= oldActor->SavedScaleY;
-		newActor->SavedRenderStyle		= oldActor->SavedRenderStyle;
-		newActor->SavedAlpha			= oldActor->SavedAlpha;
-		newActor->SavedFillColor		= oldActor->SavedFillColor;
-		newActor->SavedGravity			= oldActor->SavedGravity;
-		newActor->SavedScore			= oldActor->SavedScore;
-		newActor->SavedHealth			= oldActor->SavedHealth;
-		newActor->SavedConversation		= oldActor->SavedConversation;
-		newActor->SavedFloatBobPhase	= oldActor->SavedFloatBobPhase;
+		// [Doruk-Aksoy] The saved values live off the actor now (features/actor-layout); the same fields as before are copied.
+		const ZxMapResetState &from = oldActor->Saved();
+		ZxMapResetState &to = newActor->SavedForWrite();
+		to.savedUserVars		= from.savedUserVars;
+		to.SavedPitch			= from.SavedPitch;
+		to.SavedRoll			= from.SavedRoll;
+		to.SavedScaleX			= from.SavedScaleX;
+		to.SavedScaleY			= from.SavedScaleY;
+		to.SavedRenderStyle		= from.SavedRenderStyle;
+		to.SavedAlpha			= from.SavedAlpha;
+		to.SavedFillColor		= from.SavedFillColor;
+		to.SavedGravity			= from.SavedGravity;
+		to.SavedScore			= from.SavedScore;
+		to.SavedHealth			= from.SavedHealth;
+		to.SavedConversation	= from.SavedConversation;
+		to.SavedFloatBobPhase	= from.SavedFloatBobPhase;
 	}
 
 	newActor->ResetUserVars();
 
-	newActor->pitch				= oldActor->SavedPitch;
-	newActor->roll				= (angle_t)(oldActor->SavedRoll);
-	newActor->scaleX			= oldActor->SavedScaleX;
-	newActor->scaleY			= oldActor->SavedScaleY;
-	newActor->RenderStyle		= oldActor->SavedRenderStyle;
-	newActor->alpha				= oldActor->SavedAlpha;
-	newActor->fillcolor			= oldActor->SavedFillColor;
-	newActor->gravity			= oldActor->SavedGravity;
-	newActor->Score				= oldActor->SavedScore;
-	newActor->health			= oldActor->SavedHealth;
-	newActor->Conversation		= oldActor->SavedConversation;
-	newActor->FloatBobPhase		= oldActor->SavedFloatBobPhase;
+	const ZxMapResetState &saved = oldActor->Saved();
+	newActor->pitch				= saved.SavedPitch;
+	newActor->roll				= (angle_t)(saved.SavedRoll);
+	newActor->scaleX			= saved.SavedScaleX;
+	newActor->scaleY			= saved.SavedScaleY;
+	newActor->RenderStyle		= saved.SavedRenderStyle;
+	newActor->alpha				= saved.SavedAlpha;
+	newActor->SetExt(&ZxActorExt::fillcolor, saved.SavedFillColor);
+	newActor->gravity			= saved.SavedGravity;
+	newActor->SetExt(&ZxActorExt::Score, saved.SavedScore);
+	newActor->health			= saved.SavedHealth;
+	newActor->SetExt(&ZxActorExt::Conversation, saved.SavedConversation);
+	newActor->FloatBobPhase		= saved.SavedFloatBobPhase;
 }
 
 static void GAME_ResetActorUDMFValues(AActor *actor)
@@ -3635,7 +3639,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			// this is helpful for DynamicLight tricks.
 			if ( ( pActor->STFlags & STFL_LEVELSPAWNED ) && ( pActor->NetworkFlags & NETFL_ALLOWCLIENTSPAWN ) )
 				for ( int i = 0; i < 5; ++i )
-					pActor->args[i] = pActor->SavedArgs[i];
+					pActor->args[i] = pActor->Saved().SavedArgs[i];
 		}
 
 		// [BB] Clients may be running CLIENTSIDE scripts, so we also need to reset ACS scripts on the clients.
@@ -4149,14 +4153,14 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
 				// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
 				pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
-				pNewActor->tid = pActor->SavedTID;
-				pNewActor->SavedTID = pActor->SavedTID;
-				pNewActor->special = pActor->SavedSpecial;
-				pNewActor->SavedSpecial = pActor->SavedSpecial;
+				pNewActor->tid = pActor->Saved().SavedTID;
+				pNewActor->SavedForWrite().SavedTID = pActor->Saved().SavedTID;
+				pNewActor->special = pActor->Saved().SavedSpecial;
+				pNewActor->SavedForWrite().SavedSpecial = pActor->Saved().SavedSpecial;
 				for ( int i = 0; i < 5; ++i )
 				{
-					pNewActor->args[i] = pActor->SavedArgs[i];
-					pNewActor->SavedArgs[i] = pActor->SavedArgs[i];
+					pNewActor->args[i] = pActor->Saved().SavedArgs[i];
+					pNewActor->SavedForWrite().SavedArgs[i] = pActor->Saved().SavedArgs[i];
 				}
 				pNewActor->AddToHash( );
 
@@ -4229,15 +4233,15 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		if ((( pActor->STFlags & STFL_POSITIONCHANGED ) == false ) &&
 			( pActor->state == pActor->InitialState ) &&
 			( GAME_DormantStatusMatchesOriginal( pActor )) &&
-			( pActor->health == pActor->SavedHealth ))
+			( pActor->health == pActor->Saved().SavedHealth ))
 		{
-			if ( pActor->special != pActor->SavedSpecial )
-				pActor->special = pActor->SavedSpecial;
+			if ( pActor->special != pActor->Saved().SavedSpecial )
+				pActor->special = pActor->Saved().SavedSpecial;
 
 			// [Dusk] Args must be reset too
 			for ( ULONG i = 0; i < 5; ++i )
-				if ( pActor->args[i] != pActor->SavedArgs[i] )
-					pActor->args[i] = pActor->SavedArgs[i];
+				if ( pActor->args[i] != pActor->Saved().SavedArgs[i] )
+					pActor->args[i] = pActor->Saved().SavedArgs[i];
 
 			// [BOF] Restore UDMF Variables given on Map Spawn.
 			GAME_ResetActorUDMFValues(pActor);
@@ -4247,10 +4251,10 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				level.total_monsters++;
 
 			// [Dusk] The TID may have changed, update that.
-			if ( pActor->tid != pActor->SavedTID )
+			if ( pActor->tid != pActor->Saved().SavedTID )
 			{
 				pActor->RemoveFromHash();
-				pActor->tid = pActor->SavedTID;
+				pActor->tid = pActor->Saved().SavedTID;
 				pActor->AddToHash();
 			}
 
@@ -4311,14 +4315,14 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
 			// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
 			pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
-			pNewActor->tid = pActor->SavedTID;
-			pNewActor->SavedTID = pActor->SavedTID;
-			pNewActor->special = pActor->SavedSpecial;
-			pNewActor->SavedSpecial = pActor->SavedSpecial;
+			pNewActor->tid = pActor->Saved().SavedTID;
+			pNewActor->SavedForWrite().SavedTID = pActor->Saved().SavedTID;
+			pNewActor->special = pActor->Saved().SavedSpecial;
+			pNewActor->SavedForWrite().SavedSpecial = pActor->Saved().SavedSpecial;
 			for ( int i = 0; i < 5; ++i )
 			{
-				pNewActor->args[i] = pActor->SavedArgs[i];
-				pNewActor->SavedArgs[i] = pActor->SavedArgs[i];
+				pNewActor->args[i] = pActor->Saved().SavedArgs[i];
+				pNewActor->SavedForWrite().SavedArgs[i] = pActor->Saved().SavedArgs[i];
 			}
 			pNewActor->AddToHash( );
 
@@ -4331,7 +4335,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				pNewActor->reactiontime = 18;
 
 				pNewActor->TIDtoHate = pActor->TIDtoHate;
-				pNewActor->LastLookActor = pActor->LastLookActor;
+				pNewActor->SetExt(&ZxActorExt::LastLookActor, pActor->Ext().LastLookActor);
 				pNewActor->LastLookPlayerNumber = pActor->LastLookPlayerNumber;
 				pNewActor->flags3 |= pActor->flags3 & MF3_HUNTPLAYERS;
 				pNewActor->flags4 |= pActor->flags4 & MF4_NOHATEPLAYERS;
